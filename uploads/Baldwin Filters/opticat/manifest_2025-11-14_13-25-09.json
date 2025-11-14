@@ -1,0 +1,8 @@
+{
+    "vendor": "Baldwin Filters",
+    "timestamp": "2025-11-14_13-25-09",
+    "azure_xml_blob": "bronze/raw/vendor=Baldwin Filters/product/2025-11-14_13-25-09_product.xml",
+    "azure_pricing_blob": "bronze/raw/vendor=Baldwin Filters/pricing/2025-11-14_13-25-09_pricing.xlsx",
+    "azure_assets_blob": "bronze/raw/vendor=Baldwin Filters/assets/2025-11-14_13-25-09_assets.zip",
+    "assets_hash": "a0765e748dcfff3f7eff8401d85a5b250ffbde34431324d3105fd433121a8a2e"
+}
