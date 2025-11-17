@@ -23,11 +23,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'xml', 'xlsx'}
 
-# OptiCat Vendors Only (Phase 1)
-OPTICAT_VENDORS = {
-    "Dayton Parts", "Grote Lighting", "Neapco",
-    "Truck Lite", "Baldwin Filters", "Stemco", "High Bar Brands"
-}
 
 # Azure Storage
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
@@ -181,196 +176,232 @@ def upload_to_azure_bronze(vendor, xml_local_path, pricing_local_path, zip_path)
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
 
-def create_multi_product_excel(vendor_name, products, output_dir):
+def create_multi_product_excel(
+    item_rows,
+    desc_rows,
+    ext_rows,
+    attr_rows,
+    interchange_rows,
+    package_rows,
+    asset_rows,
+    price_rows,
+    output_dir
+):
     """
-    Create an Excel file with separate tabs for each section:
-    Item_Master, Extended_Info, Descriptions, Attributes,
-    Alternate_Parts, Packaging, Media_Assets, Pricing.
-    Each product in `products` is one row per sheet.
+    Create an Excel file with separate tabs for:
+      - Item_Master
+      - Descriptions
+      - Extended_Info
+      - Attributes
+      - Part_Interchange
+      - Packages
+      - Digital_Assets
+      - Pricing
+
+    Each *_rows argument is a list of dicts where keys match the column names.
     """
     os.makedirs(output_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"{vendor_name}_{timestamp}_products_batch.xlsx"
+    filename = f"single_products_batch_{timestamp}.xlsx"
     filepath = os.path.join(output_dir, filename)
 
     wb = Workbook()
 
     # 1) Item_Master
-    sheet = wb.active
-    sheet.title = "Item_Master"
+    ws = wb.active
+    ws.title = "Item_Master"
     item_cols = [
-        "SKU", "ChangeType", "BrandCode", "BrandName", "UNSPSC", "HazmatFlag",
-        "GTIN", "GTINType", "QuantitySize", "QuantityUOM", "PackagingType",
-        "Weight", "WeightUOM", "ApplicationFlag", "Status"
+        "Vendor",
+        "Part Number",
+        "UNSPSC",
+        "HazmatFlag",
+        "Product Status",
+        "Barcode Type",
+        "Barcode Number",
+        "Quantity UOM",
+        "Quantity Size",
+        "VMRS Code",
     ]
-    sheet.append(item_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("change_type"),
-            p.get("item_brand_code"),
-            p.get("item_brand_name"),
-            p.get("item_unspsc"),
-            p.get("item_hazmat_flag"),
-            p.get("item_gtin"),
-            p.get("item_gtin_type"),
-            p.get("item_quantity_size"),
-            p.get("item_quantity_uom"),
-            p.get("item_packaging_type"),
-            p.get("item_weight"),
-            p.get("item_weight_uom"),
-            p.get("item_application_flag"),
-            p.get("item_status"),
+    ws.append(item_cols)
+    for row in item_rows:
+        ws.append([
+            row.get("Vendor", ""),
+            row.get("Part Number", ""),
+            row.get("UNSPSC", ""),
+            row.get("HazmatFlag", ""),
+            row.get("Product Status", ""),
+            row.get("Barcode Type", ""),
+            row.get("Barcode Number", ""),
+            row.get("Quantity UOM", ""),
+            row.get("Quantity Size", ""),
+            row.get("VMRS Code", ""),
         ])
 
-    # 2) Extended_Info
-    sheet = wb.create_sheet("Extended_Info")
-    ext_cols = ["SKU", "ChangeType", "InfoCode", "InfoValue", "Language"]
-    sheet.append(ext_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("change_type"),
-            p.get("ext_info_code"),
-            p.get("ext_info_value"),
-            p.get("ext_language"),
+    # 2) Descriptions
+    ws = wb.create_sheet("Descriptions")
+    desc_cols = [
+        "SKU",
+        "Description Change Type",
+        "Description Code",
+        "Description Value",
+        "Sequence",
+    ]
+    ws.append(desc_cols)
+    for row in desc_rows:
+        ws.append([
+            row.get("SKU", ""),
+            row.get("Description Change Type", ""),
+            row.get("Description Code", ""),
+            row.get("Description Value", ""),
+            row.get("Sequence", ""),
         ])
 
-    # 3) Descriptions
-    sheet = wb.create_sheet("Descriptions")
-    desc_cols = ["SKU", "ChangeType", "DescriptionType", "DescriptionText", "Sequence", "Language"]
-    sheet.append(desc_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("change_type"),
-            p.get("desc_type"),
-            p.get("desc_text"),
-            p.get("desc_sequence"),
-            p.get("desc_language"),
+    # 3) Extended_Info
+    ws = wb.create_sheet("Extended_Info")
+    ext_cols = [
+        "SKU",
+        "Extended Info Change Type",
+        "Extended Info Code",
+        "Extended Info Value",
+    ]
+    ws.append(ext_cols)
+    for row in ext_rows:
+        ws.append([
+            row.get("SKU", ""),
+            row.get("Extended Info Change Type", ""),
+            row.get("Extended Info Code", ""),
+            row.get("Extended Info Value", ""),
         ])
 
     # 4) Attributes
-    sheet = wb.create_sheet("Attributes")
+    ws = wb.create_sheet("Attributes")
     attr_cols = [
-        "SKU", "ChangeType", "FeatureName", "IsPrimaryAttribute",
-        "FeatureValue", "UnitOfMeasure", "AttributeOrder", "Language"
+        "SKU",
+        "Attribute Change Type",
+        "Attribute Name",
+        "Attribute Value",
     ]
-    sheet.append(attr_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("change_type"),
-            p.get("attr_feature_name"),
-            p.get("attr_is_primary"),
-            p.get("attr_feature_value"),
-            p.get("attr_uom"),
-            p.get("attr_order"),
-            p.get("attr_language"),
+    ws.append(attr_cols)
+    for row in attr_rows:
+        ws.append([
+            row.get("SKU", ""),
+            row.get("Attribute Change Type", ""),
+            row.get("Attribute Name", ""),
+            row.get("Attribute Value", ""),
         ])
 
-    # 5) Alternate_Parts
-    sheet = wb.create_sheet("Alternate_Parts")
-    alt_cols = [
-        "SKU", "ChangeType", "AltBrandCode", "AltBrandName",
-        "AltPartNumber", "AltUOM", "InterchangeQuality"
+    # 5) Part_Interchange
+    ws = wb.create_sheet("Part_Interchange")
+    interchange_cols = [
+        "SKU",
+        "Part Interchange Change Type",
+        "Brand Label",
+        "Part Number",
     ]
-    sheet.append(alt_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("change_type"),
-            p.get("alt_brand_code"),
-            p.get("alt_brand_name"),
-            p.get("alt_part_number"),
-            p.get("alt_uom"),
-            p.get("alt_interchange_quality"),
+    ws.append(interchange_cols)
+    for row in interchange_rows:
+        ws.append([
+            row.get("SKU", ""),
+            row.get("Part Interchange Change Type", ""),
+            row.get("Brand Label", ""),
+            row.get("Part Number", ""),
         ])
 
-    # 6) Packaging
-    sheet = wb.create_sheet("Packaging")
-    pack_cols = [
-        "SKU", "ChangeType", "PackUOM", "QuantityOfEach", "Height", "Width",
-        "Length", "DimensionUOM", "PackWeight", "PackWeightUOM", "PackGTIN", "GTINType"
+    # 6) Packages
+    ws = wb.create_sheet("Packages")
+    package_cols = [
+        "SKU",
+        "Package Change Type",
+        "Package UOM",
+        "Package Quantity of Eaches",
+        "Weight UOM",
+        "Weight",
     ]
-    sheet.append(pack_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("change_type"),
-            p.get("pack_uom"),
-            p.get("pack_qty_each"),
-            p.get("pack_height"),
-            p.get("pack_width"),
-            p.get("pack_length"),
-            p.get("pack_dim_uom"),
-            p.get("pack_weight"),
-            p.get("pack_weight_uom"),
-            p.get("pack_gtin"),
-            p.get("pack_gtin_type"),
+    ws.append(package_cols)
+    for row in package_rows:
+        ws.append([
+            row.get("SKU", ""),
+            row.get("Package Change Type", ""),
+            row.get("Package UOM", ""),
+            row.get("Package Quantity of Eaches", ""),
+            row.get("Weight UOM", ""),
+            row.get("Weight", ""),
         ])
 
-    # 7) Media_Assets
-    sheet = wb.create_sheet("Media_Assets")
-    media_cols = [
-        "SKU", "ChangeType", "MediaType", "FileName", "FileURL", "FileFormat",
-        "ColorMode", "Color", "Resolution", "AssetHeight", "AssetWidth",
-        "AssetUOM", "MediaDateType", "MediaDate"
+    # 7) Digital_Assets
+    ws = wb.create_sheet("Digital_Assets")
+    asset_cols = [
+        "SKU",
+        "Digital Change Type",
+        "Media Type",
+        "FileName",
+        "FileLocalPath",
     ]
-    sheet.append(media_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("change_type"),
-            p.get("media_type"),
-            p.get("media_file_name"),
-            p.get("media_file_url"),
-            p.get("media_file_format"),
-            p.get("media_color_mode"),
-            p.get("media_color"),
-            p.get("media_resolution"),
-            p.get("media_height"),
-            p.get("media_width"),
-            p.get("media_uom"),
-            p.get("media_date_type"),
-            p.get("media_date"),
+    ws.append(asset_cols)
+    for row in asset_rows:
+        ws.append([
+            row.get("SKU", ""),
+            row.get("Digital Change Type", ""),
+            row.get("Media Type", ""),
+            row.get("FileName", ""),
+            row.get("FileLocalPath", ""),
         ])
 
     # 8) Pricing
-    sheet = wb.create_sheet("Pricing")
+    ws = wb.create_sheet("Pricing")
     price_cols = [
-        "SKU", "VendorCost", "PriceListCost", "EnvironmentalHandlingCost",
-        "Currency", "EffectiveDate", "QuoteCost", "QuoteStart", "QuoteEnd",
-        "QuoteUsage", "TenderCost", "TenderNumber", "TenderStart", "TenderEnd",
-        "PromoPrice", "PromoStart", "PromoEnd", "Core Part Numbers", "Core Cost"
+        "Vendor",
+        "Part Number",
+        "Pricing Method",
+        "Currency",
+        "MOQ Unit",
+        "MOQ",
+        "Pricing Change Type",
+        "Pricing Type",
+        "List Price",
+        "Jobber Price",
+        "Discount %",
+        "Multiplier",
+        "Pricing Amount",
+        "Tier Min Qty",
+        "Tier Max Qty",
+        "Effective Date",
+        "Start Date",
+        "End Date",
+        "Core Part Number",
+        "Core Cost",
+        "Notes",
     ]
-    sheet.append(price_cols)
-    for p in products:
-        sheet.append([
-            p.get("sku"),
-            p.get("price_vendor_cost"),
-            p.get("price_list_cost"),
-            p.get("price_ehc"),
-            p.get("price_currency"),
-            p.get("price_effective_date"),
-            p.get("price_quote_cost"),
-            p.get("price_quote_start"),
-            p.get("price_quote_end"),
-            p.get("price_quote_usage"),
-            p.get("price_tender_cost"),
-            p.get("price_tender_number"),
-            p.get("price_tender_start"),
-            p.get("price_tender_end"),
-            p.get("price_promo_price"),
-            p.get("price_promo_start"),
-            p.get("price_promo_end"),
-            p.get("price_core_part_numbers"),
-            p.get("price_core_cost"),
+    ws.append(price_cols)
+    for row in price_rows:
+        ws.append([
+            row.get("Vendor", ""),
+            row.get("Part Number", ""),
+            row.get("Pricing Method", ""),
+            row.get("Currency", ""),
+            row.get("MOQ Unit", ""),
+            row.get("MOQ", ""),
+            row.get("Pricing Change Type", ""),
+            row.get("Pricing Type", ""),
+            row.get("List Price", ""),
+            row.get("Jobber Price", ""),
+            row.get("Discount %", ""),
+            row.get("Multiplier", ""),
+            row.get("Pricing Amount", ""),
+            row.get("Tier Min Qty", ""),
+            row.get("Tier Max Qty", ""),
+            row.get("Effective Date", ""),
+            row.get("Start Date", ""),
+            row.get("End Date", ""),
+            row.get("Core Part Number", ""),
+            row.get("Core Cost", ""),
+            row.get("Notes", ""),
         ])
 
     wb.save(filepath)
     return filepath
+
 
 
 # def upload_single_product_excel_to_azure(vendor_name, local_path):
@@ -379,148 +410,143 @@ def create_multi_product_excel(vendor_name, products, output_dir):
 #     blob_path = f"raw/{vendor_folder}/manual/{timestamp}_single_product.xlsx"
 #     return upload_blob(local_path, blob_path)
 
-def validate_single_product(form_data):
-    """
-    Validate a single product row from the manual entry form.
-    Returns (is_valid: bool, errors: list[str]).
-    """
+def validate_single_product_new(form: dict) -> tuple[bool, list[str]]:
     errors = []
 
-    vendor_name = form_data.get("vendor_name", "").strip()
-    sku = form_data.get("sku", "").strip()
-    change_type = form_data.get("change_type", "").strip()
+    vendor = form.get("vendor_name", "").strip()
+    sku = form.get("sku", "").strip()
+    unspsc = form.get("unspsc_code", "").strip()
+    hazmat = form.get("hazmat_flag", "").strip()
+    status = form.get("product_status", "").strip()
+    barcode_type = form.get("barcode_type", "").strip()
+    barcode_number = form.get("barcode_number", "").strip()
+    quantity_uom = form.get("quantity_uom", "").strip()
+    quantity_size = form.get("quantity_size", "").strip()
+    vmrs = form.get("vmrs_code", "").strip()
 
-    # --- Basic required fields ---
-    if not vendor_name:
-        errors.append("Vendor Name is required.")
-    elif vendor_name not in VENDOR_LIST:
-        errors.append(f"Vendor '{vendor_name}' is not in the allowed vendor list.")
+    # Required basic
+    if not vendor:
+        errors.append("Vendor is required.")
+    elif vendor not in VENDOR_LIST:
+        errors.append(f"Vendor '{vendor}' is not in the allowed list.")
 
     if not sku:
-        errors.append("Part Number (SKU) is mandatory.")
+        errors.append("Part Number (SKU) is required.")
 
-    if change_type and change_type not in CHANGE_TYPES:
-        errors.append("Change Type must be one of A (Add), M (Modify), or D (Delete).")
+    # UNSPSC
+    if unspsc:
+        if not unspsc.isdigit() or len(unspsc) != 8:
+            errors.append("UNSPSC Code must be exactly 8 numeric digits if provided.")
 
-    # --- Item Master validations ---
-    status = form_data.get("item_status", "").strip()
-    if status and status not in LIFECYCLE_STATUS:
-        errors.append("Status must be one of: Active, Inactive, Obsolete.")
-
-    hazmat = form_data.get("item_hazmat_flag", "").strip()
-    if hazmat and hazmat not in HAZMAT_OPTIONS:
+    # Hazmat
+    if hazmat and hazmat not in ["Y", "N"]:
         errors.append("Hazardous Material must be Y or N.")
 
-    app_flag = form_data.get("item_application_flag", "").strip()
-    if app_flag and app_flag not in APPLICATION_FLAG:
-        errors.append("Has Applications / Fitments must be Y or N.")
+    # Status
+    if status and status not in PRODUCT_STATUS:
+        errors.append("Product Status must be one of: " + ", ".join(PRODUCT_STATUS))
 
-    qty_uom = form_data.get("item_quantity_uom", "").strip()
-    if qty_uom and qty_uom not in QUANTITY_UOM:
-        errors.append("Quantity Unit must be one of the standard values (EA, PC, BOX, etc.).")
+    # Barcode
+    if barcode_number:
+        if not barcode_number.isdigit():
+            errors.append("Barcode Number must be numeric.")
+        else:
+            if barcode_type == "UPC" and len(barcode_number) != 12:
+                errors.append("UPC Barcode must be exactly 12 digits.")
+            elif barcode_type == "EAN" and len(barcode_number) != 14:
+                errors.append("EAN Barcode must be exactly 14 digits.")
+            elif not barcode_type and len(barcode_number) not in (12, 14):
+                errors.append("Barcode must be 12-digit UPC or 14-digit EAN.")
 
-    packaging_type = form_data.get("item_packaging_type", "").strip()
-    if packaging_type and packaging_type not in PACKAGING_TYPES:
-        errors.append("Packaging Type must be a standard packaging type (BOX, CASE, PALLET, etc.).")
-
-    weight_uom = form_data.get("item_weight_uom", "").strip()
-    if weight_uom and weight_uom not in WEIGHT_UOM:
-        errors.append("Weight Unit must be one of: LB, KG, G, OZ.")
-
-    gtin_type = form_data.get("item_gtin_type", "").strip()
-    gtin = form_data.get("item_gtin", "").strip()
-
-    if gtin_type and gtin_type not in GTIN_TYPES:
+    if barcode_type and barcode_type not in ["UPC", "EAN"]:
         errors.append("Barcode Type must be UPC or EAN.")
 
-    if gtin:
-        if not gtin.isdigit():
-            errors.append("Barcode Number (GTIN) must contain only digits.")
-        elif gtin_type == "UPC" and len(gtin) != 12:
-            errors.append("UPC must be exactly 12 digits.")
-        elif gtin_type == "EAN" and len(gtin) != 14:
-            errors.append("EAN must be exactly 14 digits.")
-        elif not gtin_type and len(gtin) not in (12, 14):
-            errors.append("GTIN must be 12-digit UPC or 14-digit EAN.")
+    # Quantity / UOM
+    if quantity_uom and quantity_uom not in QUANTITY_UOM:
+        errors.append("Quantity Size Unit must be one of: " + ", ".join(QUANTITY_UOM))
 
-    # --- Descriptions ---
-    desc_type = form_data.get("desc_type", "").strip()
-    if desc_type and desc_type not in DESCRIPTION_TYPES:
-        errors.append("Description Type must be one of: Short, Long, Marketing, Web, Extended, Technical.")
+    if quantity_size:
+        try:
+            float(quantity_size)
+        except ValueError:
+            errors.append("Quantity Size must be numeric.")
 
-    desc_language = form_data.get("desc_language", "").strip()
-    if desc_language and desc_language not in LANGUAGES:
-        errors.append("Description Language must be a valid language code (EN, FR, ES).")
+    # --- Descriptions: check lengths for DES/SHO ---
+    desc_codes = form.getlist("desc_code[]")
+    desc_values = form.getlist("desc_value[]")
 
-    # --- Attributes ---
-    attr_is_primary = form_data.get("attr_is_primary", "").strip()
-    if attr_is_primary and attr_is_primary not in ("Y", "N"):
-        errors.append("Is Primary Attribute must be Y or N.")
+    for code, value in zip(desc_codes, desc_values):
+        code = (code or "").strip()
+        value = (value or "").strip()
+        if code in ("DES", "SHO") and value and len(value) > 40:
+            errors.append(f"Description with code {code} must be <= 40 characters.")
 
-    attr_language = form_data.get("attr_language", "").strip()
-    if attr_language and attr_language not in LANGUAGES:
-        errors.append("Attribute Language must be a valid language code (EN, FR, ES).")
+    # --- Pricing method ---
+    pricing_method = form.get("pricing_method", "").strip()
+    if not pricing_method:
+        errors.append("Pricing Method is required.")
+    elif pricing_method not in PRICING_METHODS.keys():
+        errors.append("Invalid Pricing Method selected.")
 
-    # --- Alternate Parts ---
-    alt_uom = form_data.get("alt_uom", "").strip()
-    if alt_uom and alt_uom not in ALT_UOM:
-        errors.append("Alternate Unit of Measure must be a standard UOM (EA, PC, SET, BOX).")
+    # MOQ
+    moq_uom = form.get("moq_uom", "").strip()
+    moq_qty = form.get("moq_quantity", "").strip()
+    if moq_uom and moq_uom not in QUANTITY_UOM:
+        errors.append("Minimum Order Quantity Unit must be valid (EA, CS, PL, etc.).")
 
-    # --- Packaging ---
-    pack_uom = form_data.get("pack_uom", "").strip()
-    if pack_uom and pack_uom not in PACKAGING_TYPES:
-        errors.append("Packaging Unit must be a standard packaging type (BOX, CASE, PALLET, etc.).")
+    if moq_qty:
+        try:
+            float(moq_qty)
+        except ValueError:
+            errors.append("Minimum Order Quantity must be numeric.")
 
-    pack_dim_uom = form_data.get("pack_dim_uom", "").strip()
-    if pack_dim_uom and pack_dim_uom not in DIMENSION_UOM:
-        errors.append("Dimension Unit must be one of: IN, CM, MM.")
+    # Price lines
+    price_types = form.getlist("price_type[]")
+    price_amounts = form.getlist("price_amount[]")
+    price_currencies = form.getlist("price_currency[]")
+    price_effective_dates = form.getlist("price_effective_date[]")
 
-    pack_weight_uom = form_data.get("pack_weight_uom", "").strip()
-    if pack_weight_uom and pack_weight_uom not in WEIGHT_UOM:
-        errors.append("Package Weight UOM must be one of: LB, KG, G, OZ.")
+    base_price_exists = False
+    for idx, (ptype, amt, cur, eff) in enumerate(
+        zip(price_types, price_amounts, price_currencies, price_effective_dates)
+    ):
+        ptype = (ptype or "").strip()
+        amt = (amt or "").strip()
+        cur = (cur or "").strip()
+        eff = (eff or "").strip()
 
-    pack_gtin_type = form_data.get("pack_gtin_type", "").strip()
-    if pack_gtin_type and pack_gtin_type not in GTIN_TYPES:
-        errors.append("Package Barcode Type must be UPC or EAN.")
+        row_label = f"Price line {idx+1}"
 
-    # --- Media Assets ---
-    media_type = form_data.get("media_type", "").strip()
-    if media_type and media_type not in MEDIA_TYPES:
-        errors.append("Media Type must be a valid value (MainImage, PDF, SpecSheet, etc.).")
+        if not ptype and not amt and not cur and not eff:
+            # completely blank line - ignore
+            continue
 
-    media_file_format = form_data.get("media_file_format", "").strip()
-    if media_file_format and media_file_format not in FILE_FORMATS:
-        errors.append("File Format must be one of: JPEG, PNG, GIF, PDF, WEBP.")
+        if not ptype:
+            errors.append(f"{row_label}: Pricing Type is required if any pricing values are entered.")
+        else:
+            if ptype not in ["Base", "Bulk", "Case", "Pallet", "Promo", "Tender", "Quote", "Core", "EHC"]:
+                errors.append(f"{row_label}: Invalid Pricing Type.")
+            if ptype == "Base":
+                base_price_exists = True
 
-    media_color_mode = form_data.get("media_color_mode", "").strip()
-    if media_color_mode and media_color_mode not in COLOR_MODES:
-        errors.append("Color Mode must be RGB or CMYK.")
+        if not cur:
+            errors.append(f"{row_label}: Pricing Currency is required.")
+        elif cur not in ["CAD", "USD"]:
+          errors.append(f"{row_label}: Currency must be CAD or USD.")
 
-    media_uom = form_data.get("media_uom", "").strip()
-    if media_uom and media_uom not in ("PX", "IN"):
-        errors.append("Media Dimension Unit must be PX or IN.")
-
-    media_date_type = form_data.get("media_date_type", "").strip()
-    if media_date_type and media_date_type not in MEDIA_DATE_TYPES:
-        errors.append("Media Date Type must be Created or Updated.")
-
-    # --- Pricing ---
-    currency = form_data.get("price_currency", "").strip()
-    if currency and currency not in CURRENCIES:
-        errors.append("Currency must be CAD or USD.")
-
-    # Numeric sanity checks (optional, light)
-    for field in ["item_weight", "pack_weight", "media_height", "media_width",
-                  "pack_height", "pack_width", "pack_length",
-                  "price_vendor_cost", "price_list_cost", "price_ehc",
-                  "price_quote_cost", "price_tender_cost",
-                  "price_promo_price", "price_core_cost"]:
-        val = form_data.get(field, "").strip()
-        if val:
+        if not amt:
+            errors.append(f"{row_label}: Pricing Amount is required.")
+        else:
             try:
-                float(val)
+                float(amt)
             except ValueError:
-                errors.append(f"{field} must be numeric if provided.")
+                errors.append(f"{row_label}: Pricing Amount must be numeric.")
+
+        if not eff:
+            errors.append(f"{row_label}: Effective Date is required.")
+
+    if not base_price_exists:
+        errors.append("At least one Base Price row is required in Price Lines.")
 
     return (len(errors) == 0, errors)
 
@@ -542,6 +568,8 @@ CHANGE_TYPES = ["A", "M", "D"]  # Add, Modify, Delete
 
 QUANTITY_UOM = ["EA", "PC", "BOX", "CS", "PK", "SET", "RL", "BG", "BT", "DZ"]
 PACKAGING_TYPES = ["BOX", "CASE", "PALLET", "BAG", "BOTTLE", "CAN", "CARTON", "WRAP", "PACK", "CRATE", "TUBE"]
+PACKAGE_UOM = ["EA", "BX", "CS", "PL"]
+
 
 WEIGHT_UOM = ["LB", "KG", "G", "OZ"]
 DIMENSION_UOM = ["IN", "CM", "MM"]
@@ -565,6 +593,17 @@ CURRENCIES = ["CAD", "USD"]
 
 ALT_UOM = ["EA", "PC", "SET", "BOX"]
 
+PRICING_METHODS = {
+    "net_cost": "Net Cost Provided",
+    "list_plus_discount": "List Price + Discount",
+    "jobber_plus_discount": "Jobber Price + Discount",
+    "list_only": "List Price Only",
+    "jobber_only": "Jobber Price Only"
+}
+
+PRODUCT_STATUS = ["Active", "Inactive", "Obsolete"]
+
+
 
 # ---------------------------------------
 # ROUTES
@@ -585,9 +624,9 @@ def upload_files():
     vendor_name = request.form.get('vendor_name')
     zip_path = request.form.get('zip_path')
 
-    if vendor_name not in OPTICAT_VENDORS:
-        flash('Only OptiCat vendors are supported in Phase 1.', 'danger')
-        return redirect(url_for('upload_page'))
+    # if vendor_name not in OPTICAT_VENDORS:
+    #     flash('Only OptiCat vendors are supported in Phase 1.', 'danger')
+    #     return redirect(url_for('upload_page'))
 
     product_file = request.files.get('product_file')
     pricing_file = request.files.get('pricing_file')
@@ -626,95 +665,312 @@ def form_submission_help():
 def single_product_page():
     pending = session.get('pending_products', [])
     vendor_prefill = session.get('single_vendor_name', "")
-    change_prefill = session.get('single_change_type', "")
     latest_excel = session.get('latest_single_products_excel_path', None)
 
     return render_template(
         'single_product.html',
+        VENDOR_LIST=VENDOR_LIST,
+        PRODUCT_STATUS=PRODUCT_STATUS,
+        QUANTITY_UOM=QUANTITY_UOM,
+        PACKAGE_UOM=PACKAGE_UOM,
+        WEIGHT_UOM=WEIGHT_UOM,
+        PRICING_METHODS=PRICING_METHODS,
         pending_products=pending,
         vendor_prefill=vendor_prefill,
-        change_prefill=change_prefill,
-        latest_excel_available=bool(latest_excel),
-        VENDOR_LIST=VENDOR_LIST,
-        CHANGE_TYPES=CHANGE_TYPES,
-        QUANTITY_UOM=QUANTITY_UOM,
-        PACKAGING_TYPES=PACKAGING_TYPES,
-        WEIGHT_UOM=WEIGHT_UOM,
-        DIMENSION_UOM=DIMENSION_UOM,
-        LIFECYCLE_STATUS=LIFECYCLE_STATUS,
-        HAZMAT_OPTIONS=HAZMAT_OPTIONS,
-        APPLICATION_FLAG=APPLICATION_FLAG,
-        GTIN_TYPES=GTIN_TYPES,
-        DESCRIPTION_TYPES=DESCRIPTION_TYPES,
-        LANGUAGES=LANGUAGES,
-        MEDIA_TYPES=MEDIA_TYPES,
-        FILE_FORMATS=FILE_FORMATS,
-        COLOR_MODES=COLOR_MODES,
-        MEDIA_DATE_TYPES=MEDIA_DATE_TYPES,
-        CURRENCIES=CURRENCIES,
-        ALT_UOM=ALT_UOM
+        latest_excel_available=bool(latest_excel)
     )
 
+
+@app.route('/single-product', methods=['POST'])
 @app.route('/single-product', methods=['POST'])
 def submit_single_product():
     action = request.form.get("action")
-    form_data = dict(request.form)
-    form_data.pop("action", None)
+    ok, errors = validate_single_product_new(request.form)
 
-    vendor_name = form_data.get("vendor_name", "").strip()
-    sku = form_data.get("sku", "").strip()
-    change_type = form_data.get("change_type", "").strip()
+    vendor_name = request.form.get("vendor_name", "").strip()
+    sku = request.form.get("sku", "").strip()
+    product_status = request.form.get("product_status", "").strip()
+    pricing_method_key = request.form.get("pricing_method", "").strip()
 
-    # Keep vendor & change type for pre-fill
     session['single_vendor_name'] = vendor_name
-    session['single_change_type'] = change_type
 
-    # Validate current product
-    ok, errors = validate_single_product(form_data)
     if not ok:
         for e in errors:
             flash(e, "danger")
         return redirect(url_for('single_product_page'))
 
-    # Get existing pending list
-    pending = session.get('pending_products', [])
+    # --------- Pull / init batch lists from session ----------
+    item_rows = session.get("batch_item_rows", [])
+    desc_rows = session.get("batch_desc_rows", [])
+    ext_rows = session.get("batch_ext_rows", [])
+    attr_rows = session.get("batch_attr_rows", [])
+    interchange_rows = session.get("batch_interchange_rows", [])
+    package_rows = session.get("batch_package_rows", [])
+    asset_rows = session.get("batch_asset_rows", [])
+    price_rows = session.get("batch_price_rows", [])
+    pending = session.get("pending_products", [])
 
+    # --------- SECTION 1: Item Master row ----------
+    unspsc = request.form.get("unspsc_code", "").strip()
+    hazmat = request.form.get("hazmat_flag", "").strip()
+    barcode_type = request.form.get("barcode_type", "").strip()
+    barcode_number = request.form.get("barcode_number", "").strip()
+    quantity_uom = request.form.get("quantity_uom", "").strip()
+    quantity_size = request.form.get("quantity_size", "").strip()
+    vmrs = request.form.get("vmrs_code", "").strip()
+
+    item_rows.append({
+        "Vendor": vendor_name,
+        "Part Number": sku,
+        "UNSPSC": unspsc,
+        "HazmatFlag": hazmat,
+        "Product Status": product_status,
+        "Barcode Type": barcode_type,
+        "Barcode Number": barcode_number,
+        "Quantity UOM": quantity_uom,
+        "Quantity Size": quantity_size,
+        "VMRS Code": vmrs,
+    })
+
+    # --------- SECTION 2: Descriptions (1:M) ----------
+    desc_change_types = request.form.getlist("desc_change_type[]")
+    desc_codes = request.form.getlist("desc_code[]")
+    desc_values = request.form.getlist("desc_value[]")
+    desc_sequences = request.form.getlist("desc_sequence[]")
+
+    for ct, code, val, seq in zip(desc_change_types, desc_codes, desc_values, desc_sequences):
+        if not (ct or code or val or seq):
+            continue
+        desc_rows.append({
+            "SKU": sku,
+            "Description Change Type": ct.strip(),
+            "Description Code": code.strip(),
+            "Description Value": val.strip(),
+            "Sequence": seq.strip(),
+        })
+
+    # --------- SECTION 3: Extended Info (1:M) ----------
+    ext_change_types = request.form.getlist("ext_change_type[]")
+    ext_codes = request.form.getlist("ext_code[]")
+    ext_values = request.form.getlist("ext_value[]")
+
+    for ct, code, val in zip(ext_change_types, ext_codes, ext_values):
+        if not (ct or code or val):
+            continue
+        ext_rows.append({
+            "SKU": sku,
+            "Extended Info Change Type": ct.strip(),
+            "Extended Info Code": code.strip(),
+            "Extended Info Value": val.strip(),
+        })
+
+    # --------- SECTION 4: Attributes (1:M) ----------
+    attr_change_types = request.form.getlist("attr_change_type[]")
+    attr_names = request.form.getlist("attr_name[]")
+    attr_values = request.form.getlist("attr_value[]")
+
+    for ct, name, val in zip(attr_change_types, attr_names, attr_values):
+        if not (ct or name or val):
+            continue
+        attr_rows.append({
+            "SKU": sku,
+            "Attribute Change Type": ct.strip(),
+            "Attribute Name": name.strip(),
+            "Attribute Value": val.strip(),
+        })
+
+    # --------- SECTION 5: Part Interchange (1:M) ----------
+    # NOTE: Your HTML needs inputs:
+    #   int_change_type[]
+    #   int_brand_label[]
+    #   int_part_number[]
+    int_change_types = request.form.getlist("int_change_type[]")
+    int_brand_labels = request.form.getlist("int_brand_label[]")
+    int_part_numbers = request.form.getlist("int_part_number[]")
+
+    for ct, brand, part in zip(int_change_types, int_brand_labels, int_part_numbers):
+        if not (ct or brand or part):
+            continue
+        interchange_rows.append({
+            "SKU": sku,
+            "Part Interchange Change Type": ct.strip(),
+            "Brand Label": brand.strip(),
+            "Part Number": part.strip(),
+        })
+
+    # --------- SECTION 6: Packages (1:M) ----------
+    pack_change_types = request.form.getlist("pack_change_type[]")
+    pack_uoms = request.form.getlist("pack_uom[]")
+    pack_qty_each = request.form.getlist("pack_qty_each[]")
+    pack_weight_uoms = request.form.getlist("pack_weight_uom[]")
+    pack_weights = request.form.getlist("pack_weight[]")
+
+    for ct, uom, qty, wuom, wt in zip(
+        pack_change_types, pack_uoms, pack_qty_each, pack_weight_uoms, pack_weights
+    ):
+        if not (ct or uom or qty or wuom or wt):
+            continue
+        package_rows.append({
+            "SKU": sku,
+            "Package Change Type": ct.strip(),
+            "Package UOM": uom.strip(),
+            "Package Quantity of Eaches": qty.strip(),
+            "Weight UOM": wuom.strip(),
+            "Weight": wt.strip(),
+        })
+
+    # --------- SECTION 7: Digital Assets (1:M) ----------
+    asset_change_types = request.form.getlist("asset_change_type[]")
+    asset_media_types = request.form.getlist("asset_media_type[]")
+    asset_files = request.files.getlist("asset_file[]")
+
+    # Save files to uploads/manual_assets/vendor/sku/
+    asset_base_dir = os.path.join(app.config['UPLOAD_FOLDER'], "manual_assets", vendor_name, sku)
+    os.makedirs(asset_base_dir, exist_ok=True)
+
+    for ct, mtype, file in zip(asset_change_types, asset_media_types, asset_files):
+        filename = file.filename if file else ""
+        if not (ct or mtype or filename):
+            continue
+        safe_name = secure_filename(filename)
+        local_path = os.path.join(asset_base_dir, safe_name)
+        if filename:
+            file.save(local_path)
+        asset_rows.append({
+            "SKU": sku,
+            "Digital Change Type": ct.strip(),
+            "Media Type": mtype.strip(),
+            "FileName": safe_name,
+            "FileLocalPath": local_path,
+        })
+
+    # --------- SECTION 8: Pricing (1:M) ----------
+    pricing_method_label = PRICING_METHODS.get(pricing_method_key, "")
+    moq_uom = request.form.get("moq_uom", "").strip()
+    moq_qty = request.form.get("moq_quantity", "").strip()
+
+    price_change_types = request.form.getlist("price_change_type[]")
+    price_types = request.form.getlist("price_type[]")
+    price_currencies = request.form.getlist("price_currency[]")
+    price_amounts = request.form.getlist("price_amount[]")
+    price_min_qtys = request.form.getlist("price_min_qty[]")
+    price_max_qtys = request.form.getlist("price_max_qty[]")
+    price_effective_dates = request.form.getlist("price_effective_date[]")
+    price_start_dates = request.form.getlist("price_start_date[]")
+    price_end_dates = request.form.getlist("price_end_date[]")
+    price_core_parts = request.form.getlist("price_core_part[]")
+    price_core_costs = request.form.getlist("price_core_cost[]")
+
+    # NEW: optional list/jobber/discount/multiplier/notes fields
+    price_list_prices = request.form.getlist("price_list_price[]")
+    price_jobber_prices = request.form.getlist("price_jobber_price[]")
+    price_discounts = request.form.getlist("price_discount[]")
+    price_multipliers = request.form.getlist("price_multiplier[]")
+    price_notes = request.form.getlist("price_notes[]")
+
+    for ct, ptype, cur, amt, lpr, jpr, disc, mult, minq, maxq, eff, st, en, cpart, ccost, note in zip(
+        price_change_types,
+        price_types,
+        price_currencies,
+        price_amounts,
+        price_list_prices,
+        price_jobber_prices,
+        price_discounts,
+        price_multipliers,
+        price_min_qtys,
+        price_max_qtys,
+        price_effective_dates,
+        price_start_dates,
+        price_end_dates,
+        price_core_parts,
+        price_core_costs,
+        price_notes,
+    ):
+        if not (ptype or cur or amt or eff or lpr or jpr or disc or mult):
+            # completely blank row, skip
+            continue
+
+        price_rows.append({
+            "Vendor": vendor_name,
+            "Part Number": sku,
+            "Pricing Method": pricing_method_label,
+            "Currency": cur.strip(),
+            "MOQ Unit": moq_uom,
+            "MOQ": moq_qty,
+            "Pricing Change Type": ct.strip(),
+            "Pricing Type": ptype.strip(),
+            "List Price": lpr.strip(),
+            "Jobber Price": jpr.strip(),
+            "Discount %": disc.strip(),
+            "Multiplier": mult.strip(),
+            "Pricing Amount": amt.strip(),
+            "Tier Min Qty": minq.strip(),
+            "Tier Max Qty": maxq.strip(),
+            "Effective Date": eff.strip(),
+            "Start Date": st.strip(),
+            "End Date": en.strip(),
+            "Core Part Number": cpart.strip(),
+            "Core Cost": ccost.strip(),
+            "Notes": note.strip(),
+        })
+
+    # --------- Update pending products summary (for UI table) ----------
+    pending.append({
+        "sku": sku,
+        "vendor_name": vendor_name,
+        "product_status": product_status,
+        "pricing_method": pricing_method_label,
+    })
+
+    # --------- Save back to session ----------
+    session['batch_item_rows'] = item_rows
+    session['batch_desc_rows'] = desc_rows
+    session['batch_ext_rows'] = ext_rows
+    session['batch_attr_rows'] = attr_rows
+    session['batch_interchange_rows'] = interchange_rows
+    session['batch_package_rows'] = package_rows
+    session['batch_asset_rows'] = asset_rows
+    session['batch_price_rows'] = price_rows
+    session['pending_products'] = pending
+
+    # --------- Handle action: Add vs Generate ----------
     if action == "add":
-        # Only add to in-memory batch, don't save file or upload
-        pending.append(form_data)
-        session['pending_products'] = pending
-        flash(f"Product {sku} added. You can add another or click Generate Excel.", "success")
+        flash(f"Product {sku} added to batch. You can add more or Generate Excel.", "success")
         return redirect(url_for('single_product_page'))
 
     if action == "generate":
-        # Include current product in batch as well
-        pending.append(form_data)
-        session['pending_products'] = pending
-
-        if not pending:
-            flash("No products available to generate Excel.", "warning")
-            return redirect(url_for('single_product_page'))
-
-        # Create Excel file
-        output_dir = os.path.join(app.config['UPLOAD_FOLDER'], vendor_name, "single_product_batch")
-        excel_path = create_multi_product_excel(vendor_name, pending, output_dir)
-
-        # Upload to Azure Bronze
-        # try:
-        #     upload_single_products_excel_to_azure(vendor_name, excel_path)
-        #     flash(f"Excel for {len(pending)} products uploaded to Azure Bronze.", "success")
-        # except Exception as e:
-        #     flash(f"Excel saved locally but Azure upload failed: {e}", "danger")
-
-        # Store last path for download
+        output_dir = os.path.join(app.config['UPLOAD_FOLDER'], "single_product_batches")
+        excel_path = create_multi_product_excel(
+            item_rows,
+            desc_rows,
+            ext_rows,
+            attr_rows,
+            interchange_rows,
+            package_rows,
+            asset_rows,
+            price_rows,
+            output_dir,
+        )
         session['latest_single_products_excel_path'] = excel_path
 
-        # Clear batch
+        # Clear batch after generation
+        session['batch_item_rows'] = []
+        session['batch_desc_rows'] = []
+        session['batch_ext_rows'] = []
+        session['batch_attr_rows'] = []
+        session['batch_interchange_rows'] = []
+        session['batch_package_rows'] = []
+        session['batch_asset_rows'] = []
+        session['batch_price_rows'] = []
         session['pending_products'] = []
 
+        flash(f"Excel generated for {vendor_name}. You can download it below.", "success")
         return redirect(url_for('single_product_page'))
 
+    # Fallback
     return redirect(url_for('single_product_page'))
+
+
 
 
 @app.route('/download-single-products-excel')

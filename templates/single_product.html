@@ -13,6 +13,8 @@
     .btn-primary { background-color: #C8102E; border: none; }
     .btn-primary:hover { background-color: #a00d25; }
     .form-label { font-weight: 500; }
+    .section-heading { font-weight: 600; font-size: 1.05rem; }
+    .small-help { font-size: 0.8rem; color: #777; }
   </style>
 </head>
 <body>
@@ -23,10 +25,10 @@
     <div class="text-center mb-4">
       <img src="{{ url_for('static', filename='fgi_logo.png') }}" alt="FGI Logo" height="40" class="mb-2">
       <h3 class="fw-bold">Single Product Submission</h3>
-      <p class="text-muted mb-0">Enter product details using FGI’s standardized structure</p>
+      <p class="text-muted mb-0">FGI Standardized Structure – Item, Descriptions, Attributes, Packages, Assets, Pricing</p>
     </div>
 
-    <!-- Flash messages -->
+    <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -38,44 +40,17 @@
       {% endif %}
     {% endwith %}
 
-    <form method="POST" action="{{ url_for('submit_single_product') }}">
+    <form method="POST"
+          action="{{ url_for('submit_single_product') }}"
+          enctype="multipart/form-data">
 
-      <!-- Core info -->
-      <div class="row">
-        <div class="col-md-6 mb-3">
-          <label class="form-label">Vendor</label>
-          <select class="form-select" name="vendor_name" required>
-            <option value="">-- Select Vendor --</option>
-            {% for v in VENDOR_LIST %}
-              <option value="{{ v }}" {% if v == vendor_prefill %}selected{% endif %}>{{ v }}</option>
-            {% endfor %}
-          </select>
-        </div>
+      <!-- SECTION 1 – ITEM MASTER -->
+      <div class="accordion mb-3" id="singleProductAccordion">
 
-        <div class="col-md-3 mb-3">
-          <label class="form-label">Part Number (SKU) *</label>
-          <input type="text" class="form-control" name="sku" required>
-        </div>
-
-        <div class="col-md-3 mb-3">
-          <label class="form-label">Change Type</label>
-          <select class="form-select" name="change_type">
-            <option value="">-- Select --</option>
-            {% for c in CHANGE_TYPES %}
-              <option value="{{ c }}" {% if c == change_prefill %}selected{% endif %}>{{ c }}</option>
-            {% endfor %}
-          </select>
-          <small class="text-muted">A = Add, M = Modify, D = Delete</small>
-        </div>
-      </div>
-
-      <div class="accordion" id="singleProductAccordion">
-
-        <!-- Item Master -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingItemMaster">
             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseItemMaster">
-              Item Master
+              SECTION 1 – Item Master
             </button>
           </h2>
           <div id="collapseItemMaster" class="accordion-collapse collapse show" data-bs-parent="#singleProductAccordion">
@@ -83,34 +58,43 @@
 
               <div class="row">
                 <div class="col-md-6 mb-3">
-                  <label class="form-label">Brand Code (if applicable)</label>
-                  <input type="text" class="form-control" name="item_brand_code">
+                  <label class="form-label">Vendor</label>
+                  <select class="form-select" name="vendor_name" required>
+                    <option value="">-- Select Vendor --</option>
+                    {% for v in VENDOR_LIST %}
+                      <option value="{{ v }}" {% if v == vendor_prefill %}selected{% endif %}>{{ v }}</option>
+                    {% endfor %}
+                  </select>
                 </div>
                 <div class="col-md-6 mb-3">
-                  <label class="form-label">Brand Name</label>
-                  <input type="text" class="form-control" name="item_brand_name">
+                  <label class="form-label">Part Number (SKU) *</label>
+                  <input type="text" class="form-control" name="sku" required>
                 </div>
               </div>
 
               <div class="row">
                 <div class="col-md-4 mb-3">
-                  <label class="form-label">UNSPSC Code (optional)</label>
-                  <input type="text" class="form-control" name="item_unspsc" maxlength="8">
+                  <label class="form-label">UNSPSC Code</label>
+                  <input type="text"
+                         class="form-control"
+                         name="unspsc_code"
+                         maxlength="8"
+                         placeholder="8 digits">
+                  <div class="small-help">Must be 8 digits if provided.</div>
                 </div>
                 <div class="col-md-4 mb-3">
-                  <label class="form-label">Hazardous Material (Y/N)</label>
-                  <select class="form-select" name="item_hazmat_flag">
+                  <label class="form-label">Hazardous Material</label>
+                  <select class="form-select" name="hazmat_flag">
                     <option value="">-- Select --</option>
-                    {% for h in HAZMAT_OPTIONS %}
-                      <option value="{{ h }}">{{ h }}</option>
-                    {% endfor %}
+                    <option value="Y">Y</option>
+                    <option value="N">N</option>
                   </select>
                 </div>
                 <div class="col-md-4 mb-3">
                   <label class="form-label">Product Status</label>
-                  <select class="form-select" name="item_status">
+                  <select class="form-select" name="product_status">
                     <option value="">-- Select --</option>
-                    {% for s in LIFECYCLE_STATUS %}
+                    {% for s in PRODUCT_STATUS %}
                       <option value="{{ s }}">{{ s }}</option>
                     {% endfor %}
                   </select>
@@ -120,66 +104,41 @@
               <div class="row">
                 <div class="col-md-4 mb-3">
                   <label class="form-label">Barcode Type</label>
-                  <select class="form-select" name="item_gtin_type">
+                  <select class="form-select" name="barcode_type" id="barcode_type">
                     <option value="">-- Select --</option>
-                    {% for g in GTIN_TYPES %}
-                      <option value="{{ g }}">{{ g }}</option>
-                    {% endfor %}
+                    <option value="UPC">UPC</option>
+                    <option value="EAN">EAN</option>
                   </select>
                 </div>
                 <div class="col-md-4 mb-3">
-                  <label class="form-label">Barcode Number (UPC/EAN)</label>
-                  <input type="text" class="form-control" name="item_gtin" maxlength="14">
+                  <label class="form-label">Barcode Number</label>
+                  <input type="text"
+                         class="form-control"
+                         name="barcode_number"
+                         id="barcode_number"
+                         maxlength="14"
+                         placeholder="UPC 12 digits / EAN 14 digits">
                 </div>
                 <div class="col-md-4 mb-3">
-                  <label class="form-label">Has Applications / Fitments</label>
-                  <select class="form-select" name="item_application_flag">
-                    <option value="">-- Select --</option>
-                    {% for a in APPLICATION_FLAG %}
-                      <option value="{{ a }}">{{ a }}</option>
-                    {% endfor %}
-                  </select>
+                  <label class="form-label">VMRS Code</label>
+                  <input type="text" class="form-control" name="vmrs_code">
                 </div>
               </div>
 
               <div class="row">
                 <div class="col-md-4 mb-3">
-                  <label class="form-label">Quantity Size</label>
-                  <input type="text" class="form-control" name="item_quantity_size">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Quantity Unit</label>
-                  <select class="form-select" name="item_quantity_uom">
+                  <label class="form-label">Quantity Size Unit</label>
+                  <select class="form-select" name="quantity_uom">
                     <option value="">-- Select --</option>
                     {% for u in QUANTITY_UOM %}
                       <option value="{{ u }}">{{ u }}</option>
                     {% endfor %}
                   </select>
+                  <div class="small-help">e.g., EA, CS, PL</div>
                 </div>
                 <div class="col-md-4 mb-3">
-                  <label class="form-label">Packaging Type</label>
-                  <select class="form-select" name="item_packaging_type">
-                    <option value="">-- Select --</option>
-                    {% for p in PACKAGING_TYPES %}
-                      <option value="{{ p }}">{{ p }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Weight</label>
-                  <input type="text" class="form-control" name="item_weight">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Weight Unit</label>
-                  <select class="form-select" name="item_weight_uom">
-                    <option value="">-- Select --</option>
-                    {% for w in WEIGHT_UOM %}
-                      <option value="{{ w }}">{{ w }}</option>
-                    {% endfor %}
-                  </select>
+                  <label class="form-label">Quantity Size</label>
+                  <input type="text" class="form-control" name="quantity_size">
                 </div>
               </div>
 
@@ -187,435 +146,181 @@
           </div>
         </div>
 
-        <!-- Descriptions -->
+        <!-- SECTION 2 – DESCRIPTIONS (1:M) -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingDescriptions">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDescriptions">
-              Descriptions
+              SECTION 2 – Descriptions (1:M)
             </button>
           </h2>
           <div id="collapseDescriptions" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Description Type</label>
-                  <select class="form-select" name="desc_type">
-                    <option value="">-- Select --</option>
-                    {% for d in DESCRIPTION_TYPES %}
-                      <option value="{{ d }}">{{ d }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Sequence</label>
-                  <input type="text" class="form-control" name="desc_sequence">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Language</label>
-                  <select class="form-select" name="desc_language">
-                    <option value="">-- Select --</option>
-                    {% for lang in LANGUAGES %}
-                      <option value="{{ lang }}">{{ lang }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
+              <div id="descriptionsContainer"></div>
+              <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addDescriptionBtn">
+                + Add Description
+              </button>
+              <div class="small-help mt-1">
+                DES / SHO descriptions should be less than 40 characters.
               </div>
-
-              <div class="mb-3">
-                <label class="form-label">Description</label>
-                <textarea class="form-control" name="desc_text" rows="2"></textarea>
-              </div>
-
             </div>
           </div>
         </div>
 
-        <!-- Attributes -->
+        <!-- SECTION 3 – EXTENDED INFO (1:M) -->
+        <div class="accordion-item">
+          <h2 class="accordion-header" id="headingExtendedInfo">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseExtendedInfo">
+              SECTION 3 – Extended Product Info (1:M)
+            </button>
+          </h2>
+          <div id="collapseExtendedInfo" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
+            <div class="accordion-body">
+              <p class="small-help mb-2">
+                Codes such as COO, HSB, LIF, LIS, MSR, NPC, PLC, PLM, TAX.
+              </p>
+              <div id="extendedInfoContainer"></div>
+              <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addExtendedInfoBtn">
+                + Add Extended Info
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 4 – ATTRIBUTES (1:M) -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingAttributes">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAttributes">
-              Attributes
+              SECTION 4 – Attributes (1:M)
             </button>
           </h2>
           <div id="collapseAttributes" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Attribute Name (e.g., Height, Material)</label>
-                  <input type="text" class="form-control" name="attr_feature_name">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Is Primary Attribute (Y/N)</label>
-                  <select class="form-select" name="attr_is_primary">
-                    <option value="">-- Select --</option>
-                    <option value="Y">Y</option>
-                    <option value="N">N</option>
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Attribute Value</label>
-                  <input type="text" class="form-control" name="attr_feature_value">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Unit of Measure (optional)</label>
-                  <input type="text" class="form-control" name="attr_uom">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Attribute Order</label>
-                  <input type="text" class="form-control" name="attr_order">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Language</label>
-                  <select class="form-select" name="attr_language">
-                    <option value="">-- Select --</option>
-                    {% for lang in LANGUAGES %}
-                      <option value="{{ lang }}">{{ lang }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-              </div>
-
+              <p class="small-help mb-2">
+                Attribute examples: Height, Width, Material, Bolt Size, etc.
+              </p>
+              <div id="attributesContainer"></div>
+              <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addAttributeBtn">
+                + Add Attribute
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Alternate Parts -->
+                  <!-- SECTION 5 – PART INTERCHANGE (1:M) -->
         <div class="accordion-item">
-          <h2 class="accordion-header" id="headingAlternateParts">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAlternateParts">
-              Alternate Parts
+          <h2 class="accordion-header" id="headingInterchange">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInterchange">
+              SECTION 5 – Part Interchange Info (1:M)
             </button>
           </h2>
-          <div id="collapseAlternateParts" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
+
+          <div id="collapseInterchange" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
 
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Alternate Brand Code</label>
-                  <input type="text" class="form-control" name="alt_brand_code">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Alternate Brand Name</label>
-                  <input type="text" class="form-control" name="alt_brand_name">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Alternate Part Number</label>
-                  <input type="text" class="form-control" name="alt_part_number">
-                </div>
-              </div>
+              <div id="interchangeContainer"></div>
 
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label class="form-label">Alternate Unit of Measure</label>
-                  <select class="form-select" name="alt_uom">
-                    <option value="">-- Select --</option>
-                    {% for u in ALT_UOM %}
-                      <option value="{{ u }}">{{ u }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label class="form-label">Interchange Quality</label>
-                  <input type="text" class="form-control" name="alt_interchange_quality">
-                </div>
+              <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addInterchangeBtn">
+                + Add Part Interchange
+              </button>
+
+              <div class="small-help mt-1">
+                Interchange Quality Levels:
+                <strong>A – Exact, B – Good, C – Compatible, S – Superseded</strong>
               </div>
 
             </div>
           </div>
         </div>
 
-        <!-- Packaging -->
+
+        <!-- SECTION 6 – PACKAGES (1:M) -->
         <div class="accordion-item">
-          <h2 class="accordion-header" id="headingPackaging">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePackaging">
-              Packaging
+          <h2 class="accordion-header" id="headingPackages">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePackages">
+              SECTION 6 – Packages (1:M)
             </button>
           </h2>
-          <div id="collapsePackaging" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
+          <div id="collapsePackages" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Packaging Unit</label>
-                  <select class="form-select" name="pack_uom">
-                    <option value="">-- Select --</option>
-                    {% for p in PACKAGING_TYPES %}
-                      <option value="{{ p }}">{{ p }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Units Per Pack</label>
-                  <input type="text" class="form-control" name="pack_qty_each">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Dimension Unit</label>
-                  <select class="form-select" name="pack_dim_uom">
-                    <option value="">-- Select --</option>
-                    {% for d in DIMENSION_UOM %}
-                      <option value="{{ d }}">{{ d }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Package Height</label>
-                  <input type="text" class="form-control" name="pack_height">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Package Width</label>
-                  <input type="text" class="form-control" name="pack_width">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Package Length</label>
-                  <input type="text" class="form-control" name="pack_length">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Package Weight</label>
-                  <input type="text" class="form-control" name="pack_weight">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Package Weight UOM</label>
-                  <select class="form-select" name="pack_weight_uom">
-                    <option value="">-- Select --</option>
-                    {% for w in WEIGHT_UOM %}
-                      <option value="{{ w }}">{{ w }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Package Barcode (GTIN)</label>
-                  <input type="text" class="form-control" name="pack_gtin">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Package Barcode Type</label>
-                  <select class="form-select" name="pack_gtin_type">
-                    <option value="">-- Select --</option>
-                    {% for g in GTIN_TYPES %}
-                      <option value="{{ g }}">{{ g }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-              </div>
-
+              <div id="packagesContainer"></div>
+              <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addPackageBtn">
+                + Add Package
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Media Assets -->
+        <!-- SECTION 7 – DIGITAL ASSETS (1:M) -->
         <div class="accordion-item">
-          <h2 class="accordion-header" id="headingMediaAssets">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMediaAssets">
-              Media Assets
+          <h2 class="accordion-header" id="headingAssets">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAssets">
+              SECTION 7 – Digital Assets (1:M)
             </button>
           </h2>
-          <div id="collapseMediaAssets" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
+          <div id="collapseAssets" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Media Type</label>
-                  <select class="form-select" name="media_type">
-                    <option value="">-- Select --</option>
-                    {% for m in MEDIA_TYPES %}
-                      <option value="{{ m }}">{{ m }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">File Name</label>
-                  <input type="text" class="form-control" name="media_file_name">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">File URL or Location</label>
-                  <input type="text" class="form-control" name="media_file_url">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">File Format</label>
-                  <select class="form-select" name="media_file_format">
-                    <option value="">-- Select --</option>
-                    {% for f in FILE_FORMATS %}
-                      <option value="{{ f }}">{{ f }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Color Mode</label>
-                  <select class="form-select" name="media_color_mode">
-                    <option value="">-- Select --</option>
-                    {% for c in COLOR_MODES %}
-                      <option value="{{ c }}">{{ c }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Color (optional)</label>
-                  <input type="text" class="form-control" name="media_color">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Resolution (DPI or px)</label>
-                  <input type="text" class="form-control" name="media_resolution">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Height</label>
-                  <input type="text" class="form-control" name="media_height">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Width</label>
-                  <input type="text" class="form-control" name="media_width">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Dimension Unit</label>
-                  <select class="form-select" name="media_uom">
-                    <option value="">-- Select --</option>
-                    <option value="PX">PX</option>
-                    <option value="IN">IN</option>
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Media Date Type</label>
-                  <select class="form-select" name="media_date_type">
-                    <option value="">-- Select --</option>
-                    {% for t in MEDIA_DATE_TYPES %}
-                      <option value="{{ t }}">{{ t }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Media Date</label>
-                  <input type="date" class="form-control" name="media_date">
-                </div>
-              </div>
-
+              <p class="small-help mb-2">
+                Primary Image (max 1), Additional Images (max 3), LineArt, PDF.
+              </p>
+              <div id="assetsContainer"></div>
+              <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addAssetBtn">
+                + Add Digital Asset
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Pricing -->
+        <!-- SECTION 8 – PRICING -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingPricing">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePricing">
-              Pricing
+              SECTION 8 – Pricing
             </button>
           </h2>
           <div id="collapsePricing" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
 
-              <div class="row">
-                <div class="col-md-3 mb-3">
-                  <label class="form-label">Vendor Cost</label>
-                  <input type="text" class="form-control" name="price_vendor_cost">
-                </div>
-                <div class="col-md-3 mb-3">
-                  <label class="form-label">Price List Cost</label>
-                  <input type="text" class="form-control" name="price_list_cost">
-                </div>
-                <div class="col-md-3 mb-3">
-                  <label class="form-label">EHC (Environmental Handling Cost)</label>
-                  <input type="text" class="form-control" name="price_ehc">
-                </div>
-                <div class="col-md-3 mb-3">
-                  <label class="form-label">Currency</label>
-                  <select class="form-select" name="price_currency">
-                    <option value="">-- Select --</option>
-                    {% for cur in CURRENCIES %}
-                      <option value="{{ cur }}">{{ cur }}</option>
-                    {% endfor %}
-                  </select>
+              <!-- Layer 1 – Pricing Method -->
+              <div class="mb-3">
+                <label class="form-label">Pricing Method (Required)</label>
+                <select class="form-select" name="pricing_method" id="pricing_method" required>
+                  <option value="">-- Select Pricing Method --</option>
+                  {% for key, label in PRICING_METHODS.items() %}
+                    <option value="{{ key }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <!-- Layer 2 – Vendor Ordering Rules -->
+              <div class="border rounded p-3 mb-3">
+                <div class="section-heading mb-2">Vendor Ordering Rules</div>
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label class="form-label">Minimum Order Quantity Unit</label>
+                    <select class="form-select" name="moq_uom">
+                      <option value="">-- Select --</option>
+                      {% for u in QUANTITY_UOM %}
+                        <option value="{{ u }}">{{ u }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label class="form-label">Minimum Order Quantity (MOQ)</label>
+                    <input type="text" class="form-control" name="moq_quantity">
+                  </div>
                 </div>
               </div>
 
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Effective Date</label>
-                  <input type="date" class="form-control" name="price_effective_date">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Quote Cost</label>
-                  <input type="text" class="form-control" name="price_quote_cost">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Quote Usage</label>
-                  <input type="text" class="form-control" name="price_quote_usage">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Quote Start Date</label>
-                  <input type="date" class="form-control" name="price_quote_start">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Quote End Date</label>
-                  <input type="date" class="form-control" name="price_quote_end">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Tender Cost</label>
-                  <input type="text" class="form-control" name="price_tender_cost">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Tender Number</label>
-                  <input type="text" class="form-control" name="price_tender_number">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Tender Start Date</label>
-                  <input type="date" class="form-control" name="price_tender_start">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Tender End Date</label>
-                  <input type="date" class="form-control" name="price_tender_end">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Promotional Price</label>
-                  <input type="text" class="form-control" name="price_promo_price">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Promo Start Date</label>
-                  <input type="date" class="form-control" name="price_promo_start">
-                </div>
-                <div class="col-md-4 mb-3">
-                  <label class="form-label">Promo End Date</label>
-                  <input type="date" class="form-control" name="price_promo_end">
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label class="form-label">Core Part Numbers</label>
-                  <input type="text" class="form-control" name="price_core_part_numbers">
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label class="form-label">Core Cost</label>
-                  <input type="text" class="form-control" name="price_core_cost">
-                </div>
+              <!-- Layer 3 – Price Lines (1:M) -->
+              <div class="border rounded p-3">
+                <div class="section-heading mb-2">Price Lines (1:M)</div>
+                <p class="small-help mb-2">
+                  At least one Base Price is required. Other types (Bulk, Promo, Tender, Quote, Core, EHC) are optional.
+                </p>
+                <div id="priceLinesContainer"></div>
+                <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addPriceLineBtn">
+                  + Add Price
+                </button>
               </div>
 
             </div>
@@ -624,8 +329,8 @@
 
       </div> <!-- /accordion -->
 
-      <!-- Buttons -->
-      <div class="d-flex flex-column flex-md-row gap-2 mt-4">
+      <!-- Action Buttons -->
+      <div class="d-flex flex-column flex-md-row gap-2 mt-3">
         <button type="submit" name="action" value="add" class="btn btn-secondary w-100 w-md-50">
           ➕ Add Product to Batch
         </button>
@@ -646,18 +351,18 @@
             <thead>
               <tr>
                 <th>SKU</th>
-                <th>Brand</th>
                 <th>Vendor</th>
-                <th>Change Type</th>
+                <th>Status</th>
+                <th>Pricing Method</th>
               </tr>
             </thead>
             <tbody>
               {% for p in pending_products %}
                 <tr>
                   <td>{{ p.get("sku") }}</td>
-                  <td>{{ p.get("item_brand_name") }}</td>
                   <td>{{ p.get("vendor_name") }}</td>
-                  <td>{{ p.get("change_type") }}</td>
+                  <td>{{ p.get("product_status") }}</td>
+                  <td>{{ p.get("pricing_method") }}</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -678,5 +383,387 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+  // --- Section 2: Descriptions ---
+  const descriptionsContainer = document.getElementById('descriptionsContainer');
+  document.getElementById('addDescriptionBtn').addEventListener('click', () => {
+    const idx = descriptionsContainer.children.length;
+    const block = document.createElement('div');
+    block.className = 'border rounded p-3 mb-2';
+    block.innerHTML = `
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Description Change Type</label>
+          <select class="form-select" name="desc_change_type[]">
+            <option value="">-- Select --</option>
+            <option value="A">A</option>
+            <option value="M">M</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Description Code</label>
+          <select class="form-select" name="desc_code[]">
+            <option value="">-- Select --</option>
+            <option value="DES">DES</option>
+            <option value="SHO">SHO</option>
+            <option value="MKT">MKT</option>
+            <option value="FAB">FAB</option>
+            <option value="ETC">ETC</option>
+          </select>
+        </div>
+        <div class="col-md-4 mb-2">
+          <label class="form-label">Description Value</label>
+          <input type="text" class="form-control" name="desc_value[]" maxlength="255">
+        </div>
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Sequence</label>
+          <input type="number" class="form-control" name="desc_sequence[]" min="1">
+        </div>
+      </div>
+      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
+    `;
+    descriptionsContainer.appendChild(block);
+    attachRemove(block);
+  });
+
+  // --- Section 3: Extended Info ---
+  const extendedInfoContainer = document.getElementById('extendedInfoContainer');
+  document.getElementById('addExtendedInfoBtn').addEventListener('click', () => {
+    const block = document.createElement('div');
+    block.className = 'border rounded p-3 mb-2';
+    block.innerHTML = `
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Extended Info Change Type</label>
+          <select class="form-select" name="ext_change_type[]">
+            <option value="">-- Select --</option>
+            <option value="A">A</option>
+            <option value="M">M</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Extended Info Code</label>
+          <select class="form-select" name="ext_code[]">
+            <option value="">-- Select --</option>
+            <option value="COO">COO</option>
+            <option value="HSB">HSB</option>
+            <option value="LIF">LIF</option>
+            <option value="LIS">LIS</option>
+            <option value="MSR">MSR</option>
+            <option value="NPC">NPC</option>
+            <option value="PLC">PLC</option>
+            <option value="PLM">PLM</option>
+            <option value="TAX">TAX</option>
+          </select>
+        </div>
+        <div class="col-md-6 mb-2">
+          <label class="form-label">Extended Info Value</label>
+          <input type="text" class="form-control" name="ext_value[]">
+        </div>
+      </div>
+      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
+    `;
+    extendedInfoContainer.appendChild(block);
+    attachRemove(block);
+  });
+
+  // --- Section 4: Attributes ---
+  const attributesContainer = document.getElementById('attributesContainer');
+  document.getElementById('addAttributeBtn').addEventListener('click', () => {
+    const block = document.createElement('div');
+    block.className = 'border rounded p-3 mb-2';
+    block.innerHTML = `
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Attribute Change Type</label>
+          <select class="form-select" name="attr_change_type[]">
+            <option value="">-- Select --</option>
+            <option value="A" selected>A</option>
+            <option value="M">M</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div class="col-md-4 mb-2">
+          <label class="form-label">Attribute Name</label>
+          <input type="text" class="form-control" name="attr_name[]">
+        </div>
+        <div class="col-md-5 mb-2">
+          <label class="form-label">Attribute Value</label>
+          <input type="text" class="form-control" name="attr_value[]">
+        </div>
+      </div>
+      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
+    `;
+    attributesContainer.appendChild(block);
+    attachRemove(block);
+  });
+
+  // --- Section 5: Packages ---
+  const packagesContainer = document.getElementById('packagesContainer');
+  document.getElementById('addPackageBtn').addEventListener('click', () => {
+    const block = document.createElement('div');
+    block.className = 'border rounded p-3 mb-2';
+    block.innerHTML = `
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Package Change Type</label>
+          <select class="form-select" name="pack_change_type[]">
+            <option value="">-- Select --</option>
+            <option value="A">A</option>
+            <option value="M">M</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Package UOM</label>
+          <select class="form-select" name="pack_uom[]">
+            <option value="">-- Select --</option>
+            {% for u in PACKAGE_UOM %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Package Quantity of Eaches</label>
+          <input type="text" class="form-control" name="pack_qty_each[]">
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Weight UOM</label>
+          <select class="form-select" name="pack_weight_uom[]">
+            <option value="">-- Select --</option>
+            {% for w in WEIGHT_UOM %}
+              <option value="{{ w }}">{{ w }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Weight</label>
+          <input type="text" class="form-control" name="pack_weight[]">
+        </div>
+      </div>
+      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
+    `;
+    packagesContainer.appendChild(block);
+    attachRemove(block);
+  });
+
+  // --- Section 6: Digital Assets ---
+  const assetsContainer = document.getElementById('assetsContainer');
+  let primaryImageCount = 0;
+  let additionalImageCount = 0;
+
+  function canAddMediaType(type) {
+    if (type === 'PrimaryImage' && primaryImageCount >= 1) {
+      alert('Only 1 Primary Image allowed.');
+      return false;
+    }
+    if (type === 'AdditionalImage' && additionalImageCount >= 3) {
+      alert('Maximum 3 Additional Images allowed.');
+      return false;
+    }
+    return true;
+  }
+
+  document.getElementById('addAssetBtn').addEventListener('click', () => {
+    const block = document.createElement('div');
+    block.className = 'border rounded p-3 mb-2 asset-block';
+    block.innerHTML = `
+      <div class="row align-items-end">
+        <div class="col-md-4 mb-2">
+          <label class="form-label">Digital File Change Type</label>
+          <select class="form-select asset-change-type" name="asset_change_type[]">
+            <option value="">-- Select --</option>
+            <option value="A">A</option>
+            <option value="M">M</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div class="col-md-4 mb-2">
+          <label class="form-label">Media Type</label>
+          <select class="form-select asset-media-type" name="asset_media_type[]">
+            <option value="">-- Select --</option>
+            <option value="PrimaryImage">Primary Image</option>
+            <option value="AdditionalImage">Additional Image</option>
+            <option value="LineArt">LineArt</option>
+            <option value="PDF">PDF</option>
+          </select>
+        </div>
+        <div class="col-md-4 mb-2">
+          <label class="form-label">Browse and Upload</label>
+          <input type="file" class="form-control" name="asset_file[]">
+        </div>
+      </div>
+      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
+    `;
+    assetsContainer.appendChild(block);
+    attachRemove(block);
+
+    const mediaSelect = block.querySelector('.asset-media-type');
+    mediaSelect.addEventListener('change', () => {
+      const type = mediaSelect.value;
+      if (!type) return;
+      if (!canAddMediaType(type)) {
+        mediaSelect.value = '';
+        return;
+      }
+      if (type === 'PrimaryImage') primaryImageCount++;
+      if (type === 'AdditionalImage') additionalImageCount++;
+    });
+
+    const removeBtn = block.querySelector('.remove-block');
+    removeBtn.addEventListener('click', () => {
+      const type = mediaSelect.value;
+      if (type === 'PrimaryImage') primaryImageCount = Math.max(0, primaryImageCount - 1);
+      if (type === 'AdditionalImage') additionalImageCount = Math.max(0, additionalImageCount - 1);
+    });
+  });
+
+  // --- Section 7: Price Lines ---
+  const priceLinesContainer = document.getElementById('priceLinesContainer');
+  document.getElementById('addPriceLineBtn').addEventListener('click', () => {
+    const block = document.createElement('div');
+    block.className = 'border rounded p-3 mb-2 price-line-block';
+    block.innerHTML = `
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Pricing Change Type</label>
+          <select class="form-select" name="price_change_type[]">
+            <option value="">-- Select --</option>
+            <option value="A">A</option>
+            <option value="M">M</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Pricing Type</label>
+          <select class="form-select price-type-select" name="price_type[]">
+            <option value="">-- Select --</option>
+            <option value="Base">Base Price</option>
+            <option value="Bulk">Bulk / Quantity Break</option>
+            <option value="Case">Case Price</option>
+            <option value="Pallet">Pallet Price</option>
+            <option value="Promo">Promo Price</option>
+            <option value="Tender">Tender Price</option>
+            <option value="Quote">Quote Price</option>
+            <option value="Core">Core Price</option>
+            <option value="EHC">Environmental Handling Cost</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Pricing Currency</label>
+          <select class="form-select" name="price_currency[]">
+            <option value="">-- Select --</option>
+            <option value="CAD">CAD</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Pricing Amount</label>
+          <input type="text" class="form-control" name="price_amount[]">
+        </div>
+      </div>
+
+      <div class="row tier-fields d-none">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Minimum Quantity</label>
+          <input type="text" class="form-control" name="price_min_qty[]">
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Maximum Quantity (optional)</label>
+          <input type="text" class="form-control" name="price_max_qty[]">
+        </div>
+      </div>
+
+      <div class="row date-fields d-none">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Start Date</label>
+          <input type="date" class="form-control" name="price_start_date[]">
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">End Date</label>
+          <input type="date" class="form-control" name="price_end_date[]">
+        </div>
+      </div>
+
+      <div class="row core-fields d-none">
+        <div class="col-md-6 mb-2">
+          <label class="form-label">Core Part Number</label>
+          <input type="text" class="form-control" name="price_core_part[]">
+        </div>
+        <div class="col-md-6 mb-2">
+          <label class="form-label">Core Cost</label>
+          <input type="text" class="form-control" name="price_core_cost[]">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-12 mb-1">
+          <label class="form-label">Effective Date</label>
+          <input type="date" class="form-control" name="price_effective_date[]">
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove Price</button>
+    `;
+    priceLinesContainer.appendChild(block);
+    attachRemove(block);
+
+    const priceTypeSelect = block.querySelector('.price-type-select');
+    const tierFields = block.querySelector('.tier-fields');
+    const dateFields = block.querySelector('.date-fields');
+    const coreFields = block.querySelector('.core-fields');
+
+    priceTypeSelect.addEventListener('change', () => {
+      const val = priceTypeSelect.value;
+      tierFields.classList.add('d-none');
+      dateFields.classList.add('d-none');
+      coreFields.classList.add('d-none');
+
+      if (['Bulk', 'Case', 'Pallet'].includes(val)) {
+        tierFields.classList.remove('d-none');
+      }
+      if (['Promo', 'Tender', 'Quote'].includes(val)) {
+        dateFields.classList.remove('d-none');
+      }
+      if (val === 'Core') {
+        coreFields.classList.remove('d-none');
+      }
+    });
+  });
+
+  // Helper to hook up generic remove buttons
+  function attachRemove(block) {
+    const btn = block.querySelector('.remove-block');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      block.remove();
+    });
+  }
+
+  // Basic client-side GTIN length hinting
+  const barcodeTypeSelect = document.getElementById('barcode_type');
+  const barcodeInput = document.getElementById('barcode_number');
+
+  barcodeTypeSelect && barcodeTypeSelect.addEventListener('change', () => {
+    const t = barcodeTypeSelect.value;
+    if (t === 'UPC') {
+      barcodeInput.maxLength = 12;
+      barcodeInput.placeholder = 'UPC – 12 digits';
+    } else if (t === 'EAN') {
+      barcodeInput.maxLength = 14;
+      barcodeInput.placeholder = 'EAN – 14 digits';
+    } else {
+      barcodeInput.maxLength = 14;
+      barcodeInput.placeholder = 'UPC 12 digits / EAN 14 digits';
+    }
+  });
+
+</script>
+
 </body>
 </html>
