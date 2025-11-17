@@ -25,7 +25,7 @@
     <div class="text-center mb-4">
       <img src="{{ url_for('static', filename='fgi_logo.png') }}" alt="FGI Logo" height="40" class="mb-2">
       <h3 class="fw-bold">Single Product Submission</h3>
-      <p class="text-muted mb-0">FGI Standardized Structure – Item, Descriptions, Attributes, Packages, Assets, Pricing</p>
+      <p class="text-muted mb-0">FGI Standardized Structure – Item, Descriptions, Extended Info, Attributes, Interchange, Packages, Assets, Pricing</p>
     </div>
 
     <!-- Flash Messages -->
@@ -40,13 +40,15 @@
       {% endif %}
     {% endwith %}
 
-    <form method="POST"
+    <form id="singleProductForm"
+          method="POST"
           action="{{ url_for('submit_single_product') }}"
           enctype="multipart/form-data">
 
-      <!-- SECTION 1 – ITEM MASTER -->
+      <!-- MAIN ACCORDION -->
       <div class="accordion mb-3" id="singleProductAccordion">
 
+        <!-- SECTION 1 – ITEM MASTER -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingItemMaster">
             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseItemMaster">
@@ -146,11 +148,11 @@
           </div>
         </div>
 
-        <!-- SECTION 2 – DESCRIPTIONS (1:M) -->
+        <!-- SECTION 2 – DESCRIPTIONS -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingDescriptions">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDescriptions">
-              SECTION 2 – Descriptions (1:M)
+              SECTION 2 – Descriptions
             </button>
           </h2>
           <div id="collapseDescriptions" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
@@ -166,17 +168,17 @@
           </div>
         </div>
 
-        <!-- SECTION 3 – EXTENDED INFO (1:M) -->
+        <!-- SECTION 3 – EXTENDED PRODUCT INFO -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingExtendedInfo">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseExtendedInfo">
-              SECTION 3 – Extended Product Info (1:M)
+              SECTION 3 – Extended Product Info
             </button>
           </h2>
           <div id="collapseExtendedInfo" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
               <p class="small-help mb-2">
-                Codes such as COO, HSB, LIF, LIS, MSR, NPC, PLC, PLM, TAX.
+                Codes such as COO (Country of Origin), HSB (HS/Tariff – 10 digits), LIF, LIS, MSR, NPC, PLC, PLM, TAX.
               </p>
               <div id="extendedInfoContainer"></div>
               <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addExtendedInfoBtn">
@@ -186,11 +188,11 @@
           </div>
         </div>
 
-        <!-- SECTION 4 – ATTRIBUTES (1:M) -->
+        <!-- SECTION 4 – ATTRIBUTES -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingAttributes">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAttributes">
-              SECTION 4 – Attributes (1:M)
+              SECTION 4 – Attributes
             </button>
           </h2>
           <div id="collapseAttributes" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
@@ -206,38 +208,31 @@
           </div>
         </div>
 
-                  <!-- SECTION 5 – PART INTERCHANGE (1:M) -->
+        <!-- SECTION 5 – PART INTERCHANGE -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingInterchange">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInterchange">
-              SECTION 5 – Part Interchange Info (1:M)
+              SECTION 5 – Part Interchange Info
             </button>
           </h2>
-
           <div id="collapseInterchange" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
-
               <div id="interchangeContainer"></div>
-
               <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addInterchangeBtn">
                 + Add Part Interchange
               </button>
-
               <div class="small-help mt-1">
-                Interchange Quality Levels:
-                <strong>A – Exact, B – Good, C – Compatible, S – Superseded</strong>
+                Interchange Quality Levels: A – Exact, B – Good, C – Compatible, S – Superseded.
               </div>
-
             </div>
           </div>
         </div>
 
-
-        <!-- SECTION 6 – PACKAGES (1:M) -->
+        <!-- SECTION 6 – PACKAGES -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingPackages">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePackages">
-              SECTION 6 – Packages (1:M)
+              SECTION 6 – Packages
             </button>
           </h2>
           <div id="collapsePackages" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
@@ -250,17 +245,17 @@
           </div>
         </div>
 
-        <!-- SECTION 7 – DIGITAL ASSETS (1:M) -->
+        <!-- SECTION 7 – DIGITAL ASSETS -->
         <div class="accordion-item">
           <h2 class="accordion-header" id="headingAssets">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAssets">
-              SECTION 7 – Digital Assets (1:M)
+              SECTION 7 – Digital Assets
             </button>
           </h2>
           <div id="collapseAssets" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
             <div class="accordion-body">
               <p class="small-help mb-2">
-                Primary Image (max 1), Additional Images (max 3), LineArt, PDF.
+                Primary Image (max 1), Additional Images (max 3), LineArt, PDF. Images: JPG/JPEG/PNG/WEBP only.
               </p>
               <div id="assetsContainer"></div>
               <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addAssetBtn">
@@ -296,7 +291,7 @@
                 <div class="section-heading mb-2">Vendor Ordering Rules</div>
                 <div class="row">
                   <div class="col-md-6 mb-3">
-                    <label class="form-label">Minimum Order Quantity Unit</label>
+                    <label class="form-label">MOQ Unit</label>
                     <select class="form-select" name="moq_uom">
                       <option value="">-- Select --</option>
                       {% for u in QUANTITY_UOM %}
@@ -311,11 +306,11 @@
                 </div>
               </div>
 
-              <!-- Layer 3 – Price Lines (1:M) -->
+              <!-- Layer 3 – Price Lines -->
               <div class="border rounded p-3">
-                <div class="section-heading mb-2">Price Lines (1:M)</div>
+                <div class="section-heading mb-2">Price Lines</div>
                 <p class="small-help mb-2">
-                  At least one Base Price is required. Other types (Bulk, Promo, Tender, Quote, Core, EHC) are optional.
+                  At least one Base Price is required. Pricing Amount is the Net Cost / Tier Price / Core Price / EHC.
                 </p>
                 <div id="priceLinesContainer"></div>
                 <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addPriceLineBtn">
@@ -385,19 +380,26 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+  // Helper to hook up generic remove buttons
+  function attachRemove(block) {
+    const btn = block.querySelector('.remove-block');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      block.remove();
+    });
+  }
+
   // --- Section 2: Descriptions ---
   const descriptionsContainer = document.getElementById('descriptionsContainer');
   document.getElementById('addDescriptionBtn').addEventListener('click', () => {
-    const idx = descriptionsContainer.children.length;
     const block = document.createElement('div');
     block.className = 'border rounded p-3 mb-2';
     block.innerHTML = `
       <div class="row">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Description Change Type</label>
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Change Type</label>
           <select class="form-select" name="desc_change_type[]">
-            <option value="">-- Select --</option>
-            <option value="A">A</option>
+            <option value="A" selected>A</option>
             <option value="M">M</option>
             <option value="D">D</option>
           </select>
@@ -417,9 +419,17 @@
           <label class="form-label">Description Value</label>
           <input type="text" class="form-control" name="desc_value[]" maxlength="255">
         </div>
-        <div class="col-md-2 mb-2">
-          <label class="form-label">Sequence</label>
+        <div class="col-md-1 mb-2">
+          <label class="form-label">Seq</label>
           <input type="number" class="form-control" name="desc_sequence[]" min="1">
+        </div>
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Language</label>
+          <select class="form-select" name="desc_language[]">
+            <option value="EN" selected>EN</option>
+            <option value="FR">FR</option>
+            <option value="ES">ES</option>
+          </select>
         </div>
       </div>
       <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
@@ -436,17 +446,16 @@
     block.innerHTML = `
       <div class="row">
         <div class="col-md-3 mb-2">
-          <label class="form-label">Extended Info Change Type</label>
+          <label class="form-label">Change Type</label>
           <select class="form-select" name="ext_change_type[]">
-            <option value="">-- Select --</option>
-            <option value="A">A</option>
+            <option value="A" selected>A</option>
             <option value="M">M</option>
             <option value="D">D</option>
           </select>
         </div>
         <div class="col-md-3 mb-2">
-          <label class="form-label">Extended Info Code</label>
-          <select class="form-select" name="ext_code[]">
+          <label class="form-label">Info Code</label>
+          <select class="form-select ext-code-select" name="ext_code[]">
             <option value="">-- Select --</option>
             <option value="COO">COO</option>
             <option value="HSB">HSB</option>
@@ -460,14 +469,27 @@
           </select>
         </div>
         <div class="col-md-6 mb-2">
-          <label class="form-label">Extended Info Value</label>
-          <input type="text" class="form-control" name="ext_value[]">
+          <label class="form-label">Info Value</label>
+          <input type="text" class="form-control ext-value-input" name="ext_value[]">
+          <div class="small-help ext-hsb-hint d-none">HSB should be exactly 10 digits.</div>
         </div>
       </div>
       <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
     `;
     extendedInfoContainer.appendChild(block);
     attachRemove(block);
+
+    const codeSelect = block.querySelector('.ext-code-select');
+    const valueInput = block.querySelector('.ext-value-input');
+    const hsbHint = block.querySelector('.ext-hsb-hint');
+
+    codeSelect.addEventListener('change', () => {
+      if (codeSelect.value === 'HSB') {
+        hsbHint.classList.remove('d-none');
+      } else {
+        hsbHint.classList.add('d-none');
+      }
+    });
   });
 
   // --- Section 4: Attributes ---
@@ -477,10 +499,9 @@
     block.className = 'border rounded p-3 mb-2';
     block.innerHTML = `
       <div class="row">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Attribute Change Type</label>
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Change Type</label>
           <select class="form-select" name="attr_change_type[]">
-            <option value="">-- Select --</option>
             <option value="A" selected>A</option>
             <option value="M">M</option>
             <option value="D">D</option>
@@ -490,9 +511,24 @@
           <label class="form-label">Attribute Name</label>
           <input type="text" class="form-control" name="attr_name[]">
         </div>
-        <div class="col-md-5 mb-2">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Attribute Unit</label>
+          <select class="form-select" name="attr_unit[]">
+            <option value="">-- Optional --</option>
+            <option value="IN">IN</option>
+            <option value="MM">MM</option>
+            <option value="CM">CM</option>
+            <option value="LB">LB</option>
+            <option value="KG">KG</option>
+            <option value="PSI">PSI</option>
+            <option value="L">L</option>
+            <option value="ML">ML</option>
+            <option value="WATT">WATT</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
           <label class="form-label">Attribute Value</label>
-          <input type="text" class="form-control" name="attr_value[]">
+          <input type="number" step="any" class="form-control" name="attr_value[]">
         </div>
       </div>
       <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
@@ -501,18 +537,57 @@
     attachRemove(block);
   });
 
-  // --- Section 5: Packages ---
+  // --- Section 5: Part Interchange ---
+  const interchangeContainer = document.getElementById('interchangeContainer');
+  document.getElementById('addInterchangeBtn').addEventListener('click', () => {
+    const block = document.createElement('div');
+    block.className = 'border rounded p-3 mb-2';
+    block.innerHTML = `
+      <div class="row">
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Change Type</label>
+          <select class="form-select" name="int_change_type[]">
+            <option value="A" selected>A</option>
+            <option value="M">M</option>
+            <option value="D">D</option>
+          </select>
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Brand Label</label>
+          <input type="text" class="form-control" name="int_brand_label[]">
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Part Number</label>
+          <input type="text" class="form-control" name="int_part_number[]">
+        </div>
+        <div class="col-md-4 mb-2">
+          <label class="form-label">Interchange Quality</label>
+          <select class="form-select" name="int_quality[]">
+            <option value="">-- Select --</option>
+            <option value="A">A – Exact</option>
+            <option value="B">B – Good</option>
+            <option value="C">C – Compatible</option>
+            <option value="S">S – Superseded</option>
+          </select>
+        </div>
+      </div>
+      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
+    `;
+    interchangeContainer.appendChild(block);
+    attachRemove(block);
+  });
+
+  // --- Section 6: Packages ---
   const packagesContainer = document.getElementById('packagesContainer');
   document.getElementById('addPackageBtn').addEventListener('click', () => {
     const block = document.createElement('div');
     block.className = 'border rounded p-3 mb-2';
     block.innerHTML = `
       <div class="row">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Package Change Type</label>
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Change Type</label>
           <select class="form-select" name="pack_change_type[]">
-            <option value="">-- Select --</option>
-            <option value="A">A</option>
+            <option value="A" selected>A</option>
             <option value="M">M</option>
             <option value="D">D</option>
           </select>
@@ -527,10 +602,10 @@
           </select>
         </div>
         <div class="col-md-3 mb-2">
-          <label class="form-label">Package Quantity of Eaches</label>
+          <label class="form-label">Quantity of Eaches</label>
           <input type="text" class="form-control" name="pack_qty_each[]">
         </div>
-        <div class="col-md-3 mb-2">
+        <div class="col-md-2 mb-2">
           <label class="form-label">Weight UOM</label>
           <select class="form-select" name="pack_weight_uom[]">
             <option value="">-- Select --</option>
@@ -539,9 +614,7 @@
             {% endfor %}
           </select>
         </div>
-      </div>
-      <div class="row">
-        <div class="col-md-3 mb-2">
+        <div class="col-md-2 mb-2">
           <label class="form-label">Weight</label>
           <input type="text" class="form-control" name="pack_weight[]">
         </div>
@@ -552,7 +625,7 @@
     attachRemove(block);
   });
 
-  // --- Section 6: Digital Assets ---
+  // --- Section 7: Digital Assets ---
   const assetsContainer = document.getElementById('assetsContainer');
   let primaryImageCount = 0;
   let additionalImageCount = 0;
@@ -574,11 +647,10 @@
     block.className = 'border rounded p-3 mb-2 asset-block';
     block.innerHTML = `
       <div class="row align-items-end">
-        <div class="col-md-4 mb-2">
-          <label class="form-label">Digital File Change Type</label>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Change Type</label>
           <select class="form-select asset-change-type" name="asset_change_type[]">
-            <option value="">-- Select --</option>
-            <option value="A">A</option>
+            <option value="A" selected>A</option>
             <option value="M">M</option>
             <option value="D">D</option>
           </select>
@@ -593,9 +665,9 @@
             <option value="PDF">PDF</option>
           </select>
         </div>
-        <div class="col-md-4 mb-2">
+        <div class="col-md-5 mb-2">
           <label class="form-label">Browse and Upload</label>
-          <input type="file" class="form-control" name="asset_file[]">
+          <input type="file" class="form-control asset-file-input" name="asset_file[]" accept="image/*">
         </div>
       </div>
       <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
@@ -604,15 +676,27 @@
     attachRemove(block);
 
     const mediaSelect = block.querySelector('.asset-media-type');
+    const fileInput = block.querySelector('.asset-file-input');
+
     mediaSelect.addEventListener('change', () => {
       const type = mediaSelect.value;
       if (!type) return;
+
       if (!canAddMediaType(type)) {
         mediaSelect.value = '';
         return;
       }
+
+      // Adjust counters
       if (type === 'PrimaryImage') primaryImageCount++;
       if (type === 'AdditionalImage') additionalImageCount++;
+
+      // Accept rules
+      if (type === 'PDF') {
+        fileInput.accept = '.pdf';
+      } else {
+        fileInput.accept = 'image/*';
+      }
     });
 
     const removeBtn = block.querySelector('.remove-block');
@@ -623,58 +707,81 @@
     });
   });
 
-  // --- Section 7: Price Lines ---
+  // --- Section 8: Pricing ---
   const priceLinesContainer = document.getElementById('priceLinesContainer');
+
   document.getElementById('addPriceLineBtn').addEventListener('click', () => {
     const block = document.createElement('div');
-    block.className = 'border rounded p-3 mb-2 price-line-block';
+    block.className = 'border rounded p-3 mb-3';
+
     block.innerHTML = `
       <div class="row">
         <div class="col-md-3 mb-2">
           <label class="form-label">Pricing Change Type</label>
           <select class="form-select" name="price_change_type[]">
-            <option value="">-- Select --</option>
-            <option value="A">A</option>
+            <option value="A" selected>A</option>
             <option value="M">M</option>
             <option value="D">D</option>
           </select>
         </div>
+
         <div class="col-md-3 mb-2">
           <label class="form-label">Pricing Type</label>
           <select class="form-select price-type-select" name="price_type[]">
             <option value="">-- Select --</option>
             <option value="Base">Base Price</option>
-            <option value="Bulk">Bulk / Quantity Break</option>
+            <option value="Bulk">Bulk / Qty Break</option>
             <option value="Case">Case Price</option>
             <option value="Pallet">Pallet Price</option>
             <option value="Promo">Promo Price</option>
             <option value="Tender">Tender Price</option>
             <option value="Quote">Quote Price</option>
             <option value="Core">Core Price</option>
-            <option value="EHC">Environmental Handling Cost</option>
+            <option value="EHC">EHC Fee</option>
           </select>
         </div>
+
         <div class="col-md-3 mb-2">
-          <label class="form-label">Pricing Currency</label>
+          <label class="form-label">Currency</label>
           <select class="form-select" name="price_currency[]">
             <option value="">-- Select --</option>
             <option value="CAD">CAD</option>
             <option value="USD">USD</option>
           </select>
         </div>
+
         <div class="col-md-3 mb-2">
           <label class="form-label">Pricing Amount</label>
           <input type="text" class="form-control" name="price_amount[]">
         </div>
       </div>
 
+      <div class="row">
+        <div class="col-md-3 mb-2">
+          <label class="form-label">List Price</label>
+          <input type="text" class="form-control" name="price_list_price[]">
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Jobber Price</label>
+          <input type="text" class="form-control" name="price_jobber_price[]">
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Discount %</label>
+          <input type="text" class="form-control" name="price_discount[]">
+        </div>
+        <div class="col-md-3 mb-2">
+          <label class="form-label">Multiplier</label>
+          <input type="text" class="form-control" name="price_multiplier[]">
+        </div>
+      </div>
+
       <div class="row tier-fields d-none">
         <div class="col-md-3 mb-2">
-          <label class="form-label">Minimum Quantity</label>
+          <label class="form-label">Min Qty</label>
           <input type="text" class="form-control" name="price_min_qty[]">
         </div>
         <div class="col-md-3 mb-2">
-          <label class="form-label">Maximum Quantity (optional)</label>
+          <label class="form-label">Max Qty</label>
           <input type="text" class="form-control" name="price_max_qty[]">
         </div>
       </div>
@@ -702,7 +809,14 @@
       </div>
 
       <div class="row">
-        <div class="col-12 mb-1">
+        <div class="col-md-12 mb-2">
+          <label class="form-label">Notes</label>
+          <input type="text" class="form-control" name="price_notes[]">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-12 mb-2">
           <label class="form-label">Effective Date</label>
           <input type="date" class="form-control" name="price_effective_date[]">
         </div>
@@ -736,16 +850,7 @@
     });
   });
 
-  // Helper to hook up generic remove buttons
-  function attachRemove(block) {
-    const btn = block.querySelector('.remove-block');
-    if (!btn) return;
-    btn.addEventListener('click', () => {
-      block.remove();
-    });
-  }
-
-  // Basic client-side GTIN length hinting
+  // GTIN / Barcode helper
   const barcodeTypeSelect = document.getElementById('barcode_type');
   const barcodeInput = document.getElementById('barcode_number');
 
@@ -763,6 +868,25 @@
     }
   });
 
+  // Extra front-end validation for HSB = 10 digits
+  document.getElementById('singleProductForm').addEventListener('submit', (e) => {
+    const extCodeSelects = document.querySelectorAll('.ext-code-select');
+    const extValueInputs = document.querySelectorAll('.ext-value-input');
+
+    for (let i = 0; i < extCodeSelects.length; i++) {
+      const code = (extCodeSelects[i].value || '').trim();
+      const val = (extValueInputs[i].value || '').trim();
+
+      if (code === 'HSB' && val) {
+        if (!/^\d{10}$/.test(val)) {
+          e.preventDefault();
+          alert('HSB (HS/Tariff code) must be exactly 10 digits.');
+          extValueInputs[i].focus();
+          return;
+        }
+      }
+    }
+  });
 </script>
 
 </body>
