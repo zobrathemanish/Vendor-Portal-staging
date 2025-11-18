@@ -736,18 +736,8 @@
             <option value="promo_pricing">Promo Pricing</option>
             <option value="quote_pricing">Quote Pricing</option>
             <option value="tender_pricing">Tender Pricing</option>
+            <option value="core_pricing"> Core Pricing </option>
           </select>
-        </div>
-      </div>
-
-      <div class="row mt-2">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Tier Min Qty</label>
-          <input type="text" class="form-control" name="level_tier_min_qty[]">
-        </div>
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Tier Max Qty</label>
-          <input type="text" class="form-control" name="level_tier_max_qty[]">
         </div>
       </div>
 
@@ -924,11 +914,11 @@
             <input type="text" class="form-control" name="level_pr_promo_price[]">
           </div>
           <div class="col-md-4 mb-2">
-            <label class="form-label">Start Date</label>
+            <label class="form-label">Promo Start Date</label>
             <input type="date" class="form-control" name="level_pr_start_date[]">
           </div>
           <div class="col-md-4 mb-2">
-            <label class="form-label">End Date</label>
+            <label class="form-label">Promo End Date</label>
             <input type="date" class="form-control" name="level_pr_end_date[]">
           </div>
         </div>
@@ -947,11 +937,11 @@
             <input type="text" class="form-control" name="level_qt_number[]">
           </div>
           <div class="col-md-3 mb-2">
-            <label class="form-label">Start Date</label>
+            <label class="form-label">Quote Start Date</label>
             <input type="date" class="form-control" name="level_qt_start_date[]">
           </div>
           <div class="col-md-3 mb-2">
-            <label class="form-label">End Date</label>
+            <label class="form-label">Quote End Date</label>
             <input type="date" class="form-control" name="level_qt_end_date[]">
           </div>
         </div>
@@ -970,12 +960,27 @@
             <input type="text" class="form-control" name="level_td_number[]">
           </div>
           <div class="col-md-3 mb-2">
-            <label class="form-label">Start Date</label>
+            <label class="form-label"> Tender Start Date</label>
             <input type="date" class="form-control" name="level_td_start_date[]">
           </div>
           <div class="col-md-3 mb-2">
-            <label class="form-label">End Date</label>
+            <label class="form-label">Tender End Date</label>
             <input type="date" class="form-control" name="level_td_end_date[]">
+          </div>
+        </div>
+      </div>
+
+           <!-- Method: Net Cost -->
+      <div class="method-fields method-net_cost d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">Core Pricing</div>
+        <div class="row">
+          <div class="col-md-4 mb-2">
+            <label class="form-label">Core Price</label>
+            <input type="text" class="form-control" name="level_net_list_price[]">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label">Core Part Number</label>
+            <input type="text" class="form-control" name="level_net_net_cost[]">
           </div>
         </div>
       </div>

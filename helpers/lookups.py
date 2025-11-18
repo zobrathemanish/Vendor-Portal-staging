@@ -73,4 +73,5 @@ PRICING_METHODS = {
     "promo_pricing": "Promo Pricing",
     "quote_pricing": "Quote Pricing",
     "tender_pricing": "Tender Pricing",
+    "core_pricing" : "Core Pricing"
 }
