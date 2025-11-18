@@ -266,63 +266,33 @@
         </div>
 
         <!-- SECTION 8 – PRICING -->
-        <div class="accordion-item">
-          <h2 class="accordion-header" id="headingPricing">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePricing">
-              SECTION 8 – Pricing
-            </button>
-          </h2>
-          <div id="collapsePricing" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
-            <div class="accordion-body">
+        <!-- SECTION 8 – PRICING -->
+<div class="accordion-item">
+  <h2 class="accordion-header" id="headingPricing">
+    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePricing">
+      SECTION 8 – Pricing
+    </button>
+  </h2>
+  <div id="collapsePricing" class="accordion-collapse collapse" data-bs-parent="#singleProductAccordion">
+    <div class="accordion-body">
 
-              <!-- Layer 1 – Pricing Method -->
-              <div class="mb-3">
-                <label class="form-label">Pricing Method (Required)</label>
-                <select class="form-select" name="pricing_method" id="pricing_method" required>
-                  <option value="">-- Select Pricing Method --</option>
-                  {% for key, label in PRICING_METHODS.items() %}
-                    <option value="{{ key }}">{{ label }}</option>
-                  {% endfor %}
-                </select>
-              </div>
+      <div class="border rounded p-3">
+        <div class="section-heading mb-2">Pricing Levels</div>
+        <p class="small-help mb-2">
+          Add one or more pricing levels (Each / Case / Pallet / Bulk). Each level has its own pricing method.
+        </p>
 
-              <!-- Layer 2 – Vendor Ordering Rules -->
-              <div class="border rounded p-3 mb-3">
-                <div class="section-heading mb-2">Vendor Ordering Rules</div>
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">MOQ Unit</label>
-                    <select class="form-select" name="moq_uom">
-                      <option value="">-- Select --</option>
-                      {% for u in QUANTITY_UOM %}
-                        <option value="{{ u }}">{{ u }}</option>
-                      {% endfor %}
-                    </select>
-                  </div>
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Minimum Order Quantity (MOQ)</label>
-                    <input type="text" class="form-control" name="moq_quantity">
-                  </div>
-                </div>
-              </div>
+        <div id="priceLevelsContainer"></div>
 
-              <!-- Layer 3 – Price Lines -->
-              <div class="border rounded p-3">
-                <div class="section-heading mb-2">Price Lines</div>
-                <p class="small-help mb-2">
-                  At least one Base Price is required. Pricing Amount is the Net Cost / Tier Price / Core Price / EHC.
-                </p>
-                <div id="priceLinesContainer"></div>
-                <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addPriceLineBtn">
-                  + Add Price
-                </button>
-              </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="addPriceLevelBtn">
+          + Add Price Level
+        </button>
+      </div>
 
-            </div>
-          </div>
-        </div>
-
-      </div> <!-- /accordion -->
+    </div>
+  </div>
+</div>
+ <!-- /accordion -->
 
       <!-- Action Buttons -->
       <div class="d-flex flex-column flex-md-row gap-2 mt-3">
@@ -707,186 +677,329 @@
     });
   });
 
-  // --- Section 8: Pricing ---
-  const priceLinesContainer = document.getElementById('priceLinesContainer');
+    // --- Section 8: Pricing Levels ---
+  const priceLevelsContainer = document.getElementById('priceLevelsContainer');
 
-  document.getElementById('addPriceLineBtn').addEventListener('click', () => {
+  document.getElementById('addPriceLevelBtn').addEventListener('click', () => {
     const block = document.createElement('div');
     block.className = 'border rounded p-3 mb-3';
 
     block.innerHTML = `
       <div class="row">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Pricing Change Type</label>
-          <select class="form-select" name="price_change_type[]">
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Level Type</label>
+          <select class="form-select" name="level_type[]">
+            <option value="">-- Select --</option>
+            <option value="Each">Each</option>
+            <option value="Case">Case</option>
+            <option value="Pallet">Pallet</option>
+            <option value="Bulk">Bulk</option>
+          </select>
+        </div>
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Change Type</label>
+          <select class="form-select" name="level_price_change_type[]">
             <option value="A" selected>A</option>
             <option value="M">M</option>
             <option value="D">D</option>
           </select>
         </div>
-
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Pricing Type</label>
-          <select class="form-select price-type-select" name="price_type[]">
+        <div class="col-md-2 mb-2">
+          <label class="form-label">MOQ Unit</label>
+          <select class="form-select" name="level_moq_uom[]">
             <option value="">-- Select --</option>
-            <option value="Base">Base Price</option>
-            <option value="Bulk">Bulk / Qty Break</option>
-            <option value="Case">Case Price</option>
-            <option value="Pallet">Pallet Price</option>
-            <option value="Promo">Promo Price</option>
-            <option value="Tender">Tender Price</option>
-            <option value="Quote">Quote Price</option>
-            <option value="Core">Core Price</option>
-            <option value="EHC">EHC Fee</option>
+            {% for u in QUANTITY_UOM %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
           </select>
         </div>
-
-        <div class="col-md-3 mb-2">
+        <div class="col-md-2 mb-2">
+          <label class="form-label">MOQ</label>
+          <input type="text" class="form-control" name="level_moq_qty[]">
+        </div>
+        <div class="col-md-2 mb-2">
           <label class="form-label">Currency</label>
-          <select class="form-select" name="price_currency[]">
+          <select class="form-select" name="level_currency[]">
             <option value="">-- Select --</option>
             <option value="CAD">CAD</option>
             <option value="USD">USD</option>
           </select>
         </div>
-
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Pricing Amount</label>
-          <input type="text" class="form-control" name="price_amount[]">
+        <div class="col-md-2 mb-2">
+          <label class="form-label">Pricing Method</label>
+          <select class="form-select pricing-method-select" name="level_pricing_method[]">
+            <option value="">-- Select --</option>
+            <option value="net_cost">Net Cost Provided</option>
+            <option value="price_levels">Price Levels Provided</option>
+            <option value="discount_based">Discount-Based Pricing</option>
+            <option value="ehc_based">EHC-Based Pricing</option>
+            <option value="promo_pricing">Promo Pricing</option>
+            <option value="quote_pricing">Quote Pricing</option>
+            <option value="tender_pricing">Tender Pricing</option>
+          </select>
         </div>
       </div>
 
-      <div class="row">
+      <div class="row mt-2">
         <div class="col-md-3 mb-2">
-          <label class="form-label">List Price</label>
-          <input type="text" class="form-control" name="price_list_price[]">
+          <label class="form-label">Tier Min Qty</label>
+          <input type="text" class="form-control" name="level_tier_min_qty[]">
         </div>
         <div class="col-md-3 mb-2">
-          <label class="form-label">Jobber Price</label>
-          <input type="text" class="form-control" name="price_jobber_price[]">
-        </div>
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Discount %</label>
-          <input type="text" class="form-control" name="price_discount[]">
-        </div>
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Multiplier</label>
-          <input type="text" class="form-control" name="price_multiplier[]">
+          <label class="form-label">Tier Max Qty</label>
+          <input type="text" class="form-control" name="level_tier_max_qty[]">
         </div>
       </div>
 
-      <div class="row tier-fields d-none">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Min Qty</label>
-          <input type="text" class="form-control" name="price_min_qty[]">
-        </div>
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Max Qty</label>
-          <input type="text" class="form-control" name="price_max_qty[]">
-        </div>
-      </div>
-
-      <div class="row date-fields d-none">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Start Date</label>
-          <input type="date" class="form-control" name="price_start_date[]">
-        </div>
-        <div class="col-md-3 mb-2">
-          <label class="form-label">End Date</label>
-          <input type="date" class="form-control" name="price_end_date[]">
+      <!-- Method: Net Cost -->
+      <div class="method-fields method-net_cost d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">Net Cost Provided</div>
+        <div class="row">
+          <div class="col-md-4 mb-2">
+            <label class="form-label">List Price</label>
+            <input type="text" class="form-control" name="level_net_list_price[]">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label">Net Cost</label>
+            <input type="text" class="form-control" name="level_net_net_cost[]">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label">Effective Date</label>
+            <input type="date" class="form-control" name="level_net_effective_date[]">
+          </div>
         </div>
       </div>
 
-      <div class="row core-fields d-none">
-        <div class="col-md-6 mb-2">
-          <label class="form-label">Core Part Number</label>
-          <input type="text" class="form-control" name="price_core_part[]">
-        </div>
-        <div class="col-md-6 mb-2">
-          <label class="form-label">Core Cost</label>
-          <input type="text" class="form-control" name="price_core_cost[]">
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="col-md-12 mb-2">
-          <label class="form-label">Notes</label>
-          <input type="text" class="form-control" name="price_notes[]">
-        </div>
-      </div>
-
-      <div class="row">
-        <div class="col-md-12 mb-2">
-          <label class="form-label">Effective Date</label>
-          <input type="date" class="form-control" name="price_effective_date[]">
+      <!-- Method: Price Levels Provided -->
+      <div class="method-fields method-price_levels d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">Price Levels Provided</div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">List Price</label>
+            <input type="text" class="form-control" name="level_pl_list_price[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Jobber Price</label>
+            <input type="text" class="form-control" name="level_pl_jobber_price[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Net Cost</label>
+            <input type="text" class="form-control" name="level_pl_net_cost[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Effective Date</label>
+            <input type="date" class="form-control" name="level_pl_effective_date[]">
+          </div>
         </div>
       </div>
 
-      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove Price</button>
+      <!-- Method: Discount-Based Pricing -->
+      <div class="method-fields method-discount_based d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">Discount-Based Pricing</div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Base Price</label>
+            <input type="text" class="form-control" name="level_db_base_price[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Discount % (0–1)</label>
+            <input type="text" class="form-control" name="level_db_discount_pct[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Optional List Price</label>
+            <input type="text" class="form-control" name="level_db_list_price_opt[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Effective Date</label>
+            <input type="date" class="form-control" name="level_db_effective_date[]">
+          </div>
+        </div>
+      </div>
+
+      <!-- Method: EHC-Based Pricing -->
+      <div class="method-fields method-ehc_based d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">EHC-Based Pricing (Baldwin-style)</div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Base Price (Canadian Blue)</label>
+            <input type="text" class="form-control" name="level_ehc_base_price[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Canadian Blue</label>
+            <input type="text" class="form-control" name="level_ehc_canadian_blue[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Qty / Case</label>
+            <input type="text" class="form-control" name="level_ehc_qty_case[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Packaging MOQ</label>
+            <input type="text" class="form-control" name="level_ehc_moq[]">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-4 mb-2">
+            <label class="form-label">UPC Each</label>
+            <input type="text" class="form-control" name="level_ehc_upc_each[]">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label">UPC Case</label>
+            <input type="text" class="form-control" name="level_ehc_upc_case[]">
+          </div>
+        </div>
+
+        <div class="small-help mb-1 mt-2">EHC fees (Each / Case):</div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">AB / MB / SK – Each</label>
+            <input type="text" class="form-control" name="level_ehc_abmbsk_each[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">AB / MB / SK – Case</label>
+            <input type="text" class="form-control" name="level_ehc_abmbsk_case[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">BC – Each</label>
+            <input type="text" class="form-control" name="level_ehc_bc_each[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">BC – Case</label>
+            <input type="text" class="form-control" name="level_ehc_bc_case[]">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">NL – Each</label>
+            <input type="text" class="form-control" name="level_ehc_nl_each[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">NL – Case</label>
+            <input type="text" class="form-control" name="level_ehc_nl_case[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">NS – Each</label>
+            <input type="text" class="form-control" name="level_ehc_ns_each[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">NS – Case</label>
+            <input type="text" class="form-control" name="level_ehc_ns_case[]">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">NB / QC – Each</label>
+            <input type="text" class="form-control" name="level_ehc_nbqc_each[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">NB / QC – Case</label>
+            <input type="text" class="form-control" name="level_ehc_nbqc_case[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">PEI – Each</label>
+            <input type="text" class="form-control" name="level_ehc_pei_each[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">PEI – Case</label>
+            <input type="text" class="form-control" name="level_ehc_pei_case[]">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">YK – Each</label>
+            <input type="text" class="form-control" name="level_ehc_yk_each[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">YK – Case</label>
+            <input type="text" class="form-control" name="level_ehc_yk_case[]">
+          </div>
+        </div>
+      </div>
+
+      <!-- Method: Promo Pricing -->
+      <div class="method-fields method-promo_pricing d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">Promo Pricing</div>
+        <div class="row">
+          <div class="col-md-4 mb-2">
+            <label class="form-label">Promo Price</label>
+            <input type="text" class="form-control" name="level_pr_promo_price[]">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label">Start Date</label>
+            <input type="date" class="form-control" name="level_pr_start_date[]">
+          </div>
+          <div class="col-md-4 mb-2">
+            <label class="form-label">End Date</label>
+            <input type="date" class="form-control" name="level_pr_end_date[]">
+          </div>
+        </div>
+      </div>
+
+      <!-- Method: Quote Pricing -->
+      <div class="method-fields method-quote_pricing d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">Quote Pricing</div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Quote Price</label>
+            <input type="text" class="form-control" name="level_qt_price[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Quote Number (optional)</label>
+            <input type="text" class="form-control" name="level_qt_number[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Start Date</label>
+            <input type="date" class="form-control" name="level_qt_start_date[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">End Date</label>
+            <input type="date" class="form-control" name="level_qt_end_date[]">
+          </div>
+        </div>
+      </div>
+
+      <!-- Method: Tender Pricing -->
+      <div class="method-fields method-tender_pricing d-none border-top pt-2 mt-2">
+        <div class="section-heading mb-2">Tender Pricing</div>
+        <div class="row">
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Tender Price</label>
+            <input type="text" class="form-control" name="level_td_price[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Tender Number (optional)</label>
+            <input type="text" class="form-control" name="level_td_number[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">Start Date</label>
+            <input type="date" class="form-control" name="level_td_start_date[]">
+          </div>
+          <div class="col-md-3 mb-2">
+            <label class="form-label">End Date</label>
+            <input type="date" class="form-control" name="level_td_end_date[]">
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-link p-0 mt-2 small text-danger remove-block">
+        Remove Pricing Level
+      </button>
     `;
-    priceLinesContainer.appendChild(block);
+
+    priceLevelsContainer.appendChild(block);
     attachRemove(block);
 
-    const priceTypeSelect = block.querySelector('.price-type-select');
-    const tierFields = block.querySelector('.tier-fields');
-    const dateFields = block.querySelector('.date-fields');
-    const coreFields = block.querySelector('.core-fields');
+    const methodSelect = block.querySelector('.pricing-method-select');
+    const methodSections = block.querySelectorAll('.method-fields');
 
-    priceTypeSelect.addEventListener('change', () => {
-      const val = priceTypeSelect.value;
-      tierFields.classList.add('d-none');
-      dateFields.classList.add('d-none');
-      coreFields.classList.add('d-none');
-
-      if (['Bulk', 'Case', 'Pallet'].includes(val)) {
-        tierFields.classList.remove('d-none');
-      }
-      if (['Promo', 'Tender', 'Quote'].includes(val)) {
-        dateFields.classList.remove('d-none');
-      }
-      if (val === 'Core') {
-        coreFields.classList.remove('d-none');
-      }
+    methodSelect.addEventListener('change', () => {
+      const val = methodSelect.value;
+      methodSections.forEach(sec => sec.classList.add('d-none'));
+      if (!val) return;
+      const target = block.querySelector('.method-' + val);
+      if (target) target.classList.remove('d-none');
     });
   });
 
-  // GTIN / Barcode helper
-  const barcodeTypeSelect = document.getElementById('barcode_type');
-  const barcodeInput = document.getElementById('barcode_number');
-
-  barcodeTypeSelect && barcodeTypeSelect.addEventListener('change', () => {
-    const t = barcodeTypeSelect.value;
-    if (t === 'UPC') {
-      barcodeInput.maxLength = 12;
-      barcodeInput.placeholder = 'UPC – 12 digits';
-    } else if (t === 'EAN') {
-      barcodeInput.maxLength = 14;
-      barcodeInput.placeholder = 'EAN – 14 digits';
-    } else {
-      barcodeInput.maxLength = 14;
-      barcodeInput.placeholder = 'UPC 12 digits / EAN 14 digits';
-    }
-  });
-
-  // Extra front-end validation for HSB = 10 digits
-  document.getElementById('singleProductForm').addEventListener('submit', (e) => {
-    const extCodeSelects = document.querySelectorAll('.ext-code-select');
-    const extValueInputs = document.querySelectorAll('.ext-value-input');
-
-    for (let i = 0; i < extCodeSelects.length; i++) {
-      const code = (extCodeSelects[i].value || '').trim();
-      const val = (extValueInputs[i].value || '').trim();
-
-      if (code === 'HSB' && val) {
-        if (!/^\d{10}$/.test(val)) {
-          e.preventDefault();
-          alert('HSB (HS/Tariff code) must be exactly 10 digits.');
-          extValueInputs[i].focus();
-          return;
-        }
-      }
-    }
-  });
 </script>
 
 </body>
