@@ -1000,7 +1000,8 @@ blob_client.upload_blob(
 ```
 
 ### Monnitoring Azure Operations
-**Sucess Indicators **
+**Sucess Indicators**
+
 - Uploaded to Azure: raw/vendor=Grote/product/2025-11-19_14-30-00_product.xml
 - Uploaded to Azure: raw/vendor=Grote/pricing/2025-11-19_14-30-00_pricing.xlsx
 - Assets changed. Uploading new zip . . .
@@ -1013,7 +1014,7 @@ Assets unchanged. Skipping ZIP upload.
 No ZIP path provided or file does not exist. Skipping assets upload. 
 
 ## 8. Security Considerations
-** Secure Filename Handling **
+**Secure Filename Handling**
 Risk: Path traversal attacks, malicious filenames
 Solution: Werkzeug's secure_filename()
 ```python
@@ -1041,7 +1042,7 @@ What secure_filename() does:
 4. Replaces spaces with underscores
 5. Removes special characters
 
-## File Type Validation
+### File Type Validation
 Whitelist Approach:
 ```python
 ALLOWED_EXTENSIONS = {'xml','xlsx'}
@@ -1065,7 +1066,7 @@ Why not blacklist?
 
 ### Azure Credentials Management
 #### Environment Variables
-** Development Setup **
+**Development Setup**
 ```python
 # .env file (never commit to Git)
 AZURE_STORAGE_CONNECTION_STRING="DefalutEndpointsProtocol=https;AccountName=fgivendordata;AccountKey=XXXXX;EndpointSuffix=core.windows.net"
@@ -1082,6 +1083,7 @@ if not AZURE_CONNECTION_STRING:
     print("Warning: AZURE_CONNECTION_STRING is not set.")
     print("Azure uploads will fail until you configure it. ")
 ```
+
 
 
 
