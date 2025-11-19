@@ -439,6 +439,21 @@ def submit_single_product():
             "End Date": "",
             "Core Part Number": "",
             "Core Cost": "",
+            # --- EHC FIELDS ---
+            "EHC AB_MB_SK Each": "",
+            "EHC AB_MB_SK Case": "",
+            "EHC BC Each": "",
+            "EHC BC Case": "",
+            "EHC NL Each": "",
+            "EHC NL Case": "",
+            "EHC NS Each": "",
+            "EHC NS Case": "",
+            "EHC NB_QC Each": "",
+            "EHC NB_QC Case": "",
+            "EHC PEI Each": "",
+            "EHC PEI Case": "",
+            "EHC YK Each": "",
+            "EHC YK Case": "",
             "Notes": "",
         }
 
@@ -469,8 +484,25 @@ def submit_single_product():
 
         elif lvl_method == "ehc_based":
             base = (ehc_base[i] or "").strip()
-            row["Pricing Amount"] = row["Net Price"] = base
+            row["Pricing Amount"] = base
+
+            row["EHC AB_MB_SK Each"] = (ehc_abmbsk_each[i] or "").strip()
+            row["EHC AB_MB_SK Case"] = (ehc_abmbsk_case[i] or "").strip()
+            row["EHC BC Each"] = (ehc_bc_each[i] or "").strip()
+            row["EHC BC Case"] = (ehc_bc_case[i] or "").strip()
+            row["EHC NL Each"] = (ehc_nl_each[i] or "").strip()
+            row["EHC NL Case"] = (ehc_nl_case[i] or "").strip()
+            row["EHC NS Each"] = (ehc_ns_each[i] or "").strip()
+            row["EHC NS Case"] = (ehc_ns_case[i] or "").strip()
+            row["EHC NB_QC Each"] = (ehc_nbqc_each[i] or "").strip()
+            row["EHC NB_QC Case"] = (ehc_nbqc_case[i] or "").strip()
+            row["EHC PEI Each"] = (ehc_pei_each[i] or "").strip()
+            row["EHC PEI Case"] = (ehc_pei_case[i] or "").strip()
+            row["EHC YK Each"] = (ehc_yk_each[i] or "").strip()
+            row["EHC YK Case"] = (ehc_yk_case[i] or "").strip()
+
             row["Notes"] = "EHC fees provided by region."
+
 
         elif lvl_method == "promo_pricing":
             row["Pricing Amount"] = (pr_price[i] or "").strip()

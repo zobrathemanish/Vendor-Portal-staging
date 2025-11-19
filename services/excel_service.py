@@ -195,28 +195,25 @@ def create_multi_product_excel(
     # 8) Pricing
     ws = wb.create_sheet("Pricing")
     price_cols = [
-        "Vendor",
-        "Part Number",
-        "Pricing Method",
-        "Currency",
-        "MOQ Unit",
-        "MOQ",
-        "Pricing Change Type",
-        "Pricing Type",
-        "List Price",
-        "Jobber Price",
-        "Discount %",
-        "Multiplier",
-        "Pricing Amount",
-        "Tier Min Qty",
-        "Tier Max Qty",
-        "Effective Date",
-        "Start Date",
-        "End Date",
-        "Core Part Number",
-        "Core Cost",
-        "Notes",
-    ]
+    "Vendor", "Part Number", "Pricing Method", "Currency",
+    "MOQ Unit", "MOQ", "Pricing Change Type", "Pricing Type",
+    "List Price", "Jobber Price", "Discount %", "Multiplier",
+    "Pricing Amount",
+
+    # ===== NEW EHC COLUMNS =====
+    "EHC AB_MB_SK Each", "EHC AB_MB_SK Case",
+    "EHC BC Each", "EHC BC Case",
+    "EHC NL Each", "EHC NL Case",
+    "EHC NS Each", "EHC NS Case",
+    "EHC NB_QC Each", "EHC NB_QC Case",
+    "EHC PEI Each", "EHC PEI Case",
+    "EHC YK Each", "EHC YK Case",
+
+    "Tier Min Qty", "Tier Max Qty",
+    "Effective Date", "Start Date", "End Date",
+    "Core Part Number", "Core Cost", "Notes",
+]
+
     ws.append(price_cols)
     for row in price_rows:
         ws.append([
@@ -233,6 +230,24 @@ def create_multi_product_excel(
             row.get("Discount %", ""),
             row.get("Multiplier", ""),
             row.get("Pricing Amount", ""),
+
+            # ==== NEW EHC COLUMNS ====
+            row.get("EHC AB_MB_SK Each", ""),
+            row.get("EHC AB_MB_SK Case", ""),
+            row.get("EHC BC Each", ""),
+            row.get("EHC BC Case", ""),
+            row.get("EHC NL Each", ""),
+            row.get("EHC NL Case", ""),
+            row.get("EHC NS Each", ""),
+            row.get("EHC NS Case", ""),
+            row.get("EHC NB_QC Each", ""),
+            row.get("EHC NB_QC Case", ""),
+            row.get("EHC PEI Each", ""),
+            row.get("EHC PEI Case", ""),
+            row.get("EHC YK Each", ""),
+            row.get("EHC YK Case", ""),
+
+            # ==== Continue with existing fields ====
             row.get("Tier Min Qty", ""),
             row.get("Tier Max Qty", ""),
             row.get("Effective Date", ""),
@@ -242,6 +257,7 @@ def create_multi_product_excel(
             row.get("Core Cost", ""),
             row.get("Notes", ""),
         ])
+
 
     wb.save(filepath)
     return filepath
