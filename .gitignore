@@ -1,3 +1,6 @@
+# Environment file
 .env
-.env
-.env
+
+#Flask uploads
+static/uploads/
+

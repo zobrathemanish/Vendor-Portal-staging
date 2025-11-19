@@ -112,7 +112,8 @@ def single_product_page():
         PRICING_METHODS=PRICING_METHODS,
         pending_products=pending,
         vendor_prefill=vendor_prefill,
-        latest_excel_available=bool(latest_excel)
+        latest_excel_available=bool(latest_excel),
+        DIMENSION_UOM = DIMENSION_UOM
     )
 
 
@@ -240,11 +241,33 @@ def submit_single_product():
     pack_weight_uoms = request.form.getlist("pack_weight_uom[]")
     pack_weights = request.form.getlist("pack_weight[]")
 
-    for ct, uom, qty, wuom, wt in zip(
-        pack_change_types, pack_uoms, pack_qty_each, pack_weight_uoms, pack_weights
+    # New fields
+    pack_dim_uom = request.form.getlist("pack_dim_uom[]")
+    pack_merch_length = request.form.getlist("pack_merch_length[]")
+    pack_merch_width = request.form.getlist("pack_merch_width[]")
+    pack_merch_height = request.form.getlist("pack_merch_height[]")
+    pack_ship_length = request.form.getlist("pack_ship_length[]")
+    pack_ship_width = request.form.getlist("pack_ship_width[]")
+    pack_ship_height = request.form.getlist("pack_ship_height[]")
+
+    for ct, uom, qty, wuom, wt, pack_dim_uom, merch_len, merch_wid, merch_ht, ship_len, ship_wid, ship_ht in zip(
+        pack_change_types,
+        pack_uoms,
+        pack_qty_each,
+        pack_weight_uoms,
+        pack_weights,
+        pack_dim_uom,
+        pack_merch_length,
+        pack_merch_width,
+        pack_merch_height,
+        pack_ship_length,
+        pack_ship_width,
+        pack_ship_height
     ):
-        if not (ct or uom or qty or wuom or wt):
+        # Skip if nothing entered
+        if not (ct or uom or qty or wuom or wt or pack_dim_uom or merch_len or merch_wid or merch_ht or ship_len or ship_wid or ship_ht):
             continue
+
         package_rows.append({
             "SKU": sku,
             "Package Change Type": ct.strip(),
@@ -252,7 +275,17 @@ def submit_single_product():
             "Package Quantity of Eaches": qty.strip(),
             "Weight UOM": wuom.strip(),
             "Weight": wt.strip(),
+
+            # New fields
+            "Dimension UOM": pack_dim_uom.strip(),
+            "Merch Length": merch_len.strip(),
+            "Merch Width": merch_wid.strip(),
+            "Merch Height": merch_ht.strip(),
+            "Ship Length": ship_len.strip(),
+            "Ship Width": ship_wid.strip(),
+            "Ship Height": ship_ht.strip(),
         })
+
 
     # --------- SECTION 7: Digital Assets (1:M) ----------
     asset_change_types = request.form.getlist("asset_change_type[]")

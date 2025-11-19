@@ -161,17 +161,33 @@ def create_multi_product_excel(
         "Package Quantity of Eaches",
         "Weight UOM",
         "Weight",
+        "Dimension UOM",
+        "Merch Length",
+        "Merch Width",
+        "Merch Height",
+        "Ship Length",
+        "Ship Width",
+        "Ship Height",
+
     ]
     ws.append(package_cols)
     for row in package_rows:
         ws.append([
-            row.get("SKU", ""),
-            row.get("Package Change Type", ""),
-            row.get("Package UOM", ""),
-            row.get("Package Quantity of Eaches", ""),
-            row.get("Weight UOM", ""),
-            row.get("Weight", ""),
-        ])
+        row.get("SKU", ""),
+        row.get("Package Change Type", ""),
+        row.get("Package UOM", ""),
+        row.get("Package Quantity of Eaches", ""),
+        row.get("Weight UOM", ""),
+        row.get("Weight", ""),
+        row.get("Dimension UOM", ""),
+        row.get("Merch Length", ""),
+        row.get("Merch Width", ""),
+        row.get("Merch Height", ""),
+        row.get("Ship Length", ""),
+        row.get("Ship Width", ""),
+        row.get("Ship Height", ""),
+    ])
+
 
     # 7) Digital_Assets
     ws = wb.create_sheet("Digital_Assets")
