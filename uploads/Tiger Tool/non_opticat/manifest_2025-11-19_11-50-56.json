@@ -1,7 +1,0 @@
-{
-    "vendor": "Tiger Tool",
-    "timestamp": "2025-11-19_11-50-56",
-    "azure_unified_blob": "bronze/raw/vendor=Tiger Tool/unified/2025-11-19_11-50-56_unified.xlsx",
-    "azure_assets_blob": "bronze/raw/vendor=Tiger Tool/assets/2025-11-19_11-50-56_assets.zip",
-    "assets_hash": "a0765e748dcfff3f7eff8401d85a5b250ffbde34431324d3105fd433121a8a2e"
-}
