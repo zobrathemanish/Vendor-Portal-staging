@@ -3,7 +3,7 @@ import os
 from werkzeug.utils import secure_filename
 from helpers.lookups import *
 from services.file_service import save_file
-from services.azure_service import ( upload_to_azure_bronze)
+from services.azure_service import *
 from services.excel_service import *
 from validators.pricing_validator import validate_single_product_new
 from dotenv import load_dotenv
@@ -57,30 +57,79 @@ def upload_page():
 @app.route('/upload', methods=['POST'])
 def upload_files():
     vendor_name = request.form.get('vendor_name')
-    zip_path = request.form.get('zip_path')
+    vendor_type = request.form.get('vendor_type')
 
-    # if vendor_name not in OPTICAT_VENDORS:
-    #     flash('Only OptiCat vendors are supported in Phase 1.', 'danger')
-    #     return redirect(url_for('upload_page'))
+    # Shared
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    product_file = request.files.get('product_file')
-    pricing_file = request.files.get('pricing_file')
+    # -------------------------------
+    # PROCESS OPTICAT VENDORS
+    # -------------------------------
+    if vendor_type == "opticat":
+        product_file = request.files.get('product_file')
+        pricing_file = request.files.get('pricing_file')
+        zip_path = request.form.get('zip_path')
 
-    if not product_file or not pricing_file:
-        flash('Product XML and Pricing XLSX are required.', 'danger')
+        if not product_file or not pricing_file:
+            flash('XML and Pricing XLSX are required for OptiCat vendors.', 'danger')
+            return redirect(url_for('upload_page'))
+
+        # Save locally first
+        product_path = save_file(product_file, vendor_name, "opticat", app.config['UPLOAD_FOLDER'])
+        pricing_path = save_file(pricing_file, vendor_name, "opticat", app.config['UPLOAD_FOLDER'])
+
+        try:
+            upload_to_azure_bronze_opticat(
+                vendor=vendor_name,
+                xml_local_path=product_path,
+                pricing_local_path=pricing_path,
+                zip_path=zip_path,
+                connection_string=AZURE_CONNECTION_STRING,
+                container_name=AZURE_CONTAINER_NAME,
+                upload_folder=app.config['UPLOAD_FOLDER']
+            )
+
+            flash(f'OptiCat files for {vendor_name} uploaded successfully.', 'success')
+        except Exception as e:
+            flash(f'Azure upload failed: {e}', 'danger')
+
         return redirect(url_for('upload_page'))
 
-    product_path = save_file(product_file, vendor_name, "opticat",app.config['UPLOAD_FOLDER'])
-    pricing_path = save_file(pricing_file, vendor_name, "opticat",app.config['UPLOAD_FOLDER'])
+    # -------------------------------
+    # PROCESS NON-OPTICAT VENDORS
+    # -------------------------------
+    elif vendor_type == "non-opticat":
+        unified_file = request.files.get('non_opticat_file')
+        zip_path = request.form.get('non_opticat_zip_path')
 
-    try:
-        upload_to_azure_bronze(vendor_name, product_path, pricing_path, zip_path, AZURE_CONNECTION_STRING, AZURE_CONTAINER_NAME, app.config['UPLOAD_FOLDER'])
-        flash(f'Files for {vendor_name} uploaded to Azure Bronze successfully.', 'success')
-    except Exception as e:
-        print(f"❌ Azure upload failed: {e}")
-        flash(f'Azure upload failed: {e}', 'danger')
+        if not unified_file:
+            flash('A unified XLSX file is required for Non-OptiCat vendors.', 'danger')
+            return redirect(url_for('upload_page'))
 
-    return redirect(url_for('upload_page'))
+        # Save unified vendor file
+        unified_path = save_file(unified_file, vendor_name, "non_opticat", app.config['UPLOAD_FOLDER'])
+
+        try:
+            upload_to_azure_bronze_non_opticat(
+                vendor=vendor_name,
+                unified_local_path=unified_path,
+                zip_path=zip_path,
+                connection_string=AZURE_CONNECTION_STRING,
+                container_name=AZURE_CONTAINER_NAME,
+                upload_folder=app.config['UPLOAD_FOLDER']
+            )
+
+            flash(f'Non-OptiCat file for {vendor_name} uploaded successfully.', 'success')
+        except Exception as e:
+            flash(f'Azure upload failed: {e}', 'danger')
+
+        return redirect(url_for('upload_page'))
+
+    else:
+        flash("Unknown vendor type.", "danger")
+        return redirect(url_for("upload_page"))
+
+
 
 
 @app.route('/download-template')

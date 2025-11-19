@@ -61,61 +61,117 @@
       {% endif %}
     {% endwith %}
 
-    <form action="{{ url_for('upload_files') }}" method="POST" enctype="multipart/form-data">
+   <form action="{{ url_for('upload_files') }}" method="POST" enctype="multipart/form-data">
 
-      <!-- Vendor Select -->
-      <div class="mb-3">
-        <label class="form-label fw-semibold">Select Vendor</label>
-        <select class="form-select" name="vendor_name" required>
-          <option value="" disabled selected>Select a vendor...</option>
+   <input type="hidden" name="vendor_type" id="vendorType">
 
-          <optgroup label="OptiCat Vendors">
-            <option value="Dayton Parts">Dayton Parts</option>
-            <option value="Grote Lighting">Grote Lighting</option>
-            <option value="Neapco">Neapco</option>
-            <option value="Truck Lite">Truck Lite</option>
-            <option value="Baldwin Filters">Baldwin Filters</option>
-            <option value="Stemco">Stemco</option>
-            <option value="High Bar Brands">High Bar Brands</option>
-          </optgroup>
-        </select>
-      </div>
 
-      <!-- XML Upload -->
-      <div class="mb-3">
-        <label class="form-label">Attach Product File (.xml)</label>
-        <input class="form-control" type="file" name="product_file" accept=".xml" required>
-      </div>
+  <!-- Vendor Select -->
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Select Vendor</label>
+    <select class="form-select" name="vendor_name" id="vendorSelect" required>
+      <option value="" disabled selected>Select a vendor...</option>
 
-      <!-- Pricing Upload -->
-      <div class="mb-3">
-        <label class="form-label">Attach Pricing File (.xlsx)</label>
-        <input class="form-control" type="file" name="pricing_file" accept=".xlsx" required>
-      </div>
+      <optgroup label="OptiCat Vendors">
+        <option value="Dayton Parts" data-type="opticat">Dayton Parts</option>
+        <option value="Grote Lighting" data-type="opticat">Grote Lighting</option>
+        <option value="Neapco" data-type="opticat">Neapco</option>
+        <option value="Truck Lite" data-type="opticat">Truck Lite</option>
+        <option value="Baldwin Filters" data-type="opticat">Baldwin Filters</option>
+        <option value="Stemco" data-type="opticat">Stemco</option>
+        <option value="High Bar Brands" data-type="opticat">High Bar Brands</option>
+      </optgroup>
 
-      <!-- Local ZIP Path -->
-      <div class="mb-3">
-        <label class="form-label fw-semibold">Local Asset ZIP Path</label>
-        <input type="text" class="form-control"
-               name="zip_path"
-               placeholder="e.g., C:\FGI\VendorAssets\GroteLighting\GroteAssets_2025.zip">
-        <small class="text-muted">
-         Asset ZIP path will be uploaded automatically to Azure Bronze if it differs from the previously uploaded version.
-        </small>
-      </div>
+      <optgroup label="Non-OptiCat Vendors">
+        <option value="Tiger Tool" data-type="non-opticat">Tiger Tool</option>
+        <option value="JW Speakers" data-type="non-opticat">J.W. Speakers</option>
+        <option value="Consolidated Metco" data-type="non-opticat">Consolidated Metco</option>
+        <option value="SAF Holland" data-type="non-opticat">SAF Holland</option>
+        <option value="Rigid Industries" data-type="non-opticat">Rigid Industries</option>
 
-      <!-- Submit -->
-      <div class="d-grid mb-3">
-        <button type="submit" class="btn btn-primary">Submit</button>
-      </div>
+      </optgroup>
+    </select>
+  </div>
 
-      <div class="text-center">
-        <a href="{{ url_for('download_template') }}" class="me-3">📄 Download Standard Template</a>
-        <a href="{{ url_for('single_product_page') }}">🔧 Submit Single Product Manually</a>
-        <a href="{{ url_for('form_submission_help') }}">📝 Help</a>
-      </div>
+  <!-- OptiCat Section -->
+  <div id="opticatSection" style="display:none;">
+    <div class="mb-3">
+      <label class="form-label">Attach Product File (.xml)</label>
+      <input class="form-control" type="file" name="product_file" accept=".xml">
+    </div>
 
-    </form>
+    <div class="mb-3">
+      <label class="form-label">Attach Pricing File (.xlsx)</label>
+      <input class="form-control" type="file" name="pricing_file" accept=".xlsx">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Local Asset ZIP Path</label>
+      <input type="text" class="form-control"
+             name="zip_path"
+             placeholder="C:\FGI\VendorAssets\Vendor\Assets.zip">
+      <small class="text-muted">Optional – will be uploaded to Azure Bronze.</small>
+    </div>
+  </div>
+
+  <!-- Non-OptiCat Section -->
+  <div id="nonOpticatSection" style="display:none;">
+    <div class="mb-3">
+      <label class="form-label">Upload Vendor File (.xlsx)</label>
+      <input class="form-control" type="file" name="non_opticat_file" accept=".xlsx">
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Local Asset ZIP Path</label>
+      <input type="text" class="form-control"
+             name="non_opticat_zip_path"
+             placeholder="C:\FGI\VendorAssets\Vendor\VendorAssets.zip">
+      <small class="text-muted">Optional – will be uploaded to Azure Bronze.</small>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div class="d-grid mb-3">
+    <button type="submit" class="btn btn-primary">Submit</button>
+  </div>
+
+  <div class="text-center">
+    <a href="{{ url_for('download_template') }}" class="me-3">📄 Download Standard Template</a>
+    <a href="{{ url_for('single_product_page') }}">🔧 Submit Single Product Manually</a>
+    <a href="{{ url_for('form_submission_help') }}">📝 Help</a>
+  </div>
+
+</form>
+
+<script>
+  document.getElementById('vendorSelect').addEventListener('change', function () {
+    const selected = this.options[this.selectedIndex];
+    const type = selected.getAttribute('data-type');
+
+     // send vendor_type to Flask
+    document.getElementById('vendorType').value = type;
+
+    const opticat = document.getElementById('opticatSection');
+    const nonOpticat = document.getElementById('nonOpticatSection');
+
+    if (type === 'opticat') {
+      opticat.style.display = 'block';
+      nonOpticat.style.display = 'none';
+
+      document.querySelector('input[name="product_file"]').required = true;
+      document.querySelector('input[name="pricing_file"]').required = true;
+      document.querySelector('input[name="non_opticat_file"]').required = false;
+
+    } else {
+      opticat.style.display = 'none';
+      nonOpticat.style.display = 'block';
+
+      document.querySelector('input[name="product_file"]').required = false;
+      document.querySelector('input[name="pricing_file"]').required = false;
+      document.querySelector('input[name="non_opticat_file"]').required = true;
+    }
+  });
+</script>
   </div>
 </div>
 
