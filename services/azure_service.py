@@ -6,24 +6,18 @@ import json
 from datetime import datetime
 from azure.storage.blob import BlobServiceClient
 from services.file_service import compute_file_hash
+from azure.identity import DefaultAzureCredential
 
 
-def get_blob_service_client(connection_string):
-    """
-    Create and return Azure Blob Service Client.
-    
-    Args:
-        connection_string (str): Azure Storage connection string
-        
-    Returns:
-        BlobServiceClient: Configured blob service client
-        
-    Raises:
-        RuntimeError: If connection string is not configured
-    """
-    if not connection_string:
-        raise RuntimeError("AZURE_STORAGE_CONNECTION_STRING is not configured.")
-    return BlobServiceClient.from_connection_string(connection_string)
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+
+# RBAC Auth (No connection string needed)
+def get_blob_service_client():
+    account_url = "https://stsstagingvendor01.blob.core.windows.net"
+    credential = DefaultAzureCredential()
+    return BlobServiceClient(account_url=account_url, credential=credential)
+
 
 
 def get_latest_asset_hash(container_client, vendor_folder):
@@ -73,20 +67,10 @@ def delete_old_asset_zips(container_client, vendor_folder):
         print(f"[CLEANUP] Deleted old asset ZIP: {old_blob.name}")
 
 
-def upload_blob(local_path, blob_path, connection_string, container_name):
+def upload_blob(local_path, blob_path, blob_service_client, container_name):
     """
-    Upload a file to Azure Blob Storage.
-    
-    Args:
-        local_path (str): Local file path
-        blob_path (str): Destination blob path in container
-        connection_string (str): Azure Storage connection string
-        container_name (str): Azure container name
-        
-    Returns:
-        str: Full blob path in format 'container/blob_path'
+    Upload a file using RBAC (Azure AD authentication).
     """
-    blob_service_client = get_blob_service_client(connection_string)
     container_client = blob_service_client.get_container_client(container_name)
     blob_client = container_client.get_blob_client(blob_path)
 
@@ -97,47 +81,38 @@ def upload_blob(local_path, blob_path, connection_string, container_name):
     return f"{container_name}/{blob_path}"
 
 
-def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path, zip_path, 
-                           connection_string, container_name, upload_folder):
-    """
-    Upload product XML, pricing XLSX, and assets ZIP to Azure Bronze.
-    Includes: hash check, skip-if-same, smart deletion, manifest updates.
-    
-    Args:
-        vendor (str): Vendor name
-        xml_local_path (str): Local path to XML file
-        pricing_local_path (str): Local path to pricing Excel file
-        zip_path (str): Local path to assets ZIP file
-        connection_string (str): Azure Storage connection string
-        container_name (str): Azure container name
-        upload_folder (str): Base upload folder for local manifest storage
-        
-    Returns:
-        None
-    """
+
+def upload_to_azure_bronze_opticat(
+        vendor,
+        xml_local_path,
+        pricing_local_path,
+        zip_path,
+        container_name,
+        upload_folder):
+
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     vendor_folder = f"vendor={vendor}"
 
-    blob_service_client = get_blob_service_client(connection_string)
+    blob_service_client = get_blob_service_client()
     container_client = blob_service_client.get_container_client(container_name)
 
-    # --------------- XML + Pricing always uploaded ---------------
+    # XML
     xml_blob_path = f"raw/{vendor_folder}/product/{timestamp}_product.xml"
+    xml_blob_full = upload_blob(xml_local_path, xml_blob_path,
+                                blob_service_client, container_name)
+
+    # Pricing
     pricing_blob_path = f"raw/{vendor_folder}/pricing/{timestamp}_pricing.xlsx"
+    pricing_blob_full = upload_blob(pricing_local_path, pricing_blob_path,
+                                    blob_service_client, container_name)
 
-    xml_blob_full = upload_blob(xml_local_path, xml_blob_path, connection_string, container_name)
-    pricing_blob_full = upload_blob(pricing_local_path, pricing_blob_path, connection_string, container_name)
-
-    # --------------- Assets ZIP handling ---------------
+    # -------- ZIP (Assets) --------
     assets_blob_full = None
     assets_hash = None
 
     if zip_path and os.path.isfile(zip_path):
 
-        # Compute hash of new ZIP
         new_hash = compute_file_hash(zip_path)
-
-        # Get previous asset hash from last manifest
         last_hash = get_latest_asset_hash(container_client, vendor_folder)
 
         if last_hash == new_hash:
@@ -147,32 +122,37 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path, z
 
             assets_hash = new_hash
             assets_blob_path = f"raw/{vendor_folder}/assets/{timestamp}_assets.zip"
-            assets_blob_full = upload_blob(zip_path, assets_blob_path, connection_string, container_name)
 
-            # Clean up old ZIPs
+            assets_blob_full = upload_blob(zip_path, assets_blob_path,
+                                           blob_service_client, container_name)
+
             delete_old_asset_zips(container_client, vendor_folder)
-    else:
-        print("⚠ No ZIP path provided or file does not exist. Skipping assets upload.")
 
-    # --------------- Create manifest ---------------
+    else:
+        print("⚠ No ZIP file found. Skipping assets upload.")
+
+    # -------- Manifest --------
     manifest = {
         "vendor": vendor,
         "timestamp": timestamp,
         "azure_xml_blob": xml_blob_full,
         "azure_pricing_blob": pricing_blob_full,
         "azure_assets_blob": assets_blob_full,
-        "assets_hash": assets_hash,
+        "assets_hash": assets_hash
     }
 
     local_manifest_dir = os.path.join(upload_folder, vendor, "opticat")
     os.makedirs(local_manifest_dir, exist_ok=True)
+
     local_manifest_path = os.path.join(local_manifest_dir, f"manifest_{timestamp}.json")
 
     with open(local_manifest_path, "w") as f:
         json.dump(manifest, f, indent=4)
 
     manifest_blob_path = f"raw/{vendor_folder}/logs/manifest_{timestamp}.json"
-    upload_blob(local_manifest_path, manifest_blob_path, connection_string, container_name)
+
+    upload_blob(local_manifest_path, manifest_blob_path,
+                blob_service_client, container_name)
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
 
@@ -181,50 +161,28 @@ def upload_to_azure_bronze_non_opticat(
         vendor,
         unified_local_path,
         zip_path,
-        connection_string,
         container_name,
         upload_folder):
-    """
-    Upload unified XLSX and optional assets ZIP to Azure Bronze for NON-OptiCat vendors.
-    Mirrors the structure and behavior of upload_to_azure_bronze_opticat.
-
-    Structure created in Azure:
-        raw/vendor=<Vendor>/unified/<timestamp>_unified.xlsx
-        raw/vendor=<Vendor>/assets/<timestamp>_assets.zip
-        raw/vendor=<Vendor>/logs/manifest_<timestamp>.json
-
-    Includes:
-        - hash check for assets ZIP
-        - skip upload if same hash
-        - delete old ZIPs, keep only latest
-        - store manifest locally and in Azure
-    """
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     vendor_folder = f"vendor={vendor}"
 
-    blob_service_client = get_blob_service_client(connection_string)
+    blob_service_client = get_blob_service_client()
     container_client = blob_service_client.get_container_client(container_name)
 
-    # -------------------- Upload unified XLSX --------------------
+    # Unified XLSX
     unified_blob_path = f"raw/{vendor_folder}/unified/{timestamp}_unified.xlsx"
-    azure_unified_blob = upload_blob(
-        unified_local_path,
-        unified_blob_path,
-        connection_string,
-        container_name
-    )
+    azure_unified_blob = upload_blob(unified_local_path,
+                                     unified_blob_path,
+                                     blob_service_client,
+                                     container_name)
 
-    # -------------------- Assets ZIP handling --------------------
     assets_blob_full = None
     assets_hash = None
 
     if zip_path and os.path.isfile(zip_path):
 
-        # Compute hash of the new ZIP
         new_hash = compute_file_hash(zip_path)
-
-        # Get last uploaded asset hash from manifest
         last_hash = get_latest_asset_hash(container_client, vendor_folder)
 
         if last_hash == new_hash:
@@ -235,20 +193,17 @@ def upload_to_azure_bronze_non_opticat(
             assets_hash = new_hash
             assets_blob_path = f"raw/{vendor_folder}/assets/{timestamp}_assets.zip"
 
-            assets_blob_full = upload_blob(
-                zip_path,
-                assets_blob_path,
-                connection_string,
-                container_name
-            )
+            assets_blob_full = upload_blob(zip_path,
+                                           assets_blob_path,
+                                           blob_service_client,
+                                           container_name)
 
-            # Delete old ZIPs (keep only newest)
             delete_old_asset_zips(container_client, vendor_folder)
 
     else:
-        print("⚠ No ZIP path provided or file does not exist. Skipping assets upload.")
+        print("⚠ No ZIP file provided. Skipping assets upload.")
 
-    # -------------------- Create manifest --------------------
+    # Manifest
     manifest = {
         "vendor": vendor,
         "timestamp": timestamp,
@@ -257,26 +212,20 @@ def upload_to_azure_bronze_non_opticat(
         "assets_hash": assets_hash
     }
 
-    # Store manifest locally
     local_manifest_dir = os.path.join(upload_folder, vendor, "non_opticat")
     os.makedirs(local_manifest_dir, exist_ok=True)
 
-    local_manifest_path = os.path.join(
-        local_manifest_dir,
-        f"manifest_{timestamp}.json"
-    )
+    local_manifest_path = os.path.join(local_manifest_dir, f"manifest_{timestamp}.json")
 
     with open(local_manifest_path, "w") as f:
         json.dump(manifest, f, indent=4)
 
-    # Upload manifest to Azure
     manifest_blob_path = f"raw/{vendor_folder}/logs/manifest_{timestamp}.json"
-    upload_blob(
-        local_manifest_path,
-        manifest_blob_path,
-        connection_string,
-        container_name
-    )
+
+    upload_blob(local_manifest_path,
+                manifest_blob_path,
+                blob_service_client,
+                container_name)
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
 

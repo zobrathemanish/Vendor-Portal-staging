@@ -23,14 +23,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
-# Azure Storage
-AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-print(AZURE_CONNECTION_STRING)
+# Azure Storage (RBAC Authentication - No secrets required)
 AZURE_CONTAINER_NAME = "bronze"
-
-if not AZURE_CONNECTION_STRING:
-    print("⚠ WARNING: AZURE_STORAGE_CONNECTION_STRING is not set. "
-          "Azure uploads will fail until you configure it.")
 
 
 # def upload_single_product_excel_to_azure(vendor_name, local_path):
@@ -84,7 +78,6 @@ def upload_files():
                 xml_local_path=product_path,
                 pricing_local_path=pricing_path,
                 zip_path=zip_path,
-                connection_string=AZURE_CONNECTION_STRING,
                 container_name=AZURE_CONTAINER_NAME,
                 upload_folder=app.config['UPLOAD_FOLDER']
             )
@@ -114,7 +107,6 @@ def upload_files():
                 vendor=vendor_name,
                 unified_local_path=unified_path,
                 zip_path=zip_path,
-                connection_string=AZURE_CONNECTION_STRING,
                 container_name=AZURE_CONTAINER_NAME,
                 upload_folder=app.config['UPLOAD_FOLDER']
             )
