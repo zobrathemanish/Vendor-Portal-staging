@@ -22,10 +22,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-
 # Azure Storage
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-print(AZURE_CONNECTION_STRING)
 AZURE_CONTAINER_NAME = "bronze"
 
 if not AZURE_CONNECTION_STRING:
@@ -422,6 +420,9 @@ def submit_single_product():
     td_start = request.form.getlist("level_td_start_date[]")
     td_end = request.form.getlist("level_td_end_date[]")
 
+    cp_price = request.form.getlist("level_core_list_price[]")
+    cp_part_number = request.form.getlist("level_core_part_number[]")
+
     n_levels = len(level_types)
 
     def pad(lst):
@@ -477,6 +478,8 @@ def submit_single_product():
     td_number = pad(td_number)
     td_start = pad(td_start)
     td_end = pad(td_end)
+    cp_price = pad(cp_price)
+    cp_part_number = pad(cp_part_number)
 
     pricing_method_labels_set = set()
 
@@ -493,7 +496,7 @@ def submit_single_product():
             or net_list[i] or net_costs[i] or net_effective_dates[i]
             or pl_list[i] or pl_jobber[i] or pl_net[i] or pl_effective_dates[i]
             or db_base[i] or db_discount[i] or db_effective_dates[i]
-            or ehc_base[i] or pr_price[i] or qt_price[i] or td_price[i]
+            or ehc_base[i] or pr_price[i] or qt_price[i] or td_price[i] or cp_part_number[i] or cp_price[i]
         ):
             continue
 
@@ -606,6 +609,10 @@ def submit_single_product():
             tn = (td_number[i] or "").strip()
             if tn:
                 row["Notes"] = f"Tender #: {tn}"
+        
+        elif lvl_method == "core_pricing":
+            row["Core Cost"] = (cp_price[i] or "").strip()
+            row["Core Part Number"] = (cp_part_number[i] or "").strip()
 
         price_rows.append(row)
 
