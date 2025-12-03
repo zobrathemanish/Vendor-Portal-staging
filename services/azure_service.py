@@ -131,9 +131,10 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path, z
     # --------------- Assets ZIP handling ---------------
     assets_blob_full = None
     assets_hash = None
+    assets_status = "no_file"
+    assets_error = None
 
     if zip_path and os.path.isfile(zip_path):
-
         # Compute hash of new ZIP
         new_hash = compute_file_hash(zip_path)
 
@@ -142,17 +143,54 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path, z
 
         if last_hash == new_hash:
             print("🟡 Assets unchanged. Skipping ZIP upload.")
+            assets_status = "skipped_unchanged"
         else:
             print("🟢 Assets changed. Uploading new ZIP...")
-
             assets_hash = new_hash
             assets_blob_path = f"raw/{vendor_folder}/assets/{timestamp}_assets.zip"
-            assets_blob_full = upload_blob(zip_path, assets_blob_path, connection_string, container_name)
 
-            # Clean up old ZIPs
-            delete_old_asset_zips(container_client, vendor_folder)
+            try:
+                assets_blob_full = upload_blob(
+                    zip_path,
+                    assets_blob_path,
+                    connection_string,
+                    container_name,
+                )
+                assets_status = "uploaded"
+
+                # Clean up old ZIPs only if upload succeeded
+                delete_old_asset_zips(container_client, vendor_folder)
+
+            except Exception as e:
+                assets_status = "upload_failed"
+                assets_error = str(e)
+                print(f"🔴 Failed to upload assets ZIP: {e}")
     else:
         print("⚠ No ZIP path provided or file does not exist. Skipping assets upload.")
+
+    # --------------- Create manifest ---------------
+    manifest = {
+        "vendor": vendor,
+        "timestamp": timestamp,
+        "azure_xml_blob": xml_blob_full,
+        "azure_pricing_blob": pricing_blob_full,
+        "azure_assets_blob": assets_blob_full,
+        "assets_hash": assets_hash,
+        "assets_status": assets_status,
+        "assets_error": assets_error,
+    }
+
+    local_manifest_dir = os.path.join(upload_folder, vendor, "opticat")
+    os.makedirs(local_manifest_dir, exist_ok=True)
+    local_manifest_path = os.path.join(local_manifest_dir, f"manifest_{timestamp}.json")
+
+    with open(local_manifest_path, "w") as f:
+        json.dump(manifest, f, indent=4)
+
+    manifest_blob_path = f"raw/{vendor_folder}/logs/manifest_{timestamp}.json"
+    upload_blob(local_manifest_path, manifest_blob_path, connection_string, container_name)
+
+    print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
 
     # --------------- Create manifest ---------------
     manifest = {
@@ -212,39 +250,40 @@ def upload_to_azure_bronze_non_opticat(
         unified_local_path,
         unified_blob_path,
         connection_string,
-        container_name
+        container_name,
     )
 
     # -------------------- Assets ZIP handling --------------------
     assets_blob_full = None
     assets_hash = None
+    assets_status = "no_file"
+    assets_error = None
 
     if zip_path and os.path.isfile(zip_path):
-
-        # Compute hash of the new ZIP
         new_hash = compute_file_hash(zip_path)
-
-        # Get last uploaded asset hash from manifest
         last_hash = get_latest_asset_hash(container_client, vendor_folder)
 
         if last_hash == new_hash:
             print("🟡 Assets unchanged. Skipping ZIP upload.")
+            assets_status = "skipped_unchanged"
         else:
             print("🟢 Assets changed. Uploading new ZIP...")
-
             assets_hash = new_hash
             assets_blob_path = f"raw/{vendor_folder}/assets/{timestamp}_assets.zip"
 
-            assets_blob_full = upload_blob(
-                zip_path,
-                assets_blob_path,
-                connection_string,
-                container_name
-            )
-
-            # Delete old ZIPs (keep only newest)
-            delete_old_asset_zips(container_client, vendor_folder)
-
+            try:
+                assets_blob_full = upload_blob(
+                    zip_path,
+                    assets_blob_path,
+                    connection_string,
+                    container_name,
+                )
+                assets_status = "uploaded"
+                delete_old_asset_zips(container_client, vendor_folder)
+            except Exception as e:
+                assets_status = "upload_failed"
+                assets_error = str(e)
+                print(f"🔴 Failed to upload assets ZIP: {e}")
     else:
         print("⚠ No ZIP path provided or file does not exist. Skipping assets upload.")
 
@@ -254,31 +293,30 @@ def upload_to_azure_bronze_non_opticat(
         "timestamp": timestamp,
         "azure_unified_blob": azure_unified_blob,
         "azure_assets_blob": assets_blob_full,
-        "assets_hash": assets_hash
+        "assets_hash": assets_hash,
+        "assets_status": assets_status,
+        "assets_error": assets_error,
     }
 
-    # Store manifest locally
     local_manifest_dir = os.path.join(upload_folder, vendor, "non_opticat")
     os.makedirs(local_manifest_dir, exist_ok=True)
 
     local_manifest_path = os.path.join(
         local_manifest_dir,
-        f"manifest_{timestamp}.json"
+        f"manifest_{timestamp}.json",
     )
 
     with open(local_manifest_path, "w") as f:
         json.dump(manifest, f, indent=4)
 
-    # Upload manifest to Azure
     manifest_blob_path = f"raw/{vendor_folder}/logs/manifest_{timestamp}.json"
     upload_blob(
         local_manifest_path,
         manifest_blob_path,
         connection_string,
-        container_name
+        container_name,
     )
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
-
 
     

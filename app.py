@@ -117,7 +117,7 @@ def upload_files():
                 upload_folder=app.config['UPLOAD_FOLDER']
             )
 
-            flash(f'Non-OptiCat file for {vendor_name} uploaded successfully.', 'success')
+            flash(f'Unified file for {vendor_name} uploaded successfully.', 'success')
         except Exception as e:
             flash(f'Azure upload failed: {e}', 'danger')
 
