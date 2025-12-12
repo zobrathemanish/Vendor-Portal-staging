@@ -168,7 +168,7 @@ def get_asset_upload_sas():
 
     blob_path = (
         f"raw/vendor={vendor}/assets/"
-        f"{sku}/{timestamp}_{filename}"
+        f"{timestamp}_{filename}"
     )
     print("🔐 Generating SAS for:", blob_path)
 
@@ -723,9 +723,6 @@ def submit_single_product():
     # Fallback
     return redirect(url_for('single_product_page'))
 
-
-
-
 @app.route('/download-single-products-excel')
 def download_single_products_excel():
     excel_path = session.get('latest_single_products_excel_path')
@@ -735,6 +732,27 @@ def download_single_products_excel():
 
     directory, filename = os.path.split(excel_path)
     return send_from_directory(directory, filename, as_attachment=True)
+
+@app.route("/api/cleanup-old-assets", methods=["POST"])
+def cleanup_old_assets():
+    data = request.json
+    vendor = data["vendor"]
+    keep_blob_path = data["keep_blob_path"]
+
+    blob_service = BlobServiceClient.from_connection_string(
+        os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    )
+    container_client = blob_service.get_container_client(AZURE_CONTAINER_NAME)
+
+    prefix = f"raw/vendor={vendor}/assets/"
+
+    for blob in container_client.list_blobs(name_starts_with=prefix):
+        if blob.name != keep_blob_path:
+            container_client.delete_blob(blob.name)
+            print(f"🧹 Deleted old asset: {blob.name}")
+
+    return {"status": "cleanup_complete"}
+
 
 
 

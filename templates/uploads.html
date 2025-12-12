@@ -254,13 +254,26 @@
       await blobClient.uploadBrowserData(file, {
         blobHTTPHeaders: { blobContentType: "application/zip" },
         onProgress: (progress) => {
-          uploadedBytes = progress.loadedBytes;
+          const uploadedBytes = progress.loadedBytes;
           const percent = Math.round((uploadedBytes / totalBytes) * 100);
 
+          const uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
+          const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+
           progressBar.style.width = `${percent}%`;
-          progressBar.textContent = `${percent}%`;
+          progressBar.textContent = `${percent}% (${uploadedMB} MB / ${totalMB} MB)`;
         }
+
       });
+      await fetch("/api/cleanup-old-assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendor: vendor,
+          keep_blob_path: data.blob_path
+        })
+      });
+
 
       blobPathInput.value = data.blob_path;
 
