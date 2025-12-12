@@ -8,6 +8,7 @@ from services.excel_service import *
 from validators.pricing_validator import validate_single_product_new
 from dotenv import load_dotenv
 load_dotenv()
+
 # ---------------------------------------
 # CONFIGURATION
 # ---------------------------------------
@@ -360,7 +361,7 @@ def submit_single_product():
         })
 
     # --------- SECTION 8: Pricing (1:M) ----------
-        # --------- SECTION 8: Pricing (multi-level) ----------
+    # --------- SECTION 8: Pricing (multi-level) ----------
     level_types = request.form.getlist("level_type[]")
     level_price_change_types = request.form.getlist("level_price_change_type[]")
     level_moq_uoms = request.form.getlist("level_moq_uom[]")
