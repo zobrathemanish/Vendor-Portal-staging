@@ -48,6 +48,17 @@
     .btn-primary:hover {
       background-color: #a00d25;
     }
+    .btn-primary,
+    .btn-primary:disabled {
+      background-color: #C8102E !important;
+      border-color: #C8102E !important;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background-color: #a00d25 !important;
+      border-color: #a00d25 !important;
+    }
+
   </style>
 </head>
 
@@ -80,6 +91,10 @@
 
    <form action="{{ url_for('upload_files') }}" method="POST" enctype="multipart/form-data">
 
+ 
+
+  <input type="hidden" name="asset_blob_path[]" id="assetBlobPath">
+
    <input type="hidden" name="vendor_type" id="vendorType">
 
 
@@ -110,6 +125,24 @@
     </select>
   </div>
 
+     <!-- Upload Digital Assets-->
+    <div class="mb-3">
+  <label class="form-label fw-semibold">Upload Digital Assets (ZIP)</label>
+  <input class="form-control" type="file" id="assetZip" accept=".zip">
+  <small class="text-muted">Upload a ZIP containing all images / PDFs.</small>
+    </div>
+  <div class="progress mt-2 d-none" id="assetUploadProgress">
+  <div
+    class="progress-bar progress-bar-striped progress-bar-animated"
+    role="progressbar"
+    style="width: 0%"
+    id="assetProgressBar"
+  >
+    0%
+  </div>
+</div>
+
+
   <!-- OptiCat Section -->
   <div id="opticatSection" style="display:none;">
     <div class="mb-3">
@@ -121,14 +154,6 @@
       <label class="form-label">Attach Pricing File (.xlsx)</label>
       <input class="form-control" type="file" name="pricing_file" accept=".xlsx">
     </div>
-
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Local Asset ZIP Path</label>
-      <input type="text" class="form-control"
-             name="zip_path"
-             placeholder="C:\FGI\VendorAssets\Vendor\Assets.zip">
-      <small class="text-muted">Optional – will be uploaded to Azure Bronze.</small>
-    </div>
   </div>
 
   <!-- Non-OptiCat Section -->
@@ -138,18 +163,12 @@
       <input class="form-control" type="file" name="non_opticat_file" accept=".xlsx">
     </div>
 
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Local Asset ZIP Path</label>
-      <input type="text" class="form-control"
-             name="non_opticat_zip_path"
-             placeholder="C:\FGI\VendorAssets\Vendor\VendorAssets.zip">
-      <small class="text-muted">If you have same asset bulk, you do not need to reupload.</small>
-    </div>
+   
   </div>
 
   <!-- Submit -->
   <div class="d-grid mb-3">
-    <button type="submit" class="btn btn-primary">Submit</button>
+    <button type="submit" class="btn btn-primary" id="submitBtn">Submit</button>
   </div>
 
   <div class="text-center">
@@ -189,6 +208,90 @@
     }
   });
 </script>
+<script type="module">
+  import { BlockBlobClient } from "https://cdn.jsdelivr.net/npm/@azure/storage-blob/+esm";
+
+  let assetUploadInProgress = false;
+
+  const zipInput = document.getElementById("assetZip");
+  const blobPathInput = document.getElementById("assetBlobPath");
+  const submitBtn = document.getElementById("submitBtn");
+
+  const progressContainer = document.getElementById("assetUploadProgress");
+  const progressBar = document.getElementById("assetProgressBar");
+
+  const form = document.querySelector("form");
+
+  zipInput?.addEventListener("change", async () => {
+    const file = zipInput.files[0];
+    if (!file) return;
+
+    const vendor = document.getElementById("vendorSelect").value;
+    const sku = "BULK";
+
+    assetUploadInProgress = true;
+    submitBtn.disabled = true;
+
+    // Reset progress UI
+    progressContainer.classList.remove("d-none");
+    progressBar.style.width = "0%";
+    progressBar.textContent = "0%";
+
+    try {
+      const res = await fetch("/api/get-asset-upload-sas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendor, sku, filename: file.name })
+      });
+
+      if (!res.ok) throw new Error("Failed to get SAS");
+
+      const data = await res.json();
+      const blobClient = new BlockBlobClient(data.sas_url);
+
+      let uploadedBytes = 0;
+      const totalBytes = file.size;
+
+      await blobClient.uploadBrowserData(file, {
+        blobHTTPHeaders: { blobContentType: "application/zip" },
+        onProgress: (progress) => {
+          uploadedBytes = progress.loadedBytes;
+          const percent = Math.round((uploadedBytes / totalBytes) * 100);
+
+          progressBar.style.width = `${percent}%`;
+          progressBar.textContent = `${percent}%`;
+        }
+      });
+
+      blobPathInput.value = data.blob_path;
+
+      progressBar.classList.remove("progress-bar-animated");
+      progressBar.classList.add("bg-success");
+      progressBar.textContent = "Upload complete";
+
+    } catch (err) {
+      console.error(err);
+
+      progressBar.classList.add("bg-danger");
+      progressBar.textContent = "Upload failed";
+
+      alert("Asset upload failed. Please retry.");
+      blobPathInput.value = "";
+    } finally {
+      assetUploadInProgress = false;
+      submitBtn.disabled = false;
+    }
+  });
+
+  form.addEventListener("submit", function (e) {
+    if (assetUploadInProgress) {
+      e.preventDefault();
+      alert("Please wait until asset upload finishes before submitting.");
+    }
+  });
+</script>
+
+
   </div>
 </div>
 

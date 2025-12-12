@@ -1,11 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, session
 import os
-from werkzeug.utils import secure_filename
 from helpers.lookups import *
 from services.file_service import save_file
 from services.azure_service import *
 from services.excel_service import *
 from validators.pricing_validator import validate_single_product_new
+from services.azure_service import generate_upload_sas
+from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -67,7 +68,6 @@ def upload_files():
     if vendor_type == "opticat":
         product_file = request.files.get('product_file')
         pricing_file = request.files.get('pricing_file')
-        zip_path = request.form.get('zip_path')
 
         if not product_file or not pricing_file:
             flash('XML and Pricing XLSX are required for OptiCat vendors.', 'danger')
@@ -82,7 +82,6 @@ def upload_files():
                 vendor=vendor_name,
                 xml_local_path=product_path,
                 pricing_local_path=pricing_path,
-                zip_path=zip_path,
                 connection_string=AZURE_CONNECTION_STRING,
                 container_name=AZURE_CONTAINER_NAME,
                 upload_folder=app.config['UPLOAD_FOLDER']
@@ -99,7 +98,6 @@ def upload_files():
     # -------------------------------
     elif vendor_type == "non-opticat":
         unified_file = request.files.get('non_opticat_file')
-        zip_path = request.form.get('non_opticat_zip_path')
 
         if not unified_file:
             flash('A unified XLSX file is required for Non-OptiCat vendors.', 'danger')
@@ -112,7 +110,6 @@ def upload_files():
             upload_to_azure_bronze_non_opticat(
                 vendor=vendor_name,
                 unified_local_path=unified_path,
-                zip_path=zip_path,
                 connection_string=AZURE_CONNECTION_STRING,
                 container_name=AZURE_CONTAINER_NAME,
                 upload_folder=app.config['UPLOAD_FOLDER']
@@ -128,8 +125,34 @@ def upload_files():
         flash("Unknown vendor type.", "danger")
         return redirect(url_for("upload_page"))
 
+@app.route("/api/get-asset-upload-sas", methods=["POST"])
+def get_asset_upload_sas():
+    data = request.json
 
+    vendor = data.get("vendor")
+    sku = data.get("sku")
+    filename = data.get("filename")
 
+    if not vendor or not filename:
+        return {"error": "Missing vendor or filename"}, 400
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    blob_path = (
+        f"raw/vendor={vendor}/assets/"
+        f"{sku}/{timestamp}_{filename}"
+    )
+    print("🔐 Generating SAS for:", blob_path)
+
+    sas_url = generate_upload_sas(
+        container=AZURE_CONTAINER_NAME,
+        blob_path=blob_path
+    )
+
+    return {
+        "sas_url": sas_url,
+        "blob_path": blob_path
+    }
 
 @app.route('/download-template')
 def download_template():
@@ -164,8 +187,6 @@ def single_product_page():
         DIMENSION_UOM = DIMENSION_UOM
     )
 
-
-@app.route('/single-product', methods=['POST'])
 @app.route('/single-product', methods=['POST'])
 def submit_single_product():
     action = request.form.get("action")
@@ -336,29 +357,25 @@ def submit_single_product():
 
 
     # --------- SECTION 7: Digital Assets (1:M) ----------
+    # --------- SECTION 7: Digital Assets (1:M) ----------
     asset_change_types = request.form.getlist("asset_change_type[]")
     asset_media_types = request.form.getlist("asset_media_type[]")
-    asset_files = request.files.getlist("asset_file[]")
+    asset_blob_paths = request.form.getlist("asset_blob_path[]")  # 👈 from frontend
 
-    # Save files to uploads/manual_assets/vendor/sku/
-    asset_base_dir = os.path.join(app.config['UPLOAD_FOLDER'], "manual_assets", vendor_name, sku)
-    os.makedirs(asset_base_dir, exist_ok=True)
-
-    for ct, mtype, file in zip(asset_change_types, asset_media_types, asset_files):
-        filename = file.filename if file else ""
-        if not (ct or mtype or filename):
+    for ct, mtype, blob_path in zip(asset_change_types, asset_media_types, asset_blob_paths):
+        if not (ct or mtype or blob_path):
             continue
-        safe_name = secure_filename(filename)
-        local_path = os.path.join(asset_base_dir, safe_name)
-        if filename:
-            file.save(local_path)
+
+        filename = os.path.basename(blob_path)
+
         asset_rows.append({
             "SKU": sku,
             "Digital Change Type": ct.strip(),
             "Media Type": mtype.strip(),
-            "FileName": safe_name,
-            "FileLocalPath": local_path,
+            "FileName": filename,
+            "BlobPath": blob_path,
         })
+
 
     # --------- SECTION 8: Pricing (1:M) ----------
     # --------- SECTION 8: Pricing (multi-level) ----------
