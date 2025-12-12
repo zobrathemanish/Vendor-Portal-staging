@@ -86,6 +86,20 @@ def upload_files():
                 container_name=AZURE_CONTAINER_NAME,
                 upload_folder=app.config['UPLOAD_FOLDER']
             )
+            asset_blob_paths = request.form.getlist("asset_blob_path[]")
+
+            if asset_blob_paths:
+                latest_asset = asset_blob_paths[-1]
+
+                blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+                container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
+
+                cleanup_old_assets_except(
+                    container_client,
+                    f"vendor={vendor_name}",
+                    latest_asset
+                )
+
 
             flash(f'OptiCat files for {vendor_name} uploaded successfully.', 'success')
         except Exception as e:
@@ -114,6 +128,20 @@ def upload_files():
                 container_name=AZURE_CONTAINER_NAME,
                 upload_folder=app.config['UPLOAD_FOLDER']
             )
+            asset_blob_paths = request.form.getlist("asset_blob_path[]")
+
+            if asset_blob_paths:
+                latest_asset = asset_blob_paths[-1]
+
+                blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
+                container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
+
+                cleanup_old_assets_except(
+                    container_client,
+                    f"vendor={vendor_name}",
+                    latest_asset
+                )
+
 
             flash(f'Unified file for {vendor_name} uploaded successfully.', 'success')
         except Exception as e:

@@ -268,4 +268,11 @@ def upload_to_azure_bronze_non_opticat(
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
 
- 
+def cleanup_old_assets_except(container_client, vendor_folder, keep_blob_path):
+    prefix = f"raw/{vendor_folder}/assets/"
+    blobs = container_client.list_blobs(name_starts_with=prefix)
+
+    for blob in blobs:
+        if blob.name != keep_blob_path:
+            container_client.delete_blob(blob.name)
+            print(f"[CLEANUP] Deleted old asset: {blob.name}")
