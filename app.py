@@ -7,6 +7,7 @@ from services.excel_service import *
 from validators.pricing_validator import validate_single_product_new
 from services.azure_service import generate_upload_sas
 from datetime import datetime
+import hashlib
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -732,6 +733,37 @@ def download_single_products_excel():
 
     directory, filename = os.path.split(excel_path)
     return send_from_directory(directory, filename, as_attachment=True)
+
+@app.route("/api/check-asset-hash", methods=["POST"])
+def check_asset_hash():
+    data = request.json
+    vendor = data["vendor"]
+    client_hash = data["file_hash"]
+
+    blob_service = BlobServiceClient.from_connection_string(
+        os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    )
+    container_client = blob_service.get_container_client(AZURE_CONTAINER_NAME)
+
+    prefix = f"raw/vendor={vendor}/assets/"
+
+    blobs = list(container_client.list_blobs(name_starts_with=prefix))
+    if not blobs:
+        return {"skip": False}
+
+    # Only one asset should exist
+    blob = blobs[0]
+
+    blob_data = container_client.download_blob(blob.name).readall()
+    server_hash = hashlib.sha256(blob_data).hexdigest()
+
+    if server_hash == client_hash:
+        return {
+            "skip": True,
+            "existing_blob_path": blob.name
+        }
+
+    return {"skip": False}
 
 @app.route("/api/cleanup-old-assets", methods=["POST"])
 def cleanup_old_assets():
