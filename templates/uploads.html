@@ -222,126 +222,156 @@
 
   const form = document.querySelector("form");
 
+  const MAX_BROWSER_UPLOAD_GB = 5; // safe limit for browser uploads
+
   zipInput?.addEventListener("change", async () => {
-  const file = zipInput.files[0];
-  if (!file) return;
+    const file = zipInput.files[0];
+    if (!file) return;
 
-  const vendor = document.getElementById("vendorSelect").value;
+    const vendor = document.getElementById("vendorSelect").value;
+    const fileSizeGB = file.size / (1024 ** 3);
 
-  assetUploadInProgress = true;
-  submitBtn.disabled = true;
-
-  // Reset progress UI
-  progressContainer.classList.remove("d-none");
-  progressBar.style.width = "0%";
-  progressBar.textContent = "0%";
-
-  try {
-    // 🔐 STEP 1: Compute local hash
-    const fileHash = await computeFileHash(file);
-
-    // 🔍 STEP 2: Ask backend if same asset already exists
-    const hashCheckRes = await fetch("/api/check-asset-hash", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        vendor: vendor,
-        file_hash: fileHash
-      })
-    });
-
-    const hashResult = await hashCheckRes.json();
-
-    // ⏭ STEP 3: Skip upload if unchanged
-    if (hashResult.skip) {
-      blobPathInput.value = hashResult.existing_blob_path;
-
-      progressBar.style.width = "100%";
-      progressBar.classList.add("bg-info");
-      progressBar.textContent = "Assets unchanged (reused)";
-
-      assetUploadInProgress = false;
-      submitBtn.disabled = false;
+    // 🚫 HARD SIZE GUARD
+    if (fileSizeGB > MAX_BROWSER_UPLOAD_GB) {
+      alert(
+        `Selected ZIP is ${fileSizeGB.toFixed(1)} GB.\n\n` +
+        `Browser uploads above ${MAX_BROWSER_UPLOAD_GB} GB are unreliable.\n` +
+        `Please split the ZIP or contact the data team.`
+      );
+      zipInput.value = "";
       return;
     }
 
-    // 🔑 STEP 4: Get SAS for new upload
-    const res = await fetch("/api/get-asset-upload-sas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendor, filename: file.name })
-    });
+    assetUploadInProgress = true;
+    submitBtn.disabled = true;
 
-    if (!res.ok) throw new Error("Failed to get SAS");
+    // Reset progress UI
+    progressContainer.classList.remove("d-none");
+    progressBar.style.width = "0%";
+    progressBar.textContent = "0%";
+    progressBar.className = "progress-bar progress-bar-striped progress-bar-animated";
 
-    const data = await res.json();
-    const blobClient = new BlockBlobClient(data.sas_url);
+    try {
+      // 🔐 STEP 1: Compute local hash
+      const fileHash = await computeFileHash(file);
 
-    const totalBytes = file.size;
+      // 🔍 STEP 2: Ask backend if asset already exists
+      const hashCheckRes = await fetch("/api/check-asset-hash", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendor, file_hash: fileHash })
+      });
 
-    // ⬆️ STEP 5: Upload with progress
-    await blobClient.uploadBrowserData(file, {
-      blobHTTPHeaders: { blobContentType: "application/zip" },
-      onProgress: (progress) => {
-        const uploadedBytes = progress.loadedBytes;
-        const percent = Math.round((uploadedBytes / totalBytes) * 100);
+      const hashResult = await hashCheckRes.json();
 
-        const uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
-        const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+      // ⏭ SKIP UPLOAD IF UNCHANGED
+      if (hashResult.skip) {
+        blobPathInput.value = hashResult.existing_blob_path;
 
-        progressBar.style.width = `${percent}%`;
-        progressBar.textContent = `${percent}% (${uploadedMB} MB / ${totalMB} MB)`;
+        progressBar.style.width = "100%";
+        progressBar.classList.remove("progress-bar-animated");
+        progressBar.classList.add("bg-info");
+        progressBar.textContent = "Assets unchanged (reused)";
+
+        assetUploadInProgress = false;
+        submitBtn.disabled = false;
+        return;
       }
-    });
 
-    // 🧹 STEP 6: Cleanup old assets ONLY after success
-    await fetch("/api/cleanup-old-assets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        vendor: vendor,
-        keep_blob_path: data.blob_path
-      })
-    });
+      // 🔑 STEP 3: Get SAS
+      const res = await fetch("/api/get-asset-upload-sas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendor, filename: file.name })
+      });
 
-    blobPathInput.value = data.blob_path;
+      if (!res.ok) {
+        throw new Error("SAS_GENERATION_FAILED");
+      }
 
-    progressBar.classList.remove("progress-bar-animated");
-    progressBar.classList.add("bg-success");
-    progressBar.textContent = "Upload complete";
+      const data = await res.json();
+      const blobClient = new BlockBlobClient(data.sas_url);
 
-  } catch (err) {
-    console.error(err);
+      const totalBytes = file.size;
 
-    progressBar.classList.add("bg-danger");
-    progressBar.textContent = "Upload failed";
+      // ⬆️ STEP 4: Upload with progress
+      await blobClient.uploadBrowserData(file, {
+        blobHTTPHeaders: { blobContentType: "application/zip" },
+        onProgress: (progress) => {
+          const uploadedBytes = progress.loadedBytes;
+          const percent = Math.round((uploadedBytes / totalBytes) * 100);
 
-    alert("Asset upload failed. Please retry.");
-    blobPathInput.value = "";
-  } finally {
-    assetUploadInProgress = false;
-    submitBtn.disabled = false;
-  }
-});
+          const uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
+          const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
 
+          progressBar.style.width = `${percent}%`;
+          progressBar.textContent = `${percent}% (${uploadedMB} MB / ${totalMB} MB)`;
+        }
+      });
 
+      // 🧹 STEP 5: Cleanup old assets ONLY after success
+      await fetch("/api/cleanup-old-assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendor: vendor,
+          keep_blob_path: data.blob_path
+        })
+      });
+
+      blobPathInput.value = data.blob_path;
+
+      progressBar.classList.remove("progress-bar-animated");
+      progressBar.classList.add("bg-success");
+      progressBar.textContent = "Upload complete";
+
+    } catch (err) {
+      console.error("Asset upload error:", err);
+
+      let message;
+
+      if (err.message === "SAS_GENERATION_FAILED") {
+        message =
+          "Failed to initialize asset upload.\n" +
+          "Please refresh the page and try again.";
+      } else if (file.size > MAX_BROWSER_UPLOAD_GB * 1024 ** 3) {
+        message =
+          "Asset ZIP is too large for browser-based upload.\n" +
+          "Please split the ZIP or contact the data team.";
+      } else {
+        message =
+          "Asset upload failed due to browser or network limitations.\n" +
+          "Please retry or upload a smaller ZIP.";
+      }
+
+      progressBar.classList.remove("progress-bar-animated");
+      progressBar.classList.add("bg-danger");
+      progressBar.textContent = "Upload failed";
+
+      alert(message);
+      blobPathInput.value = "";
+    } finally {
+      assetUploadInProgress = false;
+      submitBtn.disabled = false;
+    }
+  });
+
+  // 🚫 Prevent form submit if upload not done
   form.addEventListener("submit", function (e) {
-    if (assetUploadInProgress) {
+    if (assetUploadInProgress || !blobPathInput.value) {
       e.preventDefault();
-      alert("Please wait until asset upload finishes before submitting.");
+      alert("Please upload assets successfully before submitting.");
     }
   });
 
   async function computeFileHash(file) {
-  const buffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(hashBuffer))
+      .map(b => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
 </script>
-
 
   </div>
 </div>
