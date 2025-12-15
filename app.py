@@ -54,10 +54,6 @@ def index():
 def upload_page():
     return render_template('uploads.html')
 
-@app.route('/upload-local', methods=['GET'])
-def upload_local():
-    return render_template('upload-local.html')
-
 @app.route('/upload', methods=['POST'])
 def upload_files():
     vendor_name = request.form.get('vendor_name')
