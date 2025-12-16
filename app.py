@@ -822,8 +822,13 @@ def download_single_products_excel():
 @app.route("/api/check-asset-hash", methods=["POST"])
 def check_asset_hash():
     data = request.json
-    vendor = data["vendor"]
-    client_hash = data["file_hash"]
+
+    vendor = data.get("vendor")
+    client_hash = data.get("file_hash")
+    filename = data.get("filename")  # 👈 NEW
+
+    if not vendor or not client_hash or not filename:
+        return {"skip": False}
 
     blob_service = BlobServiceClient.from_connection_string(
         os.getenv("AZURE_STORAGE_CONNECTION_STRING")
@@ -836,25 +841,31 @@ def check_asset_hash():
     if not blobs:
         return {"skip": False}
 
-    # Only one asset should exist
-    blob = blobs[0]
+    # 🔍 Check only blobs matching THIS filename
+    for blob in blobs:
+        if not blob.name.endswith(filename):
+            continue
 
-    blob_data = container_client.download_blob(blob.name).readall()
-    server_hash = hashlib.sha256(blob_data).hexdigest()
+        blob_data = container_client.download_blob(blob.name).readall()
+        server_hash = hashlib.sha256(blob_data).hexdigest()
 
-    if server_hash == client_hash:
-        return {
-            "skip": True,
-            "existing_blob_path": blob.name
-        }
+        if server_hash == client_hash:
+            return {
+                "skip": True,
+                "existing_blob_path": blob.name
+            }
 
     return {"skip": False}
 
 @app.route("/api/cleanup-old-assets", methods=["POST"])
 def cleanup_old_assets():
     data = request.json
-    vendor = data["vendor"]
-    keep_blob_path = data["keep_blob_path"]
+
+    vendor = data.get("vendor")
+    keep_blob_paths = set(data.get("keep_blob_paths", []))  # 👈 NEW
+
+    if not vendor:
+        return {"status": "no_vendor_provided"}
 
     blob_service = BlobServiceClient.from_connection_string(
         os.getenv("AZURE_STORAGE_CONNECTION_STRING")
@@ -864,11 +875,12 @@ def cleanup_old_assets():
     prefix = f"raw/vendor={vendor}/assets/"
 
     for blob in container_client.list_blobs(name_starts_with=prefix):
-        if blob.name != keep_blob_path:
+        if blob.name not in keep_blob_paths:
             container_client.delete_blob(blob.name)
             print(f"🧹 Deleted old asset: {blob.name}")
 
     return {"status": "cleanup_complete"}
+
 
 
 # ---------------------------------------

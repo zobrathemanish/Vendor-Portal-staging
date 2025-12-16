@@ -93,7 +93,7 @@
 
  
 
-  <input type="hidden" name="asset_blob_path[]" id="assetBlobPath">
+  <input type="hidden" name="asset_blob_path[]" id="assetBlobPaths">
 
    <input type="hidden" name="vendor_type" id="vendorType">
 
@@ -128,7 +128,7 @@
      <!-- Upload Digital Assets-->
     <div class="mb-3">
   <label class="form-label fw-semibold">Upload Digital Assets (ZIP)</label>
-  <input class="form-control" type="file" id="assetZip" accept=".zip">
+  <input class="form-control" type="file" id="assetZip" accept=".zip" multiple>
   <small class="text-muted">Upload a ZIP containing all images / PDFs.</small>
     </div>
   <div class="progress mt-2 d-none" id="assetUploadProgress">
@@ -214,7 +214,7 @@
   let assetUploadInProgress = false;
 
   const zipInput = document.getElementById("assetZip");
-  const blobPathInput = document.getElementById("assetBlobPath");
+  const blobPathInput = document.getElementById("assetBlobPaths");
   const submitBtn = document.getElementById("submitBtn");
 
   const progressContainer = document.getElementById("assetUploadProgress");
@@ -222,24 +222,28 @@
 
   const form = document.querySelector("form");
 
-  const MAX_BROWSER_UPLOAD_GB = 5; // safe limit for browser uploads
+  const MAX_BROWSER_UPLOAD_GB = 5;
 
   zipInput?.addEventListener("change", async () => {
-    const file = zipInput.files[0];
-    if (!file) return;
+    const files = Array.from(zipInput.files);
+    if (!files.length) return;
 
     const vendor = document.getElementById("vendorSelect").value;
-    const fileSizeGB = file.size / (1024 ** 3);
+    const finalBlobPaths = [];
+    let anyUploadOccurred = false;
 
-    // 🚫 HARD SIZE GUARD
-    if (fileSizeGB > MAX_BROWSER_UPLOAD_GB) {
-      alert(
-        `Selected ZIP is ${fileSizeGB.toFixed(1)} GB.\n\n` +
-        `Browser uploads above ${MAX_BROWSER_UPLOAD_GB} GB are unreliable.\n` +
-        `Please split the ZIP or contact the data team.`
-      );
-      zipInput.value = "";
-      return;
+    // 🔒 Size guard (per ZIP)
+    for (const file of files) {
+      const fileSizeGB = file.size / (1024 ** 3);
+      if (fileSizeGB > MAX_BROWSER_UPLOAD_GB) {
+        alert(
+          `ZIP "${file.name}" is ${fileSizeGB.toFixed(1)} GB.\n\n` +
+          `Browser uploads above ${MAX_BROWSER_UPLOAD_GB} GB are unreliable.\n` +
+          `Please split this ZIP or contact the data team.`
+        );
+        zipInput.value = "";
+        return;
+      }
     }
 
     assetUploadInProgress = true;
@@ -249,106 +253,104 @@
     progressContainer.classList.remove("d-none");
     progressBar.style.width = "0%";
     progressBar.textContent = "0%";
-    progressBar.className = "progress-bar progress-bar-striped progress-bar-animated";
+    progressBar.className =
+      "progress-bar progress-bar-striped progress-bar-animated";
 
     try {
-      // 🔐 STEP 1: Compute local hash
-      const fileHash = await computeFileHash(file);
+      for (const file of files) {
+        // 🔐 STEP 1: Compute hash (per ZIP)
+        const fileHash = await computeFileHash(file);
 
-      // 🔍 STEP 2: Ask backend if asset already exists
-      const hashCheckRes = await fetch("/api/check-asset-hash", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vendor, file_hash: fileHash })
-      });
+        // 🔍 STEP 2: Ask backend if THIS ZIP exists
+        const hashCheckRes = await fetch("/api/check-asset-hash", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vendor,
+            file_hash: fileHash,
+            filename: file.name
+          })
+        });
 
-      const hashResult = await hashCheckRes.json();
+        const hashResult = await hashCheckRes.json();
 
-      // ⏭ SKIP UPLOAD IF UNCHANGED
-      if (hashResult.skip) {
-        blobPathInput.value = hashResult.existing_blob_path;
+        // ⏭ REUSE UNCHANGED ZIP
+        if (hashResult.skip) {
+          finalBlobPaths.push(hashResult.existing_blob_path);
 
-        progressBar.style.width = "100%";
-        progressBar.classList.remove("progress-bar-animated");
-        progressBar.classList.add("bg-info");
-        progressBar.textContent = "Assets unchanged (reused)";
+          progressBar.style.width = "100%";
+          progressBar.classList.remove("progress-bar-animated");
+          progressBar.classList.add("bg-info");
+          progressBar.textContent = `Reused: ${file.name}`;
 
-        assetUploadInProgress = false;
-        submitBtn.disabled = false;
-        return;
-      }
-
-      // 🔑 STEP 3: Get SAS
-      const res = await fetch("/api/get-asset-upload-sas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vendor, filename: file.name })
-      });
-
-      if (!res.ok) {
-        throw new Error("SAS_GENERATION_FAILED");
-      }
-
-      const data = await res.json();
-      const blobClient = new BlockBlobClient(data.sas_url);
-
-      const totalBytes = file.size;
-
-      // ⬆️ STEP 4: Upload with progress
-      await blobClient.uploadBrowserData(file, {
-        blobHTTPHeaders: { blobContentType: "application/zip" },
-        onProgress: (progress) => {
-          const uploadedBytes = progress.loadedBytes;
-          const percent = Math.round((uploadedBytes / totalBytes) * 100);
-
-          const uploadedMB = (uploadedBytes / (1024 * 1024)).toFixed(1);
-          const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
-
-          progressBar.style.width = `${percent}%`;
-          progressBar.textContent = `${percent}% (${uploadedMB} MB / ${totalMB} MB)`;
+          continue;
         }
-      });
 
-      // 🧹 STEP 5: Cleanup old assets ONLY after success
-      await fetch("/api/cleanup-old-assets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vendor: vendor,
-          keep_blob_path: data.blob_path
-        })
-      });
+        anyUploadOccurred = true;
 
-      blobPathInput.value = data.blob_path;
+        // 🔑 STEP 3: Get SAS
+        const res = await fetch("/api/get-asset-upload-sas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vendor,
+            filename: file.name
+          })
+        });
+
+        if (!res.ok) {
+          throw new Error("SAS_GENERATION_FAILED");
+        }
+
+        const data = await res.json();
+        const blobClient = new BlockBlobClient(data.sas_url);
+
+        // ⬆️ STEP 4: Upload ZIP
+        await blobClient.uploadBrowserData(file, {
+          blobHTTPHeaders: { blobContentType: "application/zip" },
+          onProgress: (progress) => {
+            const percent = Math.round(
+              (progress.loadedBytes / file.size) * 100
+            );
+            progressBar.style.width = `${percent}%`;
+            progressBar.textContent = `${file.name}: ${percent}%`;
+          }
+        });
+
+        finalBlobPaths.push(data.blob_path);
+      }
+
+      // 🧹 STEP 5: Cleanup ONLY if something changed
+      if (anyUploadOccurred) {
+        await fetch("/api/cleanup-old-assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vendor,
+            keep_blob_paths: finalBlobPaths
+          })
+        });
+      }
+
+      blobPathInput.value = JSON.stringify(finalBlobPaths);
 
       progressBar.classList.remove("progress-bar-animated");
       progressBar.classList.add("bg-success");
-      progressBar.textContent = "Upload complete";
+      progressBar.textContent = "Assets ready";
 
     } catch (err) {
       console.error("Asset upload error:", err);
-
-      let message;
-
-      if (err.message === "SAS_GENERATION_FAILED") {
-        message =
-          "Failed to initialize asset upload.\n" +
-          "Please refresh the page and try again.";
-      } else if (file.size > MAX_BROWSER_UPLOAD_GB * 1024 ** 3) {
-        message =
-          "Asset ZIP is too large for browser-based upload.\n" +
-          "Please split the ZIP or contact the data team.";
-      } else {
-        message =
-          "Asset upload failed due to browser or network limitations.\n" +
-          "Please retry or upload a smaller ZIP.";
-      }
 
       progressBar.classList.remove("progress-bar-animated");
       progressBar.classList.add("bg-danger");
       progressBar.textContent = "Upload failed";
 
-      alert(message);
+      alert(
+        err.message === "SAS_GENERATION_FAILED"
+          ? "Failed to initialize asset upload. Please refresh and retry."
+          : "Asset upload failed due to browser or network issues."
+      );
+
       blobPathInput.value = "";
     } finally {
       assetUploadInProgress = false;
@@ -356,7 +358,7 @@
     }
   });
 
-  // 🚫 Prevent form submit if upload not done
+  // 🚫 Prevent submit if assets not uploaded
   form.addEventListener("submit", function (e) {
     if (assetUploadInProgress || !blobPathInput.value) {
       e.preventDefault();
@@ -372,6 +374,7 @@
       .join("");
   }
 </script>
+
 
   </div>
 </div>
