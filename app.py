@@ -197,51 +197,133 @@ def form_submission_help():
 
 @app.route('/single-product', methods=['GET'])
 def single_product_page():
-    pending = session.get('pending_products', [])
-    vendor_prefill = session.get('single_vendor_name', "")
-    latest_excel = session.get('latest_single_products_excel_path', None)
+    if request.args.get("reset") == "1":
+        for k in [
+            "pending_products",
+            "batch_item_rows",
+            "batch_desc_rows",
+            "batch_ext_rows",
+            "batch_attr_rows",
+            "batch_interchange_rows",
+            "batch_package_rows",
+            "batch_asset_rows",
+            "batch_price_rows",
+            "latest_single_products_excel_path",
+        ]:
+            session.pop(k, None)
+
+        session.pop("single_vendor_name", None)
+        session.modified = True
+
+    pending = session.get("pending_products", [])
+    vendor_prefill = session.get("single_vendor_name", "")
+
+    excel_path = session.get("latest_single_products_excel_path")
+    latest_excel_available = bool(
+        excel_path and os.path.isfile(excel_path)
+    )
 
     return render_template(
-        'single_product.html',
+        "single_product.html",
         VENDOR_LIST=VENDOR_LIST,
         PRODUCT_STATUS=PRODUCT_STATUS,
         QUANTITY_UOM=QUANTITY_UOM,
         PACKAGE_UOM=PACKAGE_UOM,
         WEIGHT_UOM=WEIGHT_UOM,
         PRICING_METHODS=PRICING_METHODS,
+        DIMENSION_UOM=DIMENSION_UOM,
         pending_products=pending,
         vendor_prefill=vendor_prefill,
-        latest_excel_available=bool(latest_excel),
-        DIMENSION_UOM = DIMENSION_UOM
+        latest_excel_available=latest_excel_available,
     )
+
 
 @app.route('/single-product', methods=['POST'])
 def submit_single_product():
     action = request.form.get("action")
+
+    # ---- Pull batch lists from session (single source of truth) ----
+    item_rows        = session.get("batch_item_rows", [])
+    desc_rows        = session.get("batch_desc_rows", [])
+    ext_rows         = session.get("batch_ext_rows", [])
+    attr_rows        = session.get("batch_attr_rows", [])
+    interchange_rows = session.get("batch_interchange_rows", [])
+    package_rows     = session.get("batch_package_rows", [])
+    asset_rows       = session.get("batch_asset_rows", [])
+    price_rows       = session.get("batch_price_rows", [])
+    pending          = session.get("pending_products", [])
+
+    # ==========================================================
+    # GENERATE (READ-ONLY): do NOT parse request.form product data
+    # ==========================================================
+    if action == "generate":
+        if not price_rows:
+            flash("At least one pricing row is required to generate Excel.", "danger")
+            return redirect(url_for('single_product_page'))
+
+        output_dir = os.path.join(app.config['UPLOAD_FOLDER'], "single_product_batches")
+
+        excel_path = create_multi_product_excel(
+            item_rows,
+            desc_rows,
+            ext_rows,
+            attr_rows,
+            interchange_rows,
+            package_rows,
+            asset_rows,
+            price_rows,
+            output_dir,
+        )
+        session['latest_single_products_excel_path'] = excel_path
+
+        # Clear batch after generation
+        for k in [
+            "batch_item_rows",
+            "batch_desc_rows",
+            "batch_ext_rows",
+            "batch_attr_rows",
+            "batch_interchange_rows",
+            "batch_package_rows",
+            "batch_asset_rows",
+            "batch_price_rows",
+            "pending_products",
+        ]:
+            session[k] = []
+
+        session.pop("single_vendor_name", None)
+
+        session.modified = True
+
+        flash("Excel generated successfully. You can download it below.", "success")
+        return redirect(url_for('single_product_page', generated = 1))
+
+    # ==========================================================
+    # ADD (MUTATION): validate + parse request.form + append to batch
+    # ==========================================================
+    if action != "add":
+        flash("Unknown action.", "danger")
+        return redirect(url_for('single_product_page'))
+
     ok, errors = validate_single_product_new(request.form)
-
-    vendor_name = request.form.get("vendor_name", "").strip()
-    sku = request.form.get("sku", "").strip()
-    product_status = request.form.get("product_status", "").strip()
-    pricing_method_key = request.form.get("pricing_method", "").strip()
-
-    session['single_vendor_name'] = vendor_name
-
     if not ok:
         for e in errors:
             flash(e, "danger")
         return redirect(url_for('single_product_page'))
 
-    # --------- Pull / init batch lists from session ----------
-    item_rows = session.get("batch_item_rows", [])
-    desc_rows = session.get("batch_desc_rows", [])
-    ext_rows = session.get("batch_ext_rows", [])
-    attr_rows = session.get("batch_attr_rows", [])
-    interchange_rows = session.get("batch_interchange_rows", [])
-    package_rows = session.get("batch_package_rows", [])
-    asset_rows = session.get("batch_asset_rows", [])
-    price_rows = session.get("batch_price_rows", [])
-    pending = session.get("pending_products", [])
+    # Core identifiers (used by many sections)
+    vendor_name    = request.form.get("vendor_name", "").strip()
+    existing_vendor = session.get("single_vendor_name")
+    if existing_vendor and existing_vendor != vendor_name:
+        flash(
+            f"Batch already contains products for vendor '{existing_vendor}'. "
+            "Please generate or clear the batch first.",
+            "danger"
+        )
+        return redirect(url_for("single_product_page"))
+
+    sku            = request.form.get("sku", "").strip()
+    product_status = request.form.get("product_status", "").strip()
+    session['single_vendor_name'] = vendor_name
 
     # --------- SECTION 1: Item Master row ----------
     unspsc = request.form.get("unspsc_code", "").strip()
@@ -251,6 +333,12 @@ def submit_single_product():
     quantity_uom = request.form.get("quantity_uom", "").strip()
     quantity_size = request.form.get("quantity_size", "").strip()
     vmrs = request.form.get("vmrs_code", "").strip()
+
+    existing_skus = {r["Part Number"] for r in item_rows}
+    if sku in existing_skus:
+        flash(f"SKU '{sku}' is already in the batch.", "danger")
+        return redirect(url_for("single_product_page"))
+
 
     item_rows.append({
         "Vendor": vendor_name,
@@ -347,7 +435,7 @@ def submit_single_product():
     pack_ship_width = request.form.getlist("pack_ship_width[]")
     pack_ship_height = request.form.getlist("pack_ship_height[]")
 
-    for ct, uom, qty, wuom, wt, pack_dim_uom, merch_len, merch_wid, merch_ht, ship_len, ship_wid, ship_ht in zip(
+    for ct, uom, qty, wuom, wt, dim_uom, merch_len, merch_wid, merch_ht, ship_len, ship_wid, ship_ht in zip(
         pack_change_types,
         pack_uoms,
         pack_qty_each,
@@ -362,7 +450,7 @@ def submit_single_product():
         pack_ship_height
     ):
         # Skip if nothing entered
-        if not (ct or uom or qty or wuom or wt or pack_dim_uom or merch_len or merch_wid or merch_ht or ship_len or ship_wid or ship_ht):
+        if not (ct or uom or qty or wuom or wt or dim_uom or merch_len or merch_wid or merch_ht or ship_len or ship_wid or ship_ht):
             continue
 
         package_rows.append({
@@ -374,7 +462,7 @@ def submit_single_product():
             "Weight": wt.strip(),
 
             # New fields
-            "Dimension UOM": pack_dim_uom.strip(),
+            "Dimension UOM": dim_uom.strip(),
             "Merch Length": merch_len.strip(),
             "Merch Width": merch_wid.strip(),
             "Merch Height": merch_ht.strip(),
@@ -384,7 +472,6 @@ def submit_single_product():
         })
 
 
-    # --------- SECTION 7: Digital Assets (1:M) ----------
     # --------- SECTION 7: Digital Assets (1:M) ----------
     asset_change_types = request.form.getlist("asset_change_type[]")
     asset_media_types = request.form.getlist("asset_media_type[]")
@@ -404,8 +491,6 @@ def submit_single_product():
             "BlobPath": blob_path,
         })
 
-
-    # --------- SECTION 8: Pricing (1:M) ----------
     # --------- SECTION 8: Pricing (multi-level) ----------
     level_types = request.form.getlist("level_type[]")
     level_price_change_types = request.form.getlist("level_price_change_type[]")
@@ -675,63 +760,58 @@ def submit_single_product():
         "pricing_method": pricing_method_label_summary,
     })
 
-    # --------- Save back to session ----------
-    session['batch_item_rows'] = item_rows
-    session['batch_desc_rows'] = desc_rows
-    session['batch_ext_rows'] = ext_rows
-    session['batch_attr_rows'] = attr_rows
-    session['batch_interchange_rows'] = interchange_rows
-    session['batch_package_rows'] = package_rows
-    session['batch_asset_rows'] = asset_rows
-    session['batch_price_rows'] = price_rows
-    session['pending_products'] = pending
+# -------- SAVE batch back to session (single write) --------
+    session.update({
+        "batch_item_rows": item_rows,
+        "batch_desc_rows": desc_rows,
+        "batch_ext_rows": ext_rows,
+        "batch_attr_rows": attr_rows,
+        "batch_interchange_rows": interchange_rows,
+        "batch_package_rows": package_rows,
+        "batch_asset_rows": asset_rows,
+        "batch_price_rows": price_rows,
+        "pending_products": pending,
+    })
+    session.modified = True
 
-    # --------- Handle action: Add vs Generate ----------
-    if action == "add":
-        flash(f"Product {sku} added to batch. You can add more or Generate Excel.", "success")
-        return redirect(url_for('single_product_page'))
+    flash(f"Product {sku} added to batch. You can add more or Generate Excel.", "success")
+    return redirect(url_for('single_product_page', generated=1))
 
-    if action == "generate":
-        output_dir = os.path.join(app.config['UPLOAD_FOLDER'], "single_product_batches")
-        excel_path = create_multi_product_excel(
-            item_rows,
-            desc_rows,
-            ext_rows,
-            attr_rows,
-            interchange_rows,
-            package_rows,
-            asset_rows,
-            price_rows,
-            output_dir,
-        )
-        session['latest_single_products_excel_path'] = excel_path
-
-        # Clear batch after generation
-        session['batch_item_rows'] = []
-        session['batch_desc_rows'] = []
-        session['batch_ext_rows'] = []
-        session['batch_attr_rows'] = []
-        session['batch_interchange_rows'] = []
-        session['batch_package_rows'] = []
-        session['batch_asset_rows'] = []
-        session['batch_price_rows'] = []
-        session['pending_products'] = []
-
-        flash(f"Excel generated for {vendor_name}. You can download it below.", "success")
-        return redirect(url_for('single_product_page'))
-
-    # Fallback
-    return redirect(url_for('single_product_page'))
 
 @app.route('/download-single-products-excel')
 def download_single_products_excel():
     excel_path = session.get('latest_single_products_excel_path')
+
     if not excel_path or not os.path.isfile(excel_path):
         flash("No generated Excel file found for download.", "warning")
         return redirect(url_for('single_product_page'))
 
     directory, filename = os.path.split(excel_path)
-    return send_from_directory(directory, filename, as_attachment=True)
+
+    # Prepare response FIRST
+    response = send_from_directory(directory, filename, as_attachment=True)
+
+    # ---- CLEAR SINGLE PRODUCT SESSION STATE (AFTER response prepared) ----
+    for k in [
+        "batch_item_rows",
+        "batch_desc_rows",
+        "batch_ext_rows",
+        "batch_attr_rows",
+        "batch_interchange_rows",
+        "batch_package_rows",
+        "batch_asset_rows",
+        "batch_price_rows",
+        "pending_products",
+        "latest_single_products_excel_path",
+    ]:
+        session.pop(k, None)
+
+    session.pop("single_vendor_name", None)
+    session.modified = True
+
+    return response
+
+    
 
 @app.route("/api/check-asset-hash", methods=["POST"])
 def check_asset_hash():
@@ -783,9 +863,6 @@ def cleanup_old_assets():
             print(f"🧹 Deleted old asset: {blob.name}")
 
     return {"status": "cleanup_complete"}
-
-
-
 
 
 # ---------------------------------------

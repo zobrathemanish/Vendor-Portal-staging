@@ -301,9 +301,15 @@
         <button type="submit" name="action" value="add" class="btn btn-secondary w-100 w-md-50">
           ➕ Add Product to Batch
         </button>
-        <button type="submit" name="action" value="generate" class="btn btn-primary w-100 w-md-50">
+        <button type="submit" name="action" value="generate" formnovalidate class="btn btn-primary w-100 w-md-50">
           📊 Generate Excel for All Products
         </button>
+
+         <a href="{{ url_for('single_product_page', reset=1) }}"
+          class="btn btn-outline-danger w-100 w-md-50"
+          onclick="return confirm('This will clear the current batch. Continue?');">
+          🗑 Clear Batch
+        </a>
       </div>
 
       <div class="text-center mt-3">
@@ -336,16 +342,23 @@
           </table>
         </div>
       {% endif %}
-
-      {% if latest_excel_available %}
-        <div class="mt-3 text-center">
-          <a href="{{ url_for('download_single_products_excel') }}" class="btn btn-outline-primary">
-            ⬇ Download Last Generated Excel
-          </a>
-        </div>
-      {% endif %}
-
     </form>
+    {% if latest_excel_available %}
+  <div class="mt-4 text-center">
+    <a href="{{ url_for('download_single_products_excel') }}"
+       class="btn btn-success btn-lg">
+      ⬇ Download Generated Excel
+    </a>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      document
+        .querySelector('a[href*="download-single-products-excel"]')
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  </script>
+{% endif %}
   </div>
 </div>
 
