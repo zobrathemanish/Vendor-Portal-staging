@@ -474,22 +474,28 @@ def submit_single_product():
 
     # --------- SECTION 7: Digital Assets (1:M) ----------
     asset_change_types = request.form.getlist("asset_change_type[]")
-    asset_media_types = request.form.getlist("asset_media_type[]")
-    asset_blob_paths = request.form.getlist("asset_blob_path[]")  # 👈 from frontend
+    asset_media_types  = request.form.getlist("asset_media_type[]")
+    asset_filenames    = request.form.getlist("asset_filename[]")
+    asset_paths        = request.form.getlist("asset_path[]")
 
-    for ct, mtype, blob_path in zip(asset_change_types, asset_media_types, asset_blob_paths):
-        if not (ct or mtype or blob_path):
+    for ct, mt, fname, path in zip(
+        asset_change_types,
+        asset_media_types,
+        asset_filenames,
+        asset_paths,
+    ):
+        # Require media type + filename at minimum
+        if not mt or not fname:
             continue
-
-        filename = os.path.basename(blob_path)
 
         asset_rows.append({
             "SKU": sku,
             "Digital Change Type": ct.strip(),
-            "Media Type": mtype.strip(),
-            "FileName": filename,
-            "BlobPath": blob_path,
+            "Media Type": mt.strip(),
+            "File Name": fname.strip(),
+            "File Path": path.strip() if path else "",
         })
+
 
     # --------- SECTION 8: Pricing (multi-level) ----------
     level_types = request.form.getlist("level_type[]")

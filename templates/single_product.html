@@ -676,86 +676,112 @@
   });
 
   // --- Section 7: Digital Assets ---
-  const assetsContainer = document.getElementById('assetsContainer');
-  let primaryImageCount = 0;
-  let additionalImageCount = 0;
+const assetsContainer = document.getElementById('assetsContainer');
 
-  function canAddMediaType(type) {
-    if (type === 'PrimaryImage' && primaryImageCount >= 1) {
-      alert('Only 1 Primary Image allowed.');
-      return false;
-    }
-    if (type === 'AdditionalImage' && additionalImageCount >= 3) {
-      alert('Maximum 3 Additional Images allowed.');
-      return false;
-    }
-    return true;
+let primaryImageCount = 0;
+let additionalImageCount = 0;
+
+function recalcAssetCounts() {
+  primaryImageCount = 0;
+  additionalImageCount = 0;
+
+  document.querySelectorAll('.asset-media-type').forEach(sel => {
+    if (sel.value === 'PrimaryImage') primaryImageCount++;
+    if (sel.value === 'AdditionalImage') additionalImageCount++;
+  });
+}
+
+function countMediaTypes(excludeSelect = null) {
+  let primary = 0;
+  let additional = 0;
+
+  document.querySelectorAll('.asset-media-type').forEach(sel => {
+    if (sel === excludeSelect) return;
+
+    if (sel.value === 'PrimaryImage') primary++;
+    if (sel.value === 'AdditionalImage') additional++;
+  });
+
+  return { primary, additional };
+}
+
+function canSelectMediaType(type, currentSelect) {
+  const counts = countMediaTypes(currentSelect);
+
+  if (type === 'PrimaryImage' && counts.primary >= 1) {
+    alert('Only 1 Primary Image allowed.');
+    return false;
   }
 
-  document.getElementById('addAssetBtn').addEventListener('click', () => {
-    const block = document.createElement('div');
-    block.className = 'border rounded p-3 mb-2 asset-block';
-    block.innerHTML = `
-      <div class="row align-items-end">
-        <div class="col-md-3 mb-2">
-          <label class="form-label">Change Type</label>
-          <select class="form-select asset-change-type" name="asset_change_type[]">
-            <option value="A" selected>A</option>
-            <option value="M">M</option>
-            <option value="D">D</option>
-          </select>
-        </div>
-        <div class="col-md-4 mb-2">
-          <label class="form-label">Media Type</label>
-          <select class="form-select asset-media-type" name="asset_media_type[]">
-            <option value="">-- Select --</option>
-            <option value="PrimaryImage">Primary Image</option>
-            <option value="AdditionalImage">Additional Image</option>
-            <option value="LineArt">LineArt</option>
-            <option value="PDF">PDF</option>
-          </select>
-        </div>
-        <div class="col-md-5 mb-2">
-          <label class="form-label">Browse and Upload</label>
-          <input type="file" class="form-control asset-file-input" name="asset_file[]" accept="image/*">
-        </div>
+  if (type === 'AdditionalImage' && counts.additional >= 3) {
+    alert('Maximum 3 Additional Images allowed.');
+    return false;
+  }
+
+  return true;
+}
+
+document.getElementById('addAssetBtn').addEventListener('click', () => {
+  const block = document.createElement('div');
+  block.className = 'border rounded p-3 mb-2 asset-block';
+
+  block.innerHTML = `
+    <div class="row align-items-end">
+      <div class="col-md-3 mb-2">
+        <label class="form-label">Change Type</label>
+        <select class="form-select asset-change-type" name="asset_change_type[]">
+          <option value="A" selected>A</option>
+          <option value="M">M</option>
+          <option value="D">D</option>
+        </select>
       </div>
-      <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
-    `;
-    assetsContainer.appendChild(block);
-    attachRemove(block);
 
-    const mediaSelect = block.querySelector('.asset-media-type');
-    const fileInput = block.querySelector('.asset-file-input');
+      <div class="col-md-3 mb-2">
+        <label class="form-label">Media Type</label>
+        <select class="form-select asset-media-type" name="asset_media_type[]">
+          <option value="">-- Select --</option>
+          <option value="PrimaryImage">Primary Image</option>
+          <option value="AdditionalImage">Additional Image</option>
+          <option value="LineArt">LineArt</option>
+          <option value="PDF">PDF</option>
+        </select>
+      </div>
 
-    mediaSelect.addEventListener('change', () => {
-      const type = mediaSelect.value;
-      if (!type) return;
+      <div class="col-md-3 mb-2">
+        <label class="form-label">File Name</label>
+        <input type="text" class="form-control" name="asset_filename[]" placeholder="e.g. image1.jpg">
+      </div>
 
-      if (!canAddMediaType(type)) {
-        mediaSelect.value = '';
-        return;
-      }
+      <div class="col-md-3 mb-2">
+        <label class="form-label">File Path / URL (optional)</label>
+        <input type="text" class="form-control" name="asset_path[]" placeholder="Optional reference">
+      </div>
+    </div>
 
-      // Adjust counters
-      if (type === 'PrimaryImage') primaryImageCount++;
-      if (type === 'AdditionalImage') additionalImageCount++;
+    <button type="button" class="btn btn-link p-0 small text-danger remove-block">Remove</button>
+  `;
 
-      // Accept rules
-      if (type === 'PDF') {
-        fileInput.accept = '.pdf';
-      } else {
-        fileInput.accept = 'image/*';
-      }
-    });
+  assetsContainer.appendChild(block);
 
-    const removeBtn = block.querySelector('.remove-block');
-    removeBtn.addEventListener('click', () => {
-      const type = mediaSelect.value;
-      if (type === 'PrimaryImage') primaryImageCount = Math.max(0, primaryImageCount - 1);
-      if (type === 'AdditionalImage') additionalImageCount = Math.max(0, additionalImageCount - 1);
-    });
+  const mediaSelect = block.querySelector('.asset-media-type');
+  const removeBtn = block.querySelector('.remove-block');
+
+  mediaSelect.addEventListener('change', () => {
+  const newVal = mediaSelect.value;
+
+  if (!canSelectMediaType(newVal, mediaSelect)) {
+    mediaSelect.value = '';
+    return;
+  }
+});
+
+
+  removeBtn.addEventListener('click', () => {
+    block.remove();
+    recalcAssetCounts();
   });
+});
+
 
     // --- Section 8: Pricing Levels ---
   const priceLevelsContainer = document.getElementById('priceLevelsContainer');

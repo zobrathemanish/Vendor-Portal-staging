@@ -195,18 +195,19 @@ def create_multi_product_excel(
         "SKU",
         "Digital Change Type",
         "Media Type",
-        "FileName",
-        "FileLocalPath",
+        "File Name",
+        "File Path",
     ]
     ws.append(asset_cols)
     for row in asset_rows:
         ws.append([
-            row.get("SKU", ""),
-            row.get("Digital Change Type", ""),
-            row.get("Media Type", ""),
-            row.get("FileName", ""),
-            row.get("FileLocalPath", ""),
-        ])
+        row.get("SKU", ""),
+        row.get("Digital Change Type", ""),
+        row.get("Media Type", ""),
+        row.get("File Name", ""),
+        row.get("File Path", ""),
+    ])
+
 
     # 8) Pricing
     ws = wb.create_sheet("Pricing")
