@@ -43,6 +43,11 @@ def generate_upload_sas(container: str, blob_path: str) -> str:
 
     return f"https://{account_name}.blob.core.windows.net/{container}/{blob_path}?{sas}"
 
+def utc_timestamp():
+    return datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+
+def safe_vendor_key(vendor: str) -> str:
+    return vendor.strip().replace(" ", "_")
 
 
 def get_blob_service_client(connection_string):
@@ -86,7 +91,7 @@ def get_latest_asset_hash(container_client, vendor_folder):
     manifest_data = container_client.download_blob(latest_manifest_blob.name).readall()
     manifest = json.loads(manifest_data)
 
-    return manifest.get("assets_hash")
+    # return manifest.get("assets_hash")
 
 
 def delete_old_asset_zips(container_client, vendor_folder):
@@ -151,7 +156,8 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path,
     Returns:
         None
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = utc_timestamp()
+    safe_vendor = safe_vendor_key(vendor)
     vendor_folder = f"vendor={vendor}"
 
     blob_service_client = get_blob_service_client(connection_string)
@@ -177,24 +183,14 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path,
 
     local_manifest_dir = os.path.join(upload_folder, vendor, "opticat")
     os.makedirs(local_manifest_dir, exist_ok=True)
-    local_manifest_path = os.path.join(local_manifest_dir, f"manifest_{timestamp}.json")
+    manifest_filename = f"manifest-{safe_vendor}-{timestamp}.json"
+    local_manifest_path = os.path.join(local_manifest_dir, manifest_filename)
+
 
     with open(local_manifest_path, "w") as f:
         json.dump(manifest, f, indent=4)
 
-    manifest_blob_path = f"raw/{vendor_folder}/logs/manifest_{timestamp}.json"
-    upload_blob(local_manifest_path, manifest_blob_path, connection_string, container_name)
-
-    print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
-
-    local_manifest_dir = os.path.join(upload_folder, vendor, "opticat")
-    os.makedirs(local_manifest_dir, exist_ok=True)
-    local_manifest_path = os.path.join(local_manifest_dir, f"manifest_{timestamp}.json")
-
-    with open(local_manifest_path, "w") as f:
-        json.dump(manifest, f, indent=4)
-
-    manifest_blob_path = f"raw/{vendor_folder}/logs/manifest_{timestamp}.json"
+    manifest_blob_path = f"raw/{vendor_folder}/logs/{manifest_filename}"
     upload_blob(local_manifest_path, manifest_blob_path, connection_string, container_name)
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
@@ -222,11 +218,12 @@ def upload_to_azure_bronze_non_opticat(
         - store manifest locally and in Azure
     """
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     vendor_folder = f"vendor={vendor}"
 
     blob_service_client = get_blob_service_client(connection_string)
     container_client = blob_service_client.get_container_client(container_name)
+    timestamp = utc_timestamp()
+    safe_vendor = safe_vendor_key(vendor)
 
     # -------------------- Upload unified XLSX --------------------
     unified_blob_path = f"raw/{vendor_folder}/unified/{timestamp}_unified.xlsx"
@@ -237,6 +234,7 @@ def upload_to_azure_bronze_non_opticat(
         container_name,
     )
 
+ 
 
     # -------------------- Create manifest --------------------
     manifest = {
@@ -250,15 +248,13 @@ def upload_to_azure_bronze_non_opticat(
     local_manifest_dir = os.path.join(upload_folder, vendor, "non_opticat")
     os.makedirs(local_manifest_dir, exist_ok=True)
 
-    local_manifest_path = os.path.join(
-        local_manifest_dir,
-        f"manifest_{timestamp}.json",
-    )
+    manifest_filename = f"manifest-{safe_vendor}-{timestamp}.json"
+    local_manifest_path = os.path.join(local_manifest_dir, manifest_filename)
 
     with open(local_manifest_path, "w") as f:
         json.dump(manifest, f, indent=4)
 
-    manifest_blob_path = f"raw/{vendor_folder}/logs/manifest_{timestamp}.json"
+    manifest_blob_path = f"raw/{vendor_folder}/logs/{manifest_filename}"
     upload_blob(
         local_manifest_path,
         manifest_blob_path,
