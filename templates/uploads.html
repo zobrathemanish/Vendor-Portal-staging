@@ -180,7 +180,6 @@
         type="file"
         name="approved_pricing_file"
         accept=".xlsx"
-        required
       >
     </div>
   </div>
@@ -209,6 +208,10 @@
   const assetSection = document.getElementById("assetSection");
   const vendorTypeInput = document.getElementById("vendorType");
 
+  const pricingFileInput = document.querySelector(
+    'input[name="approved_pricing_file"]'
+  );
+
   function resetVendorSections() {
     opticatSection.style.display = "none";
     nonOpticatSection.style.display = "none";
@@ -220,12 +223,21 @@
       resetVendorSections();
       assetSection.style.display = "none";
       pricingReviewSection.style.display = "block";
+
+      // ✅ REQUIRED only for pricing review
+      pricingFileInput.required = true;
+
     } else {
       pricingReviewSection.style.display = "none";
       assetSection.style.display = "block";
+
+      // ✅ NOT required for vendor submission
+      pricingFileInput.required = false;
+
       vendorSelect.dispatchEvent(new Event("change"));
     }
   });
+
 
   vendorSelect.addEventListener("change", function () {
     if (submissionType.value === "pricing_review") {

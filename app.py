@@ -92,6 +92,31 @@ def upload_files():
                 container_name="silver"
             )
 
+            # ---------------------------------------
+            # CREATE NOTIFY MARKER (Bronze)
+            # ---------------------------------------
+            marker_payload = {
+                "submission_type": "pricing_review",
+                "vendor": vendor_name,
+                "uploaded_file": approved_file.filename,
+                "reviewed_pricing_path": f"silver/approved/vendor={vendor_name}/pricing",
+                "uploaded_at": datetime.utcnow().isoformat() + "Z",
+                "action_required": "Run pricing pipeline"
+            }
+
+            marker_name = (
+                f"raw/notifymarker/"
+                f"{vendor_name}_{timestamp}.json"
+            )
+
+            upload_json_blob(
+                data=marker_payload,
+                blob_path=marker_name,
+                connection_string=AZURE_CONNECTION_STRING,
+                container_name="bronze"
+            )
+
+
             flash(f"Pricing review submitted for {vendor_name}.", "success")
         except Exception as e:
             flash(f"Pricing upload failed: {e}", "danger")
@@ -134,6 +159,33 @@ def upload_files():
                 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
                 container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
 
+            # ---------------------------------------
+            # CREATE NOTIFY MARKER (Vendor Submission)
+            # ---------------------------------------
+            marker_payload = {
+                "submission_type": "vendor_submission",
+                "vendor": vendor_name,
+                "vendor_type": "opticat",
+                "uploaded_files": [
+                    product_file.filename,
+                    pricing_file.filename
+                ],
+                "raw_vendor_path": f"raw/vendor={vendor_name}",
+                "uploaded_at": datetime.utcnow().isoformat() + "Z",
+                "next_step": "Data team to run vendor ingestion pipeline"
+            }
+
+            marker_name = (
+                f"raw/notifymarker/"
+                f"{vendor_name}_{timestamp}.json"
+            )
+
+            upload_json_blob(
+                data=marker_payload,
+                blob_path=marker_name,
+                connection_string=AZURE_CONNECTION_STRING,
+                container_name="bronze"
+            )
 
 
             flash(f'OptiCat files for {vendor_name} uploaded successfully.', 'success')
@@ -171,6 +223,32 @@ def upload_files():
                 blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
                 container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
 
+            # ---------------------------------------
+            # CREATE NOTIFY MARKER (Vendor Submission)
+            # ---------------------------------------
+            marker_payload = {
+                "submission_type": "vendor_submission",
+                "vendor": vendor_name,
+                "vendor_type": "non-opticat",
+                "uploaded_files": [
+                    unified_file.filename
+                ],
+                "raw_vendor_path": f"raw/vendor={vendor_name}",
+                "uploaded_at": datetime.utcnow().isoformat() + "Z",
+                "next_step": "Data team to run vendor ingestion pipeline"
+            }
+
+            marker_name = (
+                f"raw/notifymarker/"
+                f"{vendor_name}_{timestamp}.json"
+            )
+
+            upload_json_blob(
+                data=marker_payload,
+                blob_path=marker_name,
+                connection_string=AZURE_CONNECTION_STRING,
+                container_name="bronze"
+            )
 
 
             flash(f'Unified file for {vendor_name} uploaded successfully.', 'success')

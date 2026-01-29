@@ -8,7 +8,8 @@ from azure.storage.blob import BlobServiceClient
 from services.file_service import compute_file_hash
 
 from datetime import datetime, timedelta
-from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+from azure.storage.blob import generate_blob_sas, BlobSasPermissions,BlobServiceClient, ContentSettings
+
 import os
 
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
@@ -137,6 +138,38 @@ def upload_blob(local_path, blob_path, connection_string, container_name):
 
     print(f"✅ Uploaded to Azure: {blob_path}")
     return f"{container_name}/{blob_path}"
+
+
+def upload_json_blob(
+    data: dict,
+    blob_path: str,
+    connection_string: str,
+    container_name: str,
+):
+    """
+    Upload a JSON marker file to Azure Blob Storage.
+
+    Used for notify markers (human-in-the-loop triggers).
+    """
+    blob_service_client = BlobServiceClient.from_connection_string(
+        connection_string
+    )
+    container_client = blob_service_client.get_container_client(
+        container_name
+    )
+
+    blob_client = container_client.get_blob_client(blob_path)
+
+    payload = json.dumps(data, indent=2)
+
+    blob_client.upload_blob(
+        payload,
+        overwrite=True,
+        content_settings=ContentSettings(
+            content_type="application/json"
+        )
+    )
+
 
 
 def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path, 
