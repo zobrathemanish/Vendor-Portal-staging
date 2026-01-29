@@ -90,8 +90,15 @@
     {% endwith %}
 
    <form action="{{ url_for('upload_files') }}" method="POST" enctype="multipart/form-data">
-
- 
+    <!-- Submission Type -->
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Submission Type</label>
+      <select class="form-select" name="submission_type" id="submissionType" required>
+        <option value="vendor" selected>Vendor Submission</option>
+        <option value="pricing_review">Pricing Review</option>
+      </select>
+    </div>
+    
 
   <input type="hidden" name="asset_blob_path[]" id="assetBlobPaths">
 
@@ -116,23 +123,25 @@
     </select>
   </div>
 
-     <!-- Upload Digital Assets-->
-    <div class="mb-3">
-  <label class="form-label fw-semibold">Upload Digital Assets (ZIP)</label>
-  <input class="form-control" type="file" id="assetZip" accept=".zip" multiple>
-  <small class="text-muted">Upload a ZIP containing all images / PDFs.</small>
-    </div>
+     <!-- Asset Section -->
+<div id="assetSection">
+  <div class="mb-3">
+    <label class="form-label fw-semibold">Upload Digital Assets (ZIP)</label>
+    <input class="form-control" type="file" id="assetZip" accept=".zip" multiple>
+    <small class="text-muted">Upload a ZIP containing all images / PDFs.</small>
+  </div>
+
   <div class="progress mt-2 d-none" id="assetUploadProgress">
-  <div
-    class="progress-bar progress-bar-striped progress-bar-animated"
-    role="progressbar"
-    style="width: 0%"
-    id="assetProgressBar"
-  >
-    0%
+    <div
+      class="progress-bar progress-bar-striped progress-bar-animated"
+      role="progressbar"
+      style="width: 0%"
+      id="assetProgressBar"
+    >
+      0%
+    </div>
   </div>
 </div>
-
 
   <!-- OptiCat Section -->
   <div id="opticatSection" style="display:none;">
@@ -153,9 +162,29 @@
       <label class="form-label">Upload Vendor File (.xlsx)</label>
       <input class="form-control" type="file" name="non_opticat_file" accept=".xlsx">
     </div>
-
-   
   </div>
+
+  <!-- Pricing Review Section -->
+  <div id="pricingReviewSection" style="display:none;">
+    <div class="alert alert-warning">
+      <strong>Pricing Review</strong><br>
+      Upload the final reviewed pricing file.
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">
+        Reviewed Full Pricing File (.xlsx)
+      </label>
+      <input
+        class="form-control"
+        type="file"
+        name="approved_pricing_file"
+        accept=".xlsx"
+        required
+      >
+    </div>
+  </div>
+
 
   <!-- Submit -->
   <div class="d-grid mb-3">
@@ -171,34 +200,54 @@
 </form>
 
 <script>
-  document.getElementById('vendorSelect').addEventListener('change', function () {
-    const selected = this.options[this.selectedIndex];
-    const type = selected.getAttribute('data-type');
+  const submissionType = document.getElementById("submissionType");
+  const vendorSelect = document.getElementById("vendorSelect");
 
-     // send vendor_type to Flask
-    document.getElementById('vendorType').value = type;
+  const opticatSection = document.getElementById("opticatSection");
+  const nonOpticatSection = document.getElementById("nonOpticatSection");
+  const pricingReviewSection = document.getElementById("pricingReviewSection");
+  const assetSection = document.getElementById("assetSection");
+  const vendorTypeInput = document.getElementById("vendorType");
 
-    const opticat = document.getElementById('opticatSection');
-    const nonOpticat = document.getElementById('nonOpticatSection');
+  function resetVendorSections() {
+    opticatSection.style.display = "none";
+    nonOpticatSection.style.display = "none";
+    vendorTypeInput.value = "";
+  }
 
-    if (type === 'opticat') {
-      opticat.style.display = 'block';
-      nonOpticat.style.display = 'none';
-
-      document.querySelector('input[name="product_file"]').required = true;
-      document.querySelector('input[name="pricing_file"]').required = true;
-      document.querySelector('input[name="non_opticat_file"]').required = false;
-
+  submissionType.addEventListener("change", function () {
+    if (this.value === "pricing_review") {
+      resetVendorSections();
+      assetSection.style.display = "none";
+      pricingReviewSection.style.display = "block";
     } else {
-      opticat.style.display = 'none';
-      nonOpticat.style.display = 'block';
+      pricingReviewSection.style.display = "none";
+      assetSection.style.display = "block";
+      vendorSelect.dispatchEvent(new Event("change"));
+    }
+  });
 
-      document.querySelector('input[name="product_file"]').required = false;
-      document.querySelector('input[name="pricing_file"]').required = false;
-      document.querySelector('input[name="non_opticat_file"]').required = true;
+  vendorSelect.addEventListener("change", function () {
+    if (submissionType.value === "pricing_review") {
+      resetVendorSections();
+      return;
+    }
+
+    const selected = this.options[this.selectedIndex];
+    const type = selected.getAttribute("data-type");
+
+    vendorTypeInput.value = type;
+
+    if (type === "opticat") {
+      opticatSection.style.display = "block";
+      nonOpticatSection.style.display = "none";
+    } else {
+      opticatSection.style.display = "none";
+      nonOpticatSection.style.display = "block";
     }
   });
 </script>
+
 <script type="module">
   import { BlockBlobClient } from "https://cdn.jsdelivr.net/npm/@azure/storage-blob/+esm";
 
@@ -351,11 +400,17 @@
 
   // 🚫 Prevent submit if assets not uploaded
   form.addEventListener("submit", function (e) {
-    if (assetUploadInProgress || !blobPathInput.value) {
-      e.preventDefault();
-      alert("Please upload assets successfully before submitting.");
+    const submissionType = document.getElementById("submissionType").value;
+
+    // 🚫 Asset validation ONLY for vendor submissions
+    if (submissionType === "vendor") {
+      if (assetUploadInProgress || !blobPathInput.value) {
+        e.preventDefault();
+        alert("Please upload assets successfully before submitting.");
+      }
     }
   });
+
 
   async function computeFileHash(file) {
     const buffer = await file.arrayBuffer();

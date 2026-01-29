@@ -58,6 +58,46 @@ def upload_page():
 def upload_files():
     vendor_name = request.form.get('vendor_name')
     vendor_type = request.form.get('vendor_type')
+    submission_type = request.form.get("submission_type")
+
+    # =====================================================
+    # PRICING REVIEW
+    # =====================================================
+    if submission_type == "pricing_review":
+        approved_file = request.files.get("approved_pricing_file")
+
+        if not vendor_name or not approved_file:
+            flash("Vendor and pricing file are required.", "danger")
+            return redirect(url_for("upload_page"))
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+        local_path = save_file(
+            approved_file,
+            vendor_name,
+            "pricing_review",
+            app.config["UPLOAD_FOLDER"]
+        )
+
+        try:
+            blob_path = (
+                f"approved/vendor={vendor_name}/pricing/"
+                f"{timestamp}_pricing.xlsx"
+            )
+
+            upload_blob(
+                local_path=local_path,
+                blob_path=blob_path,
+                connection_string=AZURE_CONNECTION_STRING,
+                container_name="silver"
+            )
+
+            flash(f"Pricing review submitted for {vendor_name}.", "success")
+        except Exception as e:
+            flash(f"Pricing upload failed: {e}", "danger")
+
+        return redirect(url_for("upload_page"))
+
 
     # Shared
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
