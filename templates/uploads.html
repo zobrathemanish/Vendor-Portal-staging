@@ -5,6 +5,11 @@
   <title>FGI Vendor Portal – Phase 1</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#C8102E">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+
+
   <style>
     /* body {
       background-color: #f2f2f2;
@@ -438,5 +443,14 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/static/sw.js")
+        .then(() => console.log("Service Worker registered"))
+        .catch(err => console.error("Service Worker registration failed", err));
+    });
+  }
+</script>
 </body>
 </html>
