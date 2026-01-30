@@ -50,11 +50,11 @@ def index():
     return redirect(url_for('upload_page'))
 
 
-@app.route('/upload', methods=['GET'])
+@app.route('/upload/', methods=['GET'])
 def upload_page():
     return render_template('uploads.html')
 
-@app.route('/upload', methods=['POST'])
+@app.route('/upload/', methods=['POST'])
 def upload_files():
     vendor_name = request.form.get('vendor_name')
     vendor_type = request.form.get('vendor_type')

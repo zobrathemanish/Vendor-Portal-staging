@@ -1,0 +1,17 @@
+{
+  "id": "/upload/",
+  "name": "Vendor Data Validation System",
+  "short_name": "VendorSystem",
+  "start_url": "/upload/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#C8102E",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

@@ -9,62 +9,122 @@
   <meta name="theme-color" content="#C8102E">
   <meta name="apple-mobile-web-app-capable" content="yes">
 
+<style>
+  /* ================================
+     WINDX-STYLE SYSTEM UI
+     ================================ */
 
-  <style>
-    /* body {
-      background-color: #f2f2f2;
-      font-family: 'Segoe UI', Arial, sans-serif;
-    } */
-    body {
-      background: url("{{ url_for('static', filename='background2.jpg') }}") no-repeat center center fixed;
-      background-size: cover;
-      font-family: 'Segoe UI', Arial, sans-serif;
-    }
-    body::before {
-      content: "";
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(255,255,255,0.18); /* lighter = less opacity */
-      z-index: -1;
-    }
+  /* Base system font & colors */
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    font-size: 14px;
+    color: #000000;
+    background-color: #F0F0F0; /* classic Windows gray */
+    margin: 0;
+  }
 
+  /* Top application bar */
+  .navbar {
+    height: 48px;
+    background-color: #C8102E; /* FGI red */
+    border-bottom: 1px solid #8a0f22;
+    box-shadow: none;
+  }
 
-    .navbar {
-      background-color: #C8102E;
-    }
-    .navbar-brand {
-      color: white !important;
-      font-weight: bold;
-      letter-spacing: 0.5px;
-    }
-    .card {
-      border: none;
-      border-radius: 15px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      margin-top: 50px;
-    }
-    .btn-primary {
-      background-color: #C8102E;
-      border: none;
-    }
-    .btn-primary:hover {
-      background-color: #a00d25;
-    }
-    .btn-primary,
-    .btn-primary:disabled {
-      background-color: #C8102E !important;
-      border-color: #C8102E !important;
-    }
+  .navbar-brand {
+    color: #ffffff !important;
+    font-weight: normal;
+    font-size: 14px;
+    letter-spacing: 0;
+  }
 
-    .btn-primary:hover:not(:disabled) {
-      background-color: #a00d25 !important;
-      border-color: #a00d25 !important;
-    }
+  /* Main layout container */
+  .container {
+    max-width: 1100px;
+  }
 
-  </style>
+  /* Panel (replace "card" mental model) */
+  .card {
+    background-color: #FFFFFF;
+    border: 1px solid #A0A0A0;
+    border-radius: 0;
+    box-shadow: none;
+    margin-top: 24px;
+    padding: 16px;
+  }
+
+  /* Section titles */
+  h4 {
+    font-size: 14px;
+    font-weight: bold;
+    color: #003399; /* classic Windows blue */
+    margin-bottom: 12px;
+  }
+
+  /* Labels */
+  label {
+    font-weight: normal;
+    color: #000000;
+  }
+
+  /* Inputs (Win32 style) */
+  .form-control,
+  .form-select {
+    font-size: 13px;
+    border-radius: 0;
+    border: 1px solid #7F9DB9;
+    padding: 4px 6px;
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    outline: none;
+    border-color: #003399;
+    box-shadow: none;
+  }
+
+  /* Primary buttons (system gray) */
+  .btn-primary {
+    background-color: #E6E6E6;
+    color: #000000;
+    border: 1px solid #7F9DB9;
+    border-radius: 0;
+    font-size: 13px;
+    font-weight: normal;
+    height: 28px;
+    padding: 2px 12px;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: #DADADA;
+    color: #000000;
+  }
+
+  .btn-primary:disabled {
+    background-color: #F2F2F2;
+    color: #808080;
+    border-color: #B0B0B0;
+  }
+
+  /* Links (Windows default) */
+  a {
+    color: #0000EE;
+    text-decoration: underline;
+    font-size: 13px;
+  }
+
+  a:hover {
+    color: #551A8B;
+  }
+
+  /* Alerts (keep simple & flat) */
+  .alert {
+    border-radius: 0;
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+</style>
+
 </head>
 
 <body>
@@ -81,7 +141,7 @@
 <div class="container">
   <div class="card p-4 bg-white">
 
-    <h4 class="text-center mb-4"> Vendor File Submission</h4>
+    <h4 class="mb-4"> Vendor File Submission</h4>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
