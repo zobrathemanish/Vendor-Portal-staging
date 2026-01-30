@@ -8,7 +8,7 @@
   "window_controls_overlay": false,
   "screenshots": [],
   "background_color": "#ffffff",
-  "theme_color": "#C8102E",
+  "theme_color": "#ffffff",
   "launch_handler": {
     "client_mode": "navigate-existing"
   },
