@@ -225,6 +225,8 @@ def upload_files():
             flash(f'OptiCat files for {vendor_name} uploaded successfully.', 'success')
         except Exception as e:
             flash(f'Azure upload failed: {e}', 'danger')
+        
+        logger.info(f"Submitting ETL Request. . . .")
 
         return redirect(url_for('upload_page'))
 
