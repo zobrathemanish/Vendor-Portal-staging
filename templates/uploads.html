@@ -26,7 +26,7 @@ body {
   font-size: 14px;
   color: #000;
   background-color: #E5E5E5;
-  overflow: hidden;
+  overflow: auto;
 }
 
 #app-shell {
@@ -41,12 +41,12 @@ body {
   height: 50px;
   padding: 0 20px;
   background: #FFFFFF;
-  border-bottom: 2px solid #000;
+  border-bottom: none;
   font-size: 16px;
 }
 
 .system-top-bar {
-  height: 20px;               /* thicker black band */
+  height: 30px;               /* thicker black band */
   background: #000;
   display: flex;
   align-items: center;
@@ -71,7 +71,7 @@ body {
 
 /* ---------- Side Rails ---------- */
 .system-rail {
-  width: 16px;
+  width: 17px;
   background: #000;
   display: flex;
   justify-content: center;
@@ -93,9 +93,14 @@ body {
 
 /* ---------- Workspace ---------- */
 .app-workspace {
-  flex: 1;
+  flex: 1 1 auto;
   background: #E5E5E5;
-  padding-top: 20px;
+  padding-top: 5px;
+  overflow-y: auto;
+
+    /* 🔑 THIS is the fix */
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* IMPORTANT: container must NOT fight the rails */
@@ -108,7 +113,7 @@ body {
 /* ---------- Workspace Frame ---------- */
 .workspace-frame {
   background: #E6E6E6;
-  padding: 80px 10px;
+  padding: 1px 10px;
   border: none;
 }
 
@@ -157,7 +162,7 @@ a {
 
 /* ---------- System Bottom Bar ---------- */
 .system-bottom-bar {
-  height: 16px;
+  height: 30px;
   background: #000;
   display: flex;
   align-items: center;
@@ -168,6 +173,47 @@ a {
   height: 2px;
   background: #FFF;
 }
+/* ================================
+   WINDX MENU BAR
+   ================================ */
+
+.windx-menu-bar {
+  margin-top: 2px;
+  height: 40px;
+  background-color: #9C9C9C;   /* classic WindX gray */
+  color: #FFFFFF;
+
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+
+  padding: 0 16px;
+
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 15px;
+
+}
+
+.menu-left {
+  white-space: nowrap;
+}
+
+.menu-center {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.menu-right {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.menu-spacer {
+  display: inline-block;
+  width: 32px;
+}
+
 </style>
 
 </head>
@@ -196,7 +242,19 @@ a {
       <div class="system-top-bar">
         <div class="system-top-line"></div>
       </div>
-      
+
+      <!-- WINDX MENU BAR -->
+      <div class="windx-menu-bar">
+        <div class="menu-left">Friday</div>
+        <div class="menu-center">Main Menu T481 - FGI</div>
+        <div class="menu-right">
+          <span>BR 01</span>
+          <span class="menu-spacer"></span>
+          <span>Week 04</span>
+        </div>
+      </div>
+
+
       <!-- MAIN WORKSPACE -->
       <div class="app-workspace">
         <div class="container">
