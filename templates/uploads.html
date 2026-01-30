@@ -95,7 +95,7 @@ body {
 .app-workspace {
   flex: 1 1 auto;
   background: #E5E5E5;
-  padding-top: 5px;
+  padding-top: 0px;
   overflow-y: auto;
 
     /* 🔑 THIS is the fix */
@@ -113,14 +113,14 @@ body {
 /* ---------- Workspace Frame ---------- */
 .workspace-frame {
   background: #E6E6E6;
-  padding: 1px 10px;
+  padding: 0px 5px;
   border: none;
 }
 
 /* ---------- Cards ---------- */
 .card {
-  background: #FFF;
-  border: 1px solid #A0A0A0;
+  background: transparent;
+  border: 1px solid #E5E5E5;
   padding: 16px;
 }
 
@@ -129,7 +129,9 @@ body {
 .form-select {
   font-size: 13px;
   border-radius: 0;
+  background-color: #FFFFFF;  /* active field pops slightly */
   border: 1px solid #7F9DB9;
+  background-color: #F2F2F2;
   padding: 4px 6px;
 }
 
@@ -142,15 +144,18 @@ body {
 
 /* ---------- Buttons ---------- */
 .btn-primary {
-  background: #E6E6E6;
+  background: #F2F2F2;
   color: #000;
   border: 1px solid #7F9DB9;
   border-radius: 0;
   height: 28px;
+  line-height: 28px;      /* 👈 THIS centers text vertically */
+  padding: 0 12px;        /* 👈 remove vertical padding */
+  text-align: center;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #DADADA;
+  background-color: #E8E8E8;
 }
 
 /* ---------- Links ---------- */
@@ -213,6 +218,65 @@ a {
   display: inline-block;
   width: 32px;
 }
+
+/* ================================
+   WINDX FOOTER (INSIDE RECTANGLE)
+   ================================ */
+
+.windx-footer-panel {
+  height: 32px;
+  background-color: #B3B3B3; /* WindX footer gray */
+  border-top: 1px solid #7A7A7A;
+
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+
+  padding: 0 14px;
+
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 14px;
+  color: #000000;
+}
+
+.footer-left,
+.footer-center,
+.footer-right {
+  white-space: nowrap;
+}
+
+.footer-center {
+  text-align: center;
+}
+
+.footer-right {
+  text-align: right;
+}
+
+.footer-gap {
+  display: inline-block;
+  width: 24px;
+}
+/* ================================
+   WINDX FOOTER COMMAND LINKS
+   ================================ */
+
+.windx-footer-panel a {
+  color: #000000;        /* NOT blue */
+  text-decoration: none; /* remove underline */
+  cursor: default;       /* terminal-style */
+}
+
+.windx-footer-panel a:hover {
+  background-color: #000000;
+  color: #FFFFFF;
+}
+
+.windx-footer-panel span {
+  user-select: none;
+}
+
+
 
 </style>
 
@@ -358,13 +422,6 @@ a {
                     <div class="d-grid mb-3">
                       <button type="submit" class="btn btn-primary" id="submitBtn">Submit</button>
                     </div>
-
-                    <div class="text-center">
-                      <a href="{{ url_for('download_template') }}" class="me-3">📄 Download Standard Template</a>
-                      <a href="{{ url_for('single_product_page') }}">🔧 Submit Single Product Manually</a>
-                      <a href="{{ url_for('form_submission_help') }}">📝 Help</a>
-                    </div>
-
                   </form>
                 </div>
               </div>
@@ -379,11 +436,27 @@ a {
                   </p>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
       </div>
+
+      <!-- WINDX FOOTER (INSIDE RECTANGLE) -->
+      <div class="windx-footer-panel">
+        <div class="footer-left">
+          <span>User: MANISH</span>
+          
+        </div>
+
+        <div class="footer-right">
+          <a href="{{ url_for('download_template') }}" id="action-f2"><span>F2=Download Template,</span></a>
+          <a href="{{ url_for('single_product_page') }}" id="action-f6"><span>F6=Submit Single Product,</span></a>
+          <a href="{{ url_for('form_submission_help') }}" id="action-f12"><span>F12=Help</span></a>
+          <span class="footer-gap"></span>
+          <span id="action-f3">F3=Log off</span>
+        </div>
+      </div>
+
 
       <!-- BOTTOM SYSTEM BAR (RAIL-TO-RAIL) -->
       <div class="system-bottom-bar">
@@ -678,6 +751,34 @@ a {
 
   updateSystemTime();
   setInterval(updateSystemTime, 1000);
+</script>
+
+<script>
+document.addEventListener("keydown", function (e) {
+
+  switch (e.key) {
+
+    case "F2":
+      e.preventDefault();
+      document.getElementById("action-f2")?.click();
+      break;
+
+    case "F6":
+      e.preventDefault();
+      document.getElementById("action-f6")?.click();
+      break;
+
+    case "F12":
+      e.preventDefault();
+      document.getElementById("action-f12")?.click();
+      break;
+
+    case "F3":
+      e.preventDefault();
+      alert("Log off (placeholder)");
+      break;
+  }
+});
 </script>
 
 
