@@ -5,13 +5,19 @@
   "start_url": "/upload/",
   "scope": "/",
   "display": "standalone",
+  "window_controls_overlay": false,
+  "screenshots": [],
   "background_color": "#ffffff",
   "theme_color": "#C8102E",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
   "icons": [
     {
       "src": "/static/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     }
+    
   ]
 }

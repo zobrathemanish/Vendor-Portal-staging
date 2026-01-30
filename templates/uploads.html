@@ -10,258 +10,337 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
 
 <style>
-  /* ================================
-     WINDX-STYLE SYSTEM UI
-     ================================ */
+/* ================================
+   WINDX-STYLE SYSTEM UI (CLEAN)
+   ================================ */
 
-  /* Base system font & colors */
-  body {
-    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
-    font-size: 14px;
-    color: #000000;
-    background-color: #F0F0F0; /* classic Windows gray */
-    margin: 0;
-  }
+/* ---------- Base ---------- */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
 
-  /* Top application bar */
-  .navbar {
-    height: 48px;
-    background-color: #C8102E; /* FGI red */
-    border-bottom: 1px solid #8a0f22;
-    box-shadow: none;
-  }
+body {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  font-size: 14px;
+  color: #000;
+  background-color: #E5E5E5;
+  overflow: hidden;
+}
 
-  .navbar-brand {
-    color: #ffffff !important;
-    font-weight: normal;
-    font-size: 14px;
-    letter-spacing: 0;
-  }
+#app-shell {
+  height: 100%;
+}
 
-  /* Main layout container */
-  .container {
-    max-width: 1100px;
-  }
+/* ---------- Title Bar ---------- */
+.windx-titlebar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 50px;
+  padding: 0 20px;
+  background: #FFFFFF;
+  border-bottom: 2px solid #000;
+  font-size: 16px;
+}
 
-  /* Panel (replace "card" mental model) */
-  .card {
-    background-color: #FFFFFF;
-    border: 1px solid #A0A0A0;
-    border-radius: 0;
-    box-shadow: none;
-    margin-top: 24px;
-    padding: 16px;
-  }
+.system-top-bar {
+  height: 20px;               /* thicker black band */
+  background: #000;
+  display: flex;
+  align-items: center;
+}
 
-  /* Section titles */
-  h4 {
-    font-size: 14px;
-    font-weight: bold;
-    color: #003399; /* classic Windows blue */
-    margin-bottom: 12px;
-  }
+.system-top-line {
+  width: 100%;
+  height: 2px;
+  background: #FFF;
+}
 
-  /* Labels */
-  label {
-    font-weight: normal;
-    color: #000000;
-  }
+.title-left { justify-self: start; }
+.title-center { justify-self: center; font-weight: bold; }
+.title-right { justify-self: end; }
 
-  /* Inputs (Win32 style) */
-  .form-control,
-  .form-select {
-    font-size: 13px;
-    border-radius: 0;
-    border: 1px solid #7F9DB9;
-    padding: 4px 6px;
-  }
+/* ---------- System Shell ---------- */
+.system-shell {
+  display: flex;
+  height: calc(100vh - 50px);
+  width: 100%;
+}
 
-  .form-control:focus,
-  .form-select:focus {
-    outline: none;
-    border-color: #003399;
-    box-shadow: none;
-  }
+/* ---------- Side Rails ---------- */
+.system-rail {
+  width: 16px;
+  background: #000;
+  display: flex;
+  justify-content: center;
+}
 
-  /* Primary buttons (system gray) */
-  .btn-primary {
-    background-color: #E6E6E6;
-    color: #000000;
-    border: 1px solid #7F9DB9;
-    border-radius: 0;
-    font-size: 13px;
-    font-weight: normal;
-    height: 28px;
-    padding: 2px 12px;
-  }
+.system-rail-line {
+  width: 2px;
+  background: #FFF;
+  height: 100%;
+}
 
-  .btn-primary:hover:not(:disabled) {
-    background-color: #DADADA;
-    color: #000000;
-  }
+/* ---------- Center Column ---------- */
+.system-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #E5E5E5;
+}
 
-  .btn-primary:disabled {
-    background-color: #F2F2F2;
-    color: #808080;
-    border-color: #B0B0B0;
-  }
+/* ---------- Workspace ---------- */
+.app-workspace {
+  flex: 1;
+  background: #E5E5E5;
+  padding-top: 20px;
+}
 
-  /* Links (Windows default) */
-  a {
-    color: #0000EE;
-    text-decoration: underline;
-    font-size: 13px;
-  }
+/* IMPORTANT: container must NOT fight the rails */
+.container {
+  max-width: 1080px;
+  width: 100%;
+  margin: 12px auto 0 auto;
+}
 
-  a:hover {
-    color: #551A8B;
-  }
+/* ---------- Workspace Frame ---------- */
+.workspace-frame {
+  background: #E6E6E6;
+  padding: 80px 10px;
+  border: none;
+}
 
-  /* Alerts (keep simple & flat) */
-  .alert {
-    border-radius: 0;
-    font-size: 13px;
-    padding: 6px 10px;
-  }
+/* ---------- Cards ---------- */
+.card {
+  background: #FFF;
+  border: 1px solid #A0A0A0;
+  padding: 16px;
+}
+
+/* ---------- Forms ---------- */
+.form-control,
+.form-select {
+  font-size: 13px;
+  border-radius: 0;
+  border: 1px solid #7F9DB9;
+  padding: 4px 6px;
+}
+
+.form-control:focus,
+.form-select:focus {
+  outline: none;
+  border-color: #003399;
+  box-shadow: none;
+}
+
+/* ---------- Buttons ---------- */
+.btn-primary {
+  background: #E6E6E6;
+  color: #000;
+  border: 1px solid #7F9DB9;
+  border-radius: 0;
+  height: 28px;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #DADADA;
+}
+
+/* ---------- Links ---------- */
+a {
+  color: #0000EE;
+  text-decoration: underline;
+  font-size: 13px;
+}
+
+/* ---------- System Bottom Bar ---------- */
+.system-bottom-bar {
+  height: 16px;
+  background: #000;
+  display: flex;
+  align-items: center;
+}
+
+.system-bottom-line {
+  width: 100%;
+  height: 2px;
+  background: #FFF;
+}
 </style>
 
 </head>
 
 <body>
+<div id="app-shell">
 
-<nav class="navbar navbar-expand-lg">
-  <div class="container">
-    <a class="navbar-brand" href="#">
-      <img src="{{ url_for('static', filename='fgi_logo.png') }}" height="28" class="me-2">
-      FGI Vendor Portal – Phase 1
-    </a>
+  <!-- TITLE BAR -->
+  <div class="windx-titlebar">
+    <div class="title-left" id="sys-date"></div>
+    <div class="title-center">Fort Garry Industries</div>
+    <div class="title-right" id="sys-time"></div>
   </div>
-</nav>
 
-<div class="container">
-  <div class="card p-4 bg-white">
+  <!-- SYSTEM SHELL -->
+  <div class="system-shell">
 
-    <h4 class="mb-4"> Vendor File Submission</h4>
+    <!-- LEFT SYSTEM RAIL -->
+    <div class="system-rail left">
+      <div class="system-rail-line"></div>
+    </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <!-- CENTER COLUMN -->
+    <div class="system-center">
+      <!-- TOP SYSTEM BAR -->
+      <div class="system-top-bar">
+        <div class="system-top-line"></div>
+      </div>
+      
+      <!-- MAIN WORKSPACE -->
+      <div class="app-workspace">
+        <div class="container">
+
+          <div class="workspace-frame">
+            <div class="row">
+
+              <!-- LEFT: MAIN FORM -->
+              <div class="col" style="flex: 0 0 750px; max-width: 750px;">
+                <div class="card">
+
+                  <h4 class="mb-4">Vendor file submission</h4>
+
+                  {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                      {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                      {% endfor %}
+                    {% endif %}
+                  {% endwith %}
+
+                  <form action="{{ url_for('upload_files') }}" method="POST" enctype="multipart/form-data">
+
+                    <!-- Submission Type -->
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Submission Type</label>
+                      <select class="form-select" name="submission_type" id="submissionType" required>
+                        <option value="vendor" selected>Vendor Submission</option>
+                        <option value="pricing_review">Pricing Review</option>
+                      </select>
+                    </div>
+
+                    <input type="hidden" name="asset_blob_path[]" id="assetBlobPaths">
+                    <input type="hidden" name="vendor_type" id="vendorType">
+
+                    <!-- Vendor Select -->
+                    <div class="mb-3">
+                      <label class="form-label fw-semibold">Select Vendor</label>
+                      <select class="form-select" name="vendor_name" id="vendorSelect" required>
+                        <option value="" disabled selected>Select a vendor...</option>
+
+                        <optgroup label="OptiCat Vendors">
+                          <option value="Dayton Parts" data-type="opticat">Dayton Parts</option>
+                          <option value="Grote Lighting" data-type="opticat">Grote Lighting</option>
+                        </optgroup>
+
+                        <optgroup label="Non-OptiCat Vendors">
+                          <option value="Rigid Industries" data-type="non-opticat">Rigid Industries</option>
+                        </optgroup>
+                      </select>
+                    </div>
+
+                    <!-- Asset Section -->
+                    <div id="assetSection">
+                      <div class="mb-3">
+                        <label class="form-label fw-semibold">Upload Digital Assets (ZIP)</label>
+                        <input class="form-control" type="file" id="assetZip" accept=".zip" multiple>
+                        <small class="text-muted">Upload a ZIP containing all images / PDFs.</small>
+                      </div>
+
+                      <div class="progress mt-2 d-none" id="assetUploadProgress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width:0%" id="assetProgressBar">0%</div>
+                      </div>
+                    </div>
+
+                    <!-- OptiCat -->
+                    <div id="opticatSection" style="display:none;">
+                      <div class="mb-3">
+                        <label class="form-label">Attach Product File (.xml)</label>
+                        <input class="form-control" type="file" name="product_file" accept=".xml">
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label">Attach Pricing File (.xlsx)</label>
+                        <input class="form-control" type="file" name="pricing_file" accept=".xlsx">
+                      </div>
+                    </div>
+
+                    <!-- Non-OptiCat -->
+                    <div id="nonOpticatSection" style="display:none;">
+                      <div class="mb-3">
+                        <label class="form-label">Upload Vendor File (.xlsx)</label>
+                        <input class="form-control" type="file" name="non_opticat_file" accept=".xlsx">
+                      </div>
+                    </div>
+
+                    <!-- Pricing Review -->
+                    <div id="pricingReviewSection" style="display:none;">
+                      <div class="alert alert-warning">
+                        <strong>Pricing Review</strong><br>
+                        Upload the final reviewed pricing file.
+                      </div>
+                      <div class="mb-3">
+                        <label class="form-label fw-semibold">Reviewed Full Pricing File (.xlsx)</label>
+                        <input class="form-control" type="file"
+                               name="approved_pricing_file" accept=".xlsx">
+                      </div>
+                    </div>
+
+                    <!-- Submit -->
+                    <div class="d-grid mb-3">
+                      <button type="submit" class="btn btn-primary" id="submitBtn">Submit</button>
+                    </div>
+
+                    <div class="text-center">
+                      <a href="{{ url_for('download_template') }}" class="me-3">📄 Download Standard Template</a>
+                      <a href="{{ url_for('single_product_page') }}">🔧 Submit Single Product Manually</a>
+                      <a href="{{ url_for('form_submission_help') }}">📝 Help</a>
+                    </div>
+
+                  </form>
+                </div>
+              </div>
+
+              <!-- RIGHT: STATUS PANEL -->
+              <div class="col" style="flex: 0 0 280px; max-width: 280px;">
+                <div class="card system-panel">
+                  <h5>Submission status</h5>
+                  <p class="status-idle">
+                    System idle.<br>
+                    Waiting for vendor submission.
+                  </p>
+                </div>
+              </div>
+
+            </div>
           </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+        </div>
+      </div>
 
-   <form action="{{ url_for('upload_files') }}" method="POST" enctype="multipart/form-data">
-    <!-- Submission Type -->
-    <div class="mb-3">
-      <label class="form-label fw-semibold">Submission Type</label>
-      <select class="form-select" name="submission_type" id="submissionType" required>
-        <option value="vendor" selected>Vendor Submission</option>
-        <option value="pricing_review">Pricing Review</option>
-      </select>
+      <!-- BOTTOM SYSTEM BAR (RAIL-TO-RAIL) -->
+      <div class="system-bottom-bar">
+        <div class="system-bottom-line"></div>
+      </div>
+
     </div>
-    
 
-  <input type="hidden" name="asset_blob_path[]" id="assetBlobPaths">
-
-   <input type="hidden" name="vendor_type" id="vendorType">
-
-
-  <!-- Vendor Select -->
-  <div class="mb-3">
-    <label class="form-label fw-semibold">Select Vendor</label>
-    <select class="form-select" name="vendor_name" id="vendorSelect" required>
-      <option value="" disabled selected>Select a vendor...</option>
-
-      <optgroup label="OptiCat Vendors">
-        <option value="Dayton Parts" data-type="opticat">Dayton Parts</option>
-        <option value="Grote Lighting" data-type="opticat">Grote Lighting</option>
-      </optgroup>
-
-      <optgroup label="Non-OptiCat Vendors">
-        <option value="Rigid Industries" data-type="non-opticat">Rigid Industries</option>
-
-      </optgroup>
-    </select>
-  </div>
-
-     <!-- Asset Section -->
-<div id="assetSection">
-  <div class="mb-3">
-    <label class="form-label fw-semibold">Upload Digital Assets (ZIP)</label>
-    <input class="form-control" type="file" id="assetZip" accept=".zip" multiple>
-    <small class="text-muted">Upload a ZIP containing all images / PDFs.</small>
-  </div>
-
-  <div class="progress mt-2 d-none" id="assetUploadProgress">
-    <div
-      class="progress-bar progress-bar-striped progress-bar-animated"
-      role="progressbar"
-      style="width: 0%"
-      id="assetProgressBar"
-    >
-      0%
+    <!-- RIGHT SYSTEM RAIL -->
+    <div class="system-rail right">
+      <div class="system-rail-line"></div>
     </div>
+
   </div>
 </div>
-
-  <!-- OptiCat Section -->
-  <div id="opticatSection" style="display:none;">
-    <div class="mb-3">
-      <label class="form-label">Attach Product File (.xml)</label>
-      <input class="form-control" type="file" name="product_file" accept=".xml">
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Attach Pricing File (.xlsx)</label>
-      <input class="form-control" type="file" name="pricing_file" accept=".xlsx">
-    </div>
-  </div>
-
-  <!-- Non-OptiCat Section -->
-  <div id="nonOpticatSection" style="display:none;">
-    <div class="mb-3">
-      <label class="form-label">Upload Vendor File (.xlsx)</label>
-      <input class="form-control" type="file" name="non_opticat_file" accept=".xlsx">
-    </div>
-  </div>
-
-  <!-- Pricing Review Section -->
-  <div id="pricingReviewSection" style="display:none;">
-    <div class="alert alert-warning">
-      <strong>Pricing Review</strong><br>
-      Upload the final reviewed pricing file.
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label fw-semibold">
-        Reviewed Full Pricing File (.xlsx)
-      </label>
-      <input
-        class="form-control"
-        type="file"
-        name="approved_pricing_file"
-        accept=".xlsx"
-      >
-    </div>
-  </div>
-
-
-  <!-- Submit -->
-  <div class="d-grid mb-3">
-    <button type="submit" class="btn btn-primary" id="submitBtn">Submit</button>
-  </div>
-
-  <div class="text-center">
-    <a href="{{ url_for('download_template') }}" class="me-3">📄 Download Standard Template</a>
-    <a href="{{ url_for('single_product_page') }}">🔧 Submit Single Product Manually</a>
-    <a href="{{ url_for('form_submission_help') }}">📝 Help</a>
-  </div>
-
-</form>
 
 <script>
   const submissionType = document.getElementById("submissionType");
@@ -512,5 +591,38 @@
     });
   }
 </script>
+<script>
+  window.addEventListener("load", () => {
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      window.resizeTo(1100, 720);
+    }
+  });
+</script>
+<script>
+  function updateSystemTime() {
+    const now = new Date();
+
+    const dateStr = now.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "2-digit"
+    });
+
+    const timeStr = now.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+
+    document.getElementById("sys-date").textContent = dateStr;
+    document.getElementById("sys-time").textContent = timeStr;
+  }
+
+  updateSystemTime();
+  setInterval(updateSystemTime, 1000);
+</script>
+
+
+</div>
 </body>
 </html>
