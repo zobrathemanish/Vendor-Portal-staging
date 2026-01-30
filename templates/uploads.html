@@ -36,7 +36,7 @@ body {
 
 /* ---------- Title Bar ---------- */
 .windx-titlebar {
-  border-top: 2px solid #000000;   /* 👈 ADD THIS */
+  border-top: 1px solid #000000;   /* 👈 ADD THIS */
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -277,6 +277,22 @@ a {
   user-select: none;
 }
 
+.status-log {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+
+  background-color: #FFFFFF;
+  border: 1px solid #A0A0A0;
+
+  padding: 6px;
+  height: 160px;
+
+  overflow: hidden;
+  white-space: pre-line;
+}
+
+
 </style>
 
 </head>
@@ -429,12 +445,14 @@ a {
               <div class="col" style="flex: 0 0 280px; max-width: 280px;">
                 <div class="card system-panel">
                   <h5>Submission status</h5>
-                  <p class="status-idle">
-                    System idle.<br>
-                    Waiting for vendor submission.
-                  </p>
+
+                  <div id="submission-status-log" class="status-log">
+                    System idle.
+                  </div>
+
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -778,6 +796,22 @@ document.addEventListener("keydown", function (e) {
       break;
   }
 });
+</script>
+<script>
+const logBox = document.getElementById("submission-status-log");
+
+if (logBox) {
+  const evtSource = new EventSource("/logs/stream");
+
+  evtSource.onmessage = function (event) {
+    logBox.textContent += "\n" + event.data;
+    logBox.scrollTop = logBox.scrollHeight;
+  };
+
+  evtSource.onerror = function () {
+    logBox.textContent += "\n[Log stream disconnected]";
+  };
+}
 </script>
 
 

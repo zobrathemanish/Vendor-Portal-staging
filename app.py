@@ -9,6 +9,9 @@ from services.azure_service import generate_upload_sas
 from datetime import datetime
 import hashlib
 from dotenv import load_dotenv
+import logging
+from collections import deque
+
 load_dotenv()
 
 # ---------------------------------------
@@ -24,6 +27,34 @@ TEMPLATE_FOLDER = os.path.join(os.getcwd(), "data", "templates")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# ================================
+# IN-MEMORY LOG BUFFER (DEV)
+# ================================
+
+LOG_BUFFER = deque(maxlen=200)   # last 200 log lines
+
+# ================================
+# UI LOGGING HANDLER
+# ================================
+
+class UILogHandler(logging.Handler):
+    def emit(self, record):
+        msg = self.format(record)
+        LOG_BUFFER.append(msg)
+
+
+logger = logging.getLogger("vendor_portal")
+logger.setLevel(logging.INFO)
+
+ui_handler = UILogHandler()
+ui_handler.setFormatter(logging.Formatter(
+    "[%(asctime)s] %(levelname)s — %(message)s",
+    "%H:%M:%S"
+))
+
+logger.addHandler(ui_handler)
+
 
 # Azure Storage
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
@@ -56,6 +87,7 @@ def upload_page():
 
 @app.route('/upload/', methods=['POST'])
 def upload_files():
+    logger.info("Submission received")
     vendor_name = request.form.get('vendor_name')
     vendor_type = request.form.get('vendor_type')
     submission_type = request.form.get("submission_type")
@@ -64,6 +96,7 @@ def upload_files():
     # PRICING REVIEW
     # =====================================================
     if submission_type == "pricing_review":
+        logger.info(f"Pricing review submitted for vendor={vendor_name}")
         approved_file = request.files.get("approved_pricing_file")
 
         if not vendor_name or not approved_file:
@@ -131,6 +164,7 @@ def upload_files():
     # PROCESS OPTICAT VENDORS
     # -------------------------------
     if vendor_type == "opticat":
+        logger.info(f"OptiCat submission for vendor={vendor_name}")
         product_file = request.files.get('product_file')
         pricing_file = request.files.get('pricing_file')
 
@@ -198,6 +232,7 @@ def upload_files():
     # PROCESS NON-OPTICAT VENDORS
     # -------------------------------
     elif vendor_type == "non-opticat":
+        logger.info(f"Non-OptiCat submission for vendor={vendor_name}")
         unified_file = request.files.get('non_opticat_file')
 
         if not unified_file:
@@ -260,6 +295,22 @@ def upload_files():
     else:
         flash("Unknown vendor type.", "danger")
         return redirect(url_for("upload_page"))
+    
+from flask import Response
+import time
+
+@app.route("/logs/stream")
+def stream_logs():
+    def event_stream():
+        last_len = 0
+        while True:
+            if len(LOG_BUFFER) > last_len:
+                for msg in list(LOG_BUFFER)[last_len:]:
+                    yield f"data: {msg}\n\n"
+                last_len = len(LOG_BUFFER)
+            time.sleep(0.5)
+
+    return Response(event_stream(), mimetype="text/event-stream")
 
 @app.route("/api/get-asset-upload-sas", methods=["POST"])
 def get_asset_upload_sas():
@@ -995,4 +1046,5 @@ def cleanup_old_assets():
 # MAIN
 # ---------------------------------------
 if __name__ == '__main__':
+    logger.info("Vendor Portal started")
     app.run(debug=True)
