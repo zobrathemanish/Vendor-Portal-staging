@@ -502,9 +502,9 @@ a {
 
 <div id="submission-meta"
      data-vendor="{{ submission_vendor }}"
-     data-submission-id="{{ submission_id }}">
+     data-submission-id="{{ submission_id }}"
+     data-autostart="{{ '1' if submission_id else '' }}">
 </div>
-
 
 <script>
   const submissionType = document.getElementById("submissionType");
@@ -821,11 +821,25 @@ if (logBox) {
   };
 } */
 </script>
+
 <script>
 let ACTIVE_SUBMISSION_ID = null;
 let STATUS_POLL_TIMEOUT = null;
 
-// 🔥 KILL all pollers when page unloads / reloads
+// 🔐 Persist last printed message per submission (reload-safe)
+function getLastPrintedMessage(submissionId) {
+  return sessionStorage.getItem(`last_msg_${submissionId}`);
+}
+
+function setLastPrintedMessage(submissionId, msg) {
+  sessionStorage.setItem(`last_msg_${submissionId}`, msg);
+}
+
+function clearLastPrintedMessage(submissionId) {
+  sessionStorage.removeItem(`last_msg_${submissionId}`);
+}
+
+// 🔥 Kill pollers on unload
 window.addEventListener("beforeunload", () => {
   ACTIVE_SUBMISSION_ID = null;
   if (STATUS_POLL_TIMEOUT) {
@@ -837,55 +851,67 @@ window.addEventListener("beforeunload", () => {
 
 <script>
 function pollSubmissionStatus(vendor, submissionId) {
-  console.log("🔥 pollSubmissionStatus called", vendor, submissionId);
 
-  if (ACTIVE_SUBMISSION_ID !== submissionId) {
-    console.log("❌ poll cancelled (stale id)");
-    return;
-  }
+  if (ACTIVE_SUBMISSION_ID !== submissionId) return;
 
-  const url = `/api/submission-status?vendor=${encodeURIComponent(vendor)}&submission_id=${submissionId}`;
-  console.log("🔥 FETCHING:", url);
-
-  fetch(url)
-    .then(res => {
-      console.log("🔥 FETCH RESPONSE STATUS:", res.status);
-      return res.json();
-    })
+  fetch(`/api/submission-status?vendor=${encodeURIComponent(vendor)}&submission_id=${submissionId}`)
+    .then(res => res.json())
     .then(data => {
-      console.log("🔥 FETCH DATA:", data);
 
       const box = document.getElementById("submission-status-log");
-      if (box) {
-        if (box.textContent.includes("idle")) {
+      if (!box) return;
+
+      // 🧠 Build human-visible message (NO timestamp)
+      let message;
+      if (data.status === "PENDING") {
+        message = "PIPELINE → PENDING (waiting for watcher)";
+      } else {
+        message = `${data.stage} → ${data.status}`;
+      }
+
+      const lastMsg = getLastPrintedMessage(submissionId);
+
+      // 🖨️ Print ONLY if message changed
+      if (message !== lastMsg) {
+
+        if (box.textContent.includes("System idle")) {
           box.textContent = "";
         }
 
-        let line;
-        if (data.status === "PENDING") {
-          line = `[${new Date().toLocaleTimeString()}] PIPELINE → PENDING (waiting for watcher)`;
-        } else {
-          line = `[${new Date().toLocaleTimeString()}] ${data.stage} → ${data.status}`;
-        }
-
+        const line = `[${new Date().toLocaleTimeString()}] ${message}`;
         box.textContent += "\n" + line;
         box.scrollTop = box.scrollHeight;
+
+        setLastPrintedMessage(submissionId, message);
       }
 
-      // 🔁 THIS IS THE MISSING PIECE
-      if (data.status !== "DONE" && data.status !== "FAILED") {
+      // 🛑 Terminal states (match backend)
+      const TERMINAL_STATUSES = [
+        "DONE",
+        "FAILED",
+        "PLEASE CHECK YOUR EMAIL"
+      ];
+
+      if (!TERMINAL_STATUSES.includes(data.status)) {
         STATUS_POLL_TIMEOUT = setTimeout(() => {
           pollSubmissionStatus(vendor, submissionId);
         }, 3000);
       } else {
-        console.log("✅ Polling finished");
+        // ✅ Stop cleanly
+        ACTIVE_SUBMISSION_ID = null;
+        clearLastPrintedMessage(submissionId);
+
+        setTimeout(() => {
+          box.textContent = "System idle.\nWaiting for vendor submission.";
+        }, 4000);
       }
     })
-    .catch(err => {
-      console.error("❌ FETCH ERROR:", err);
+    .catch(() => {
+      STATUS_POLL_TIMEOUT = setTimeout(() => {
+        pollSubmissionStatus(vendor, submissionId);
+      }, 5000);
     });
 }
-
 </script>
 
 <script>
@@ -894,13 +920,19 @@ const meta = document.getElementById("submission-meta");
 if (meta) {
   const submissionId = meta.dataset.submissionId;
   const submissionVendor = meta.dataset.vendor;
+  const autostart = meta.dataset.autostart === "1";
 
-  if (submissionId && submissionVendor) {
+  // ▶️ Start polling ONLY after submit redirect
+  if (autostart && submissionId && submissionVendor) {
 
-    // 🔥 kill any previous poller
     if (STATUS_POLL_TIMEOUT) {
       clearTimeout(STATUS_POLL_TIMEOUT);
       STATUS_POLL_TIMEOUT = null;
+    }
+
+    const box = document.getElementById("submission-status-log");
+    if (box) {
+      box.textContent = "";
     }
 
     console.log("🔥 STARTING POLLER", submissionVendor, submissionId);
