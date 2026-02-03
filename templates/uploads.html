@@ -289,34 +289,22 @@ a {
   line-height: 1.4;
 
   background-color: #f2f2f2;
-  border: 1px solid #f2f2f2;
- /* border: 1px solid #7F9DB9; */
+  /* border: 1px solid #f2f2f2; */
+  border: 1px solid #7F9DB9; 
 
   padding: 10px;
   width: 80vw;              /* ⬅️ viewport-based */
   max-width: 380px;
   min-width: 320px;       /* ⬅️ wider console */
   
-  height: 340px;          /* ⬅️ taller window */
-  max-height: 340px;
+  height: 200px;          /* ⬅️ taller window */
+  max-height: 200px;
 
   overflow-y: auto;
   overflow-x: hidden;
 
   white-space: pre-wrap;
   box-sizing: border-box;
-}
-
-.status-log::before {
-  content: "ETL PIPELINE CONSOLE";
-  display: block;
-  margin-bottom: 12px;
-  text-align: center;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  border-bottom: 1px solid #7F9DB9;
-  padding-bottom: 8px;
 }
 
 .status-log::before {
@@ -363,7 +351,7 @@ a {
       </div>
 
       <!-- WINDX MENU BAR -->
-      <div class="windx-menu-bar">
+      <!-- <div class="windx-menu-bar">
         <div class="menu-left">Friday</div>
         <div class="menu-center">Main Menu T481 - FGI</div>
         <div class="menu-right">
@@ -371,7 +359,7 @@ a {
           <span class="menu-spacer"></span>
           <span>Week 04</span>
         </div>
-      </div>
+      </div> -->
 
 
       <!-- MAIN WORKSPACE -->
@@ -481,15 +469,40 @@ a {
                 </div>
               </div>
 
-              <!-- RIGHT: STATUS PANEL -->
+              <!-- RIGHT SIDE PANEL (STACKED) -->
+              <!-- RIGHT SIDE PANEL -->
               <div class="col" style="flex: 0 0 280px; max-width: 280px;">
+
+                <!-- SUBMISSION STATUS -->
                 <div class="card system-panel">
                   <h5>Submission status</h5>
 
-                  <div id="submission-status-log" class="status-log">System idle. </div>
-
+                  <div id="submission-status-log" class="status-log">
+                    System idle.
+                  </div>
                 </div>
+
+                <!-- OUTPUT STATUS (MATCHING CARD) -->
+                <div class="card system-panel mt-2">
+                  <h5>Output status</h5>
+
+                  <div class="output-body">
+                    <div class="output-title">
+                      ✅ Output Generated
+                    </div>
+
+                    <div class="output-subtitle">
+                      Review-ready files have been generated and attached below.
+                    </div>
+
+                    <div class="output-meta">
+                      Source: <strong>Silver / Ready / Review</strong>
+                    </div>
+                  </div>
+                </div>
+
               </div>
+
 
             </div>
           </div>
