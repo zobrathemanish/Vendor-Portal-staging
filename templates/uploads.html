@@ -289,8 +289,8 @@ a {
   line-height: 1.4;
 
   background-color: #f2f2f2;
-  /* border: 1px solid #f2f2f2; */
-  border: 1px solid #7F9DB9; 
+  border: 1px solid #f2f2f2;
+  /* border: 1px solid #7F9DB9;  */
 
   padding: 10px;
   width: 80vw;              /* ⬅️ viewport-based */
@@ -319,7 +319,19 @@ a {
   padding-bottom: 10px;
 }
 
+.output-list {
+  font-size: 12px;
+}
 
+.output-link {
+  color: #003366;
+  text-decoration: none;
+  margin-bottom: 4px;
+}
+
+.output-link:hover {
+  text-decoration: underline;
+}
 
 </style>
 
@@ -486,20 +498,11 @@ a {
                 <div class="card system-panel mt-2">
                   <h5>Output status</h5>
 
-                  <div class="output-body">
-                    <div class="output-title">
-                      ✅ Output Generated
-                    </div>
-
-                    <div class="output-subtitle">
-                      Review-ready files have been generated and attached below.
-                    </div>
-
-                    <div class="output-meta">
-                      Source: <strong>Silver / Ready / Review</strong>
-                    </div>
+                  <div id="output-files" class="output-list text-muted">
+                    No outputs available.
                   </div>
                 </div>
+
 
               </div>
 
@@ -866,6 +869,8 @@ if (logBox) {
 <script>
 let ACTIVE_SUBMISSION_ID = null;
 let STATUS_POLL_TIMEOUT = null;
+let OUTPUT_FILES_LOADED = false;
+
 
 // 🔐 Persist last printed message per submission (reload-safe)
 function getLastPrintedMessage(submissionId) {
@@ -938,12 +943,22 @@ function pollSubmissionStatus(vendor, submissionId) {
           pollSubmissionStatus(vendor, submissionId);
         }, 3000);
       } else {
-        // ✅ Stop cleanly
+        // ✅ Load output files ONCE when pipeline completes
+        if (data.status === "DONE" && !OUTPUT_FILES_LOADED) {
+          OUTPUT_FILES_LOADED = true;
+          loadOutputFiles(vendor);
+        }
+
+        // ✅ Stop poller
         ACTIVE_SUBMISSION_ID = null;
         clearLastPrintedMessage(submissionId);
 
+        // ⏳ Let outputs stay visible; don't immediately wipe
         setTimeout(() => {
-          box.textContent = "ETL PIPELINE EXECUTED.\nSystem idle.\nWaiting for vendor submission.";
+          box.textContent =
+            "ETL PIPELINE EXECUTED.\n" +
+            "Review-ready outputs are available below.\n" +
+            "System idle.\nWaiting for vendor submission.";
         }, 4000);
       }
     })
@@ -982,6 +997,31 @@ if (meta) {
   }
 }
 </script>
+<script>
+function loadOutputFiles(vendor) {
+  fetch(`/api/output-files?vendor=${encodeURIComponent(vendor)}`)
+    .then(res => res.json())
+    .then(data => {
+      const box = document.getElementById("output-files");
+      box.innerHTML = "";
+
+      if (!data.files || data.files.length === 0) {
+        box.textContent = "No outputs available.";
+        return;
+      }
+
+      data.files.forEach(f => {
+        const a = document.createElement("a");
+        a.href = f.url;
+        a.textContent = f.filename;
+        a.target = "_blank";
+        a.className = "d-block output-link";
+        box.appendChild(a);
+      });
+    });
+}
+</script>
+
 
 </div>
 </body>

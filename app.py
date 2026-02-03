@@ -19,6 +19,21 @@ from flask_login import (
     login_required,
     current_user
 )
+from datetime import datetime, timedelta
+from azure.storage.blob import (
+    BlobServiceClient,
+    generate_blob_sas,
+    BlobSasPermissions
+)
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+AZURE_CONN = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+
+if not AZURE_CONN:
+    raise RuntimeError("AZURE_STORAGE_CONNECTION_STRING is not set")
 
 
 load_dotenv()
@@ -1295,7 +1310,72 @@ def submission_status():
     except FileNotFoundError:
         return {"status": "PENDING"}
 
+from datetime import datetime, timedelta
+from azure.storage.blob import (
+    BlobServiceClient,
+    generate_blob_sas,
+    BlobSasPermissions
+)
+import os
 
+@app.route("/api/output-files")
+def api_output_files():
+    vendor = request.args.get("vendor")
+    print("🔍 Vendor:", vendor)
+
+    if not vendor:
+        return {"files": []}
+
+    blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
+    container = blob_service.get_container_client("silver")
+
+    prefix = f"ready/vendor={vendor}/review/"
+    blobs = container.list_blobs(name_starts_with=prefix)
+
+    prefix = f"ready/vendor={vendor}/review/"
+    print("🔍 Scanning prefix:", prefix)
+
+    blobs = list(container.list_blobs(name_starts_with=prefix))
+    print("🔍 Blob count:", len(blobs))
+
+    for b in blobs:
+        print("➡️", b.name)
+
+    files = []
+
+    for blob in blobs:
+        if blob.name.endswith("/"):
+            continue
+
+        filename = os.path.basename(blob.name)
+
+        # 🚫 Skip Logic App marker files
+        if filename.lower().endswith(".done"):
+            continue
+
+
+        filename = os.path.basename(blob.name)
+
+        sas = generate_blob_sas(
+            account_name=blob_service.account_name,
+            container_name="silver",
+            blob_name=blob.name,
+            account_key=blob_service.credential.account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.utcnow() + timedelta(hours=2),
+        )
+
+        url = (
+            f"https://{blob_service.account_name}.blob.core.windows.net/"
+            f"silver/{blob.name}?{sas}"
+        )
+
+        files.append({
+            "filename": filename,
+            "url": url
+        })
+
+    return {"files": sorted(files, key=lambda x: x["filename"])}
 
 
 # ---------------------------------------
