@@ -30,9 +30,11 @@ body {
   overflow: auto;
 }
 
+/* Desktop-style responsive app shell */
 #app-shell {
   height: 100%;
 }
+
 
 /* ---------- Title Bar ---------- */
 .windx-titlebar {
@@ -48,7 +50,7 @@ body {
 }
 
 .system-top-bar {
-  height: 30px;               /* thicker black band */
+  height: 17px;               /* thicker black band */
   background: #000;
   display: flex;
   align-items: center;
@@ -107,7 +109,7 @@ body {
 
 /* IMPORTANT: container must NOT fight the rails */
 .container {
-  max-width: 1080px;
+  max-width: 1300px;
   width: 100%;
   margin: 12px auto 0 auto;
 }
@@ -117,6 +119,9 @@ body {
   background: #F2F2F2;
   padding: 0px 5px;
   border: none;
+  width: 100%;
+  max-width: 1200px;   /* ⬅️ adjust: 1100 / 1300 / 1400 */
+  margin: 0 auto;      /* ⬅️ center it */
 }
 
 /* ---------- Cards ---------- */
@@ -124,6 +129,7 @@ body {
   background: transparent;
   border: 1px solid #F2F2F2;
   padding: 16px;
+  max-width: 1400px
 }
 
 /* ---------- Forms ---------- */
@@ -168,7 +174,7 @@ a {
 
 /* ---------- System Bottom Bar ---------- */
 .system-bottom-bar {
-  height: 30px;
+  height: 17px;
   background: #000;
   display: flex;
   align-items: center;
@@ -283,24 +289,48 @@ a {
   line-height: 1.4;
 
   background-color: #f2f2f2;
-  border: 1px solid #7F9DB9;
+  border: 1px solid #f2f2f2;
+ /* border: 1px solid #7F9DB9; */
 
-  padding: 6px;
+  padding: 10px;
+  width: 80vw;              /* ⬅️ viewport-based */
+  max-width: 380px;
+  min-width: 320px;       /* ⬅️ wider console */
+  
+  height: 340px;          /* ⬅️ taller window */
+  max-height: 340px;
 
-  height: 260px;          /* ⬅️ BIGGER WINDOW */
-  max-height: 260px;
-
-  overflow-y: auto;       /* ⬅️ SCROLL */
+  overflow-y: auto;
   overflow-x: hidden;
 
-  white-space: pre-wrap;  /* ⬅️ terminal-like wrapping */
-  
+  white-space: pre-wrap;
+  box-sizing: border-box;
 }
+
 .status-log::before {
-  content: "FGI ETL CONSOLE\n--------------------\n";
+  content: "ETL PIPELINE CONSOLE";
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 12px;
+  text-align: center;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #7F9DB9;
+  padding-bottom: 8px;
 }
+
+.status-log::before {
+  content: "ETL PIPELINE CONSOLE";
+  display: block;
+  margin-bottom: 10px;
+  text-align: center;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #999;
+  padding-bottom: 10px;
+}
+
 
 
 </style>
@@ -352,7 +382,7 @@ a {
             <div class="row">
 
               <!-- LEFT: MAIN FORM -->
-              <div class="col" style="flex: 0 0 750px; max-width: 750px;">
+              <div class="col" style="flex: 0 0 750px; max-width: 600px;">
                 <div class="card">
 
                   <h4 class="mb-4">Vendor file submission</h4>
@@ -456,9 +486,7 @@ a {
                 <div class="card system-panel">
                   <h5>Submission status</h5>
 
-                  <div id="submission-status-log" class="status-log">
-                    System idle.
-                  </div>
+                  <div id="submission-status-log" class="status-log">System idle. </div>
 
                 </div>
               </div>
@@ -902,7 +930,7 @@ function pollSubmissionStatus(vendor, submissionId) {
         clearLastPrintedMessage(submissionId);
 
         setTimeout(() => {
-          box.textContent = "System idle.\nWaiting for vendor submission.";
+          box.textContent = "ETL PIPELINE EXECUTED.\nSystem idle.\nWaiting for vendor submission.";
         }, 4000);
       }
     })

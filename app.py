@@ -12,6 +12,14 @@ from dotenv import load_dotenv
 import logging
 from collections import deque
 import requests
+from flask_login import (
+    LoginManager,
+    login_user,
+    logout_user,
+    login_required,
+    current_user
+)
+
 
 load_dotenv()
 
@@ -21,6 +29,13 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = "fgi_vendor_portal_secret"   #change later
 app.config['SESSION_TYPE'] = 'filesystem'
+
+# ---------------------------------------
+# LOGIN MANAGER
+# ---------------------------------------
+login_manager = LoginManager()
+login_manager.login_view = "login"   # redirect here if not logged in
+login_manager.init_app(app)
 
 # Local upload path (Phase 1 temp before Azure)
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
@@ -93,17 +108,106 @@ if not AZURE_CONNECTION_STRING:
 #     blob_path = f"raw/{vendor_folder}/manual/{timestamp}_single_product.xlsx"
 #     return upload_blob(local_path, blob_path)
 
+# ---------------------------------------
+# AUTH: USER LOADER (TEMP / DEV)
+# ---------------------------------------
+
+class SimpleUser:
+    """
+    TEMP user model (Phase-1)
+    Replace with DB-backed User later
+    """
+    def __init__(self, id, email, role, vendor=None):
+        self.id = id
+        self.email = email
+        self.role = role
+        self.vendor = vendor
+
+    def is_authenticated(self):
+        return True
+
+    def is_active(self):
+        return True
+
+    def is_anonymous(self):
+        return False
+
+    def get_id(self):
+        return str(self.id)
+
+
+# TEMP in-memory users (DEV ONLY)
+USERS = {
+    "vendor@grote.com": {
+        "id": 1,
+        "password": "vendor123",
+        "role": "vendor",
+        "vendor": "Grote Lighting"
+    },
+    "admin@fgi.com": {
+        "id": 2,
+        "password": "admin123",
+        "role": "admin",
+        "vendor": None
+    }
+}
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    for email, u in USERS.items():
+        if str(u["id"]) == str(user_id):
+            return SimpleUser(
+                id=u["id"],
+                email=email,
+                role=u["role"],
+                vendor=u["vendor"]
+            )
+    return None
 
 # ---------------------------------------
 # ROUTES
 # ---------------------------------------
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        email = request.form.get("email")
+        password = request.form.get("password")
+
+        user_record = USERS.get(email)
+        if user_record and user_record["password"] == password:
+            user = SimpleUser(
+                id=user_record["id"],
+                email=email,
+                role=user_record["role"],
+                vendor=user_record["vendor"]
+            )
+            login_user(user)
+            flash("Logged in successfully", "success")
+            return redirect(url_for("upload_page"))
+
+        flash("Invalid credentials", "danger")
+
+    return render_template("login.html")
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("Logged out", "info")
+    return redirect(url_for("login"))
+
+
 @app.route('/')
 def index():
-    return redirect(url_for('upload_page'))
+    if current_user.is_authenticated:
+        return redirect(url_for('upload_page'))
+    return redirect(url_for('login'))
 
 
 @app.route('/upload/', methods=['GET'])
+@login_required
 def upload_page():
     return render_template(
         'uploads.html',
@@ -112,6 +216,7 @@ def upload_page():
     )
 
 @app.route('/upload/', methods=['POST'])
+@login_required
 def upload_files():
     for k in ["last_submission_id", "last_submission_vendor"]:
         session.pop(k, None)
@@ -470,6 +575,7 @@ def form_submission_help():
     return "<h4>Coming soon: Vendor submission help guide</h4>"
 
 @app.route('/single-product', methods=['GET'])
+@login_required
 def single_product_page():
     if request.args.get("reset") == "1":
         for k in [
@@ -513,6 +619,7 @@ def single_product_page():
 
 
 @app.route('/single-product', methods=['POST'])
+@login_required
 def submit_single_product():
     action = request.form.get("action")
 
@@ -1155,14 +1262,22 @@ def cleanup_old_assets():
 
     return {"status": "cleanup_complete"}
 
+@login_required
 @app.route("/api/submission-status")
 def submission_status():
     print("🔥 submission_status ROUTE HIT")
-    vendor = request.args.get("vendor")
     submission_id = request.args.get("submission_id")
-
-    if not vendor or not submission_id:
+    if not submission_id:
         return {"status": "MISSING_PARAMS"}, 400
+
+    # 🔐 Vendor scoping
+    if current_user.role == "vendor":
+        vendor = current_user.vendor
+    else:
+        vendor = request.args.get("vendor")
+
+    if not vendor:
+        return {"status": "MISSING_VENDOR"}, 400
 
     blob_path = (
         f"logs/vendor={vendor}/"
