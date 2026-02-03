@@ -9,6 +9,8 @@ from services.file_service import compute_file_hash
 
 from datetime import datetime, timedelta
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions,BlobServiceClient, ContentSettings
+from azure.core.exceptions import ResourceNotFoundError
+
 
 import os
 
@@ -305,3 +307,85 @@ def cleanup_old_assets_except(container_client, vendor_folder, keep_blob_path):
         if blob.name != keep_blob_path:
             container_client.delete_blob(blob.name)
             print(f"[CLEANUP] Deleted old asset: {blob.name}")
+
+
+def read_json_blob_from_azure(
+    blob_path: str,
+    container_name: str,
+    connection_string: str | None = None
+) -> dict:
+    """
+    Reads a JSON file from Azure Blob Storage and returns it as a dict.
+
+    Purpose:
+    --------
+    - Used by the Vendor Portal UI to fetch ETL status artifacts
+    - Shared read-only utility (no side effects)
+
+    Parameters:
+    -----------
+    blob_path : str
+        Full blob path inside the container
+        Example:
+            logs/vendor=Grote Lighting/submission=20260201_123456/status.json
+
+    container_name : str
+        Azure container name (e.g. 'silver')
+
+    connection_string : str | None
+        Optional override. If not provided, uses AZURE_STORAGE_CONNECTION_STRING env var.
+
+    Returns:
+    --------
+    dict
+        Parsed JSON content
+
+    Raises:
+    -------
+    FileNotFoundError
+        If blob does not exist
+    """
+
+    conn_str = connection_string or os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    if not conn_str:
+        raise RuntimeError("Azure connection string not configured")
+
+    blob_service = BlobServiceClient.from_connection_string(conn_str)
+    container_client = blob_service.get_container_client(container_name)
+
+    try:
+        blob_client = container_client.get_blob_client(blob_path)
+        blob_bytes = blob_client.download_blob().readall()
+        return json.loads(blob_bytes)
+
+    except ResourceNotFoundError:
+        raise FileNotFoundError(f"Blob not found: {blob_path}")
+           
+def write_status_to_azure(vendor, submission_id, stage, status, message=""):
+    from azure.storage.blob import BlobServiceClient
+    import json, os
+    from datetime import datetime
+
+    conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    blob_service = BlobServiceClient.from_connection_string(conn)
+    container = blob_service.get_container_client("silver")
+
+    payload = {
+        "vendor": vendor,
+        "submission_id": submission_id,
+        "stage": stage,
+        "status": status,
+        "message": message,
+        "updated_at": datetime.utcnow().isoformat() + "Z"
+    }
+
+    blob_path = (
+        f"logs/vendor={vendor}/"
+        f"submission={submission_id}/status.json"
+    )
+
+    container.upload_blob(
+        name=blob_path,
+        data=json.dumps(payload, indent=2),
+        overwrite=True
+    )

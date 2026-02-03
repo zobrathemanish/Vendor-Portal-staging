@@ -11,6 +11,7 @@ import hashlib
 from dotenv import load_dotenv
 import logging
 from collections import deque
+import requests
 
 load_dotenv()
 
@@ -27,6 +28,27 @@ TEMPLATE_FOLDER = os.path.join(os.getcwd(), "data", "templates")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+
+ETL_TRIGGER_URL = os.getenv("ETL_TRIGGER_URL")  # Logic App or API
+
+def trigger_etl(vendor, submission_id):
+    if not ETL_TRIGGER_URL:
+        logger.error("ETL_TRIGGER_URL not configured")
+        return
+
+    payload = {
+        "vendor": vendor,
+        "submission_id": submission_id
+    }
+
+    try:
+        requests.post(ETL_TRIGGER_URL, json=payload, timeout=5)
+        logger.info(f"ETL triggered for vendor={vendor}")
+    except Exception as e:
+        logger.error(f"ETL trigger failed: {e}")
+
+
 
 # ================================
 # IN-MEMORY LOG BUFFER (DEV)
@@ -83,11 +105,23 @@ def index():
 
 @app.route('/upload/', methods=['GET'])
 def upload_page():
-    return render_template('uploads.html')
+    return render_template(
+        'uploads.html',
+        submission_id=session.get("last_submission_id"),
+        submission_vendor=session.get("last_submission_vendor")
+    )
 
 @app.route('/upload/', methods=['POST'])
 def upload_files():
+    for k in ["last_submission_id", "last_submission_vendor"]:
+        session.pop(k, None)
+    session.modified = True
+
     logger.info("Submission received")
+
+      # DEFINE ONCE
+    submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
     vendor_name = request.form.get('vendor_name')
     vendor_type = request.form.get('vendor_type')
     submission_type = request.form.get("submission_type")
@@ -129,6 +163,8 @@ def upload_files():
             # CREATE NOTIFY MARKER (Bronze)
             # ---------------------------------------
             marker_payload = {
+                "submission_id": submission_id,
+                "status": "UPLOADED",
                 "submission_type": "pricing_review",
                 "vendor": vendor_name,
                 "uploaded_file": approved_file.filename,
@@ -149,8 +185,12 @@ def upload_files():
                 container_name="bronze"
             )
 
+            session["last_submission_id"] = submission_id
+            session["last_submission_vendor"] = vendor_name
+            session.modified = True
 
             flash(f"Pricing review submitted for {vendor_name}.", "success")
+            
         except Exception as e:
             flash(f"Pricing upload failed: {e}", "danger")
 
@@ -197,17 +237,44 @@ def upload_files():
             # CREATE NOTIFY MARKER (Vendor Submission)
             # ---------------------------------------
             marker_payload = {
-                "submission_type": "vendor_submission",
+                # --------------------
+                # Marker governance
+                # --------------------
+                "schema_version": "2.0",
+                "marker_type": "VENDOR_SUBMISSION",
+
+                # --------------------
+                # Identity
+                # --------------------
                 "vendor": vendor_name,
+                "submission_id": submission_id,
+
+                # --------------------
+                # Submission metadata
+                # --------------------
+                "submission_type": "vendor_submission",
                 "vendor_type": "opticat",
+
+                # --------------------
+                # Intent flags
+                # --------------------
+                "actions": {
+                    "notify": True,     # Logic App email
+                    "run_etl": True     # ETL watcher allowed
+                },
+
+                # --------------------
+                # Context (optional but useful)
+                # --------------------
                 "uploaded_files": [
                     product_file.filename,
                     pricing_file.filename
                 ],
                 "raw_vendor_path": f"raw/vendor={vendor_name}",
-                "uploaded_at": datetime.utcnow().isoformat() + "Z",
-                "next_step": "Data team to run vendor ingestion pipeline"
+
+                "created_at": datetime.utcnow().isoformat() + "Z"
             }
+
 
             marker_name = (
                 f"raw/notifymarker/"
@@ -221,8 +288,14 @@ def upload_files():
                 container_name="bronze"
             )
 
+            session["last_submission_id"] = submission_id
+            session["last_submission_vendor"] = vendor_name
+            session.modified = True
 
             flash(f'OptiCat files for {vendor_name} uploaded successfully.', 'success')
+
+            trigger_etl(vendor_name, submission_id)
+
         except Exception as e:
             flash(f'Azure upload failed: {e}', 'danger')
         
@@ -264,16 +337,43 @@ def upload_files():
             # CREATE NOTIFY MARKER (Vendor Submission)
             # ---------------------------------------
             marker_payload = {
-                "submission_type": "vendor_submission",
+                # --------------------
+                # Marker governance
+                # --------------------
+                "schema_version": "2.0",
+                "marker_type": "VENDOR_SUBMISSION",
+
+                # --------------------
+                # Identity
+                # --------------------
                 "vendor": vendor_name,
+                "submission_id": submission_id,
+
+                # --------------------
+                # Submission metadata
+                # --------------------
+                "submission_type": "vendor_submission",
                 "vendor_type": "non-opticat",
+
+                # --------------------
+                # Intent flags
+                # --------------------
+                "actions": {
+                    "notify": True,
+                    "run_etl": True
+                },
+
+                # --------------------
+                # Context
+                # --------------------
                 "uploaded_files": [
                     unified_file.filename
                 ],
                 "raw_vendor_path": f"raw/vendor={vendor_name}",
-                "uploaded_at": datetime.utcnow().isoformat() + "Z",
-                "next_step": "Data team to run vendor ingestion pipeline"
+
+                "created_at": datetime.utcnow().isoformat() + "Z"
             }
+
 
             marker_name = (
                 f"raw/notifymarker/"
@@ -286,9 +386,22 @@ def upload_files():
                 connection_string=AZURE_CONNECTION_STRING,
                 container_name="bronze"
             )
-
-
             flash(f'Unified file for {vendor_name} uploaded successfully.', 'success')
+
+            session["last_submission_id"] = submission_id
+            session["last_submission_vendor"] = vendor_name
+            session.modified = True
+
+            write_status_to_azure(
+                vendor=vendor_name,
+                submission_id=submission_id,
+                stage="UPLOAD",
+                status="DONE",
+                message="Files uploaded to bronze"
+            )
+
+            trigger_etl(vendor_name, submission_id)
+
         except Exception as e:
             flash(f'Azure upload failed: {e}', 'danger')
 
@@ -1042,6 +1155,32 @@ def cleanup_old_assets():
 
     return {"status": "cleanup_complete"}
 
+@app.route("/api/submission-status")
+def submission_status():
+    print("🔥 submission_status ROUTE HIT")
+    vendor = request.args.get("vendor")
+    submission_id = request.args.get("submission_id")
+
+    if not vendor or not submission_id:
+        return {"status": "MISSING_PARAMS"}, 400
+
+    blob_path = (
+        f"logs/vendor={vendor}/"
+        f"submission={submission_id}/status.json"
+    )
+
+    try:
+        data = read_json_blob_from_azure(
+            blob_path=blob_path,
+            container_name="silver"
+        )
+        print("✅ STATUS READ:", blob_path, "=>", data.get("stage"), data.get("status"))
+        return data
+
+    except FileNotFoundError:
+        return {"status": "PENDING"}
+
+
 
 
 # ---------------------------------------
@@ -1049,4 +1188,4 @@ def cleanup_old_assets():
 # ---------------------------------------
 if __name__ == '__main__':
     logger.info("Vendor Portal started")
-    app.run(debug=True)
+    app.run(debug=False)
