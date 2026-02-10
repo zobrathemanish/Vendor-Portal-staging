@@ -78,6 +78,38 @@ def trigger_etl(vendor, submission_id):
     except Exception as e:
         logger.error(f"ETL trigger failed: {e}")
 
+def move_assets_to_final_submission(
+    vendor,
+    draft_submission_id,
+    final_submission_id,
+    container_name="bronze"
+):
+    blob_service = BlobServiceClient.from_connection_string(
+        os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    )
+    container = blob_service.get_container_client(container_name)
+
+    draft_prefix = (
+        f"raw/vendor={vendor}/submission={draft_submission_id}/assets/"
+    )
+    final_prefix = (
+        f"raw/vendor={vendor}/submission={final_submission_id}/assets/"
+    )
+
+    blobs = list(container.list_blobs(name_starts_with=draft_prefix))
+    if not blobs:
+        logger.info("📦 No draft assets to move")
+        return
+
+    for blob in blobs:
+        source_blob = container.get_blob_client(blob.name)
+        target_name = blob.name.replace(draft_prefix, final_prefix)
+        target_blob = container.get_blob_client(target_name)
+
+        target_blob.start_copy_from_url(source_blob.url)
+        source_blob.delete_blob()
+
+        logger.info(f"📦 Asset moved → {target_name}")
 
 
 # ================================
@@ -224,27 +256,56 @@ def index():
 @app.route('/upload/', methods=['GET'])
 @login_required
 def upload_page():
+
+    if "active_submission_id" not in session:
+        session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        session["active_submission_vendor"] = current_user.vendor
+        session.modified = True
+
     return render_template(
         'uploads.html',
-        submission_id=session.get("last_submission_id"),
-        submission_vendor=session.get("last_submission_vendor")
+        submission_id=session.get("active_submission_id"),
+        submission_vendor=session.get("active_submission_vendor")
     )
 
 @app.route('/upload/', methods=['POST'])
 @login_required
 def upload_files():
-    for k in ["last_submission_id", "last_submission_vendor"]:
-        session.pop(k, None)
-    session.modified = True
-
     logger.info("Submission received")
 
-      # DEFINE ONCE
-    submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    # 🔐 FINALIZE submission
+    final_submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    draft_submission_id = session.get("active_submission_id")
+    logger.info(f"📦 Draft submission_id = {draft_submission_id}")
+    logger.info(f"🚀 Final submission_id = {final_submission_id}")
+
+    # Freeze final ID for THIS request
+    submission_id = final_submission_id
+
+    # 🔄 Rotate session state
+    session["last_submission_id"] = final_submission_id
+    session["last_submission_vendor"] = current_user.vendor
+
+    # 🆕 Create NEW draft immediately for next submission
+    session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    session.modified = True
 
     vendor_name = request.form.get('vendor_name')
     vendor_type = request.form.get('vendor_type')
     submission_type = request.form.get("submission_type")
+
+    if current_user.role == "vendor":
+        vendor_name = current_user.vendor
+    else:
+        vendor_name = request.form.get("vendor_name")
+
+    # 🔐 HARD GUARD — vendor MUST exist for any vendor submission
+    if submission_type == "vendor" and not vendor_name:
+        flash("Please select a vendor before submitting.", "danger")
+        return redirect(url_for("upload_page"))
+
 
     # =====================================================
     # PRICING REVIEW
@@ -336,9 +397,18 @@ def upload_files():
         product_path = save_file(product_file, vendor_name, "opticat", app.config['UPLOAD_FOLDER'])
         pricing_path = save_file(pricing_file, vendor_name, "opticat", app.config['UPLOAD_FOLDER'])
 
+         # 🚚 MOVE ASSETS
+        move_assets_to_final_submission(
+            vendor=vendor_name,
+            draft_submission_id=draft_submission_id,
+            final_submission_id=final_submission_id
+        )
+
+
         try:
             upload_to_azure_bronze_opticat(
                 vendor=vendor_name,
+                submission_id=submission_id,
                 xml_local_path=product_path,
                 pricing_local_path=pricing_path,
                 connection_string=AZURE_CONNECTION_STRING,
@@ -437,9 +507,17 @@ def upload_files():
         # Save unified vendor file
         unified_path = save_file(unified_file, vendor_name, "non_opticat", app.config['UPLOAD_FOLDER'])
 
+            # 🚚 MOVE ASSETS
+        move_assets_to_final_submission(
+            vendor=vendor_name,
+            draft_submission_id=draft_submission_id,
+            final_submission_id=final_submission_id
+        )
+
         try:
             upload_to_azure_bronze_non_opticat(
                 vendor=vendor_name,
+                submission_id=submission_id,
                 unified_local_path=unified_path,
                 connection_string=AZURE_CONNECTION_STRING,
                 container_name=AZURE_CONTAINER_NAME,
@@ -552,6 +630,10 @@ def get_asset_upload_sas():
     data = request.json
 
     vendor = data.get("vendor")
+    submission_id = data.get("submission_id")
+    if not submission_id:
+        return {"error": "Missing submission_id"}, 400
+
     sku = data.get("sku")
     filename = data.get("filename")
 
@@ -561,9 +643,11 @@ def get_asset_upload_sas():
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
     blob_path = (
-        f"raw/vendor={vendor}/assets/"
-        f"{timestamp}_{filename}"
+        f"raw/vendor={vendor}/"
+        f"submission={submission_id}/"
+        f"assets/{timestamp}_{filename}"
     )
+
     print("🔐 Generating SAS for:", blob_path)
 
     sas_url = generate_upload_sas(
@@ -1219,6 +1303,10 @@ def download_single_products_excel():
 def check_asset_hash():
     data = request.json
 
+    submission_id = data.get("submission_id")
+    if not submission_id:
+        return {"error": "Missing submission_id"}, 400
+
     vendor = data.get("vendor")
     client_hash = data.get("file_hash")
     filename = data.get("filename")  # 👈 NEW
@@ -1231,7 +1319,7 @@ def check_asset_hash():
     )
     container_client = blob_service.get_container_client(AZURE_CONTAINER_NAME)
 
-    prefix = f"raw/vendor={vendor}/assets/"
+    prefix = f"raw/vendor={vendor}/submission={submission_id}/assets/"
 
     blobs = list(container_client.list_blobs(name_starts_with=prefix))
     if not blobs:
@@ -1257,6 +1345,10 @@ def check_asset_hash():
 def cleanup_old_assets():
     data = request.json
 
+    submission_id = data.get("submission_id")
+    if not submission_id:
+        return {"error": "Missing submission_id"}, 400
+
     vendor = data.get("vendor")
     keep_blob_paths = set(data.get("keep_blob_paths", []))  # 👈 NEW
 
@@ -1268,7 +1360,7 @@ def cleanup_old_assets():
     )
     container_client = blob_service.get_container_client(AZURE_CONTAINER_NAME)
 
-    prefix = f"raw/vendor={vendor}/assets/"
+    prefix = f"raw/vendor={vendor}/submission={submission_id}/assets/"
 
     for blob in container_client.list_blobs(name_starts_with=prefix):
         if blob.name not in keep_blob_paths:
@@ -1318,65 +1410,96 @@ from azure.storage.blob import (
 )
 import os
 
-@app.route("/api/output-files")
-def api_output_files():
+@app.route("/api/output-summary")
+def api_output_summary():
     vendor = request.args.get("vendor")
-    print("🔍 Vendor:", vendor)
-
     if not vendor:
-        return {"files": []}
+        return {"promotion_status": "UNKNOWN", "outputs": [], "rejection_logs": []}
 
     blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
     container = blob_service.get_container_client("silver")
 
-    prefix = f"ready/vendor={vendor}/review/"
-    blobs = container.list_blobs(name_starts_with=prefix)
+    result = {
+        "promotion_status": "SUCCESS",
+        "outputs": [],
+        "rejection_logs": []
+    }
 
-    prefix = f"ready/vendor={vendor}/review/"
-    print("🔍 Scanning prefix:", prefix)
+    # --------------------------------------------------
+    # 1️⃣ READY OUTPUT FILES
+    # --------------------------------------------------
+    submission_id = request.args.get("submission_id")
+    print ("submission: ", submission_id)  
+    if not vendor or not submission_id:
+        return {
+            "promotion_status": "UNKNOWN",
+            "outputs": [],
+            "rejection_logs": []
+    }  
 
-    blobs = list(container.list_blobs(name_starts_with=prefix))
-    print("🔍 Blob count:", len(blobs))
+    ready_prefix = (
+        f"ready/vendor={vendor}/"
+        f"submission={submission_id}/"
+        f"review/"
+    )
 
-    for b in blobs:
-        print("➡️", b.name)
+    print("DEBUG READY PREFIX:", ready_prefix)
 
-    files = []
+    blobs = list(container.list_blobs(name_starts_with=ready_prefix))
+    print("DEBUG BLOB COUNT:", len(blobs))
+    print("DEBUG SAMPLE:", [b.name for b in blobs[:5]])
 
-    for blob in blobs:
+    for blob in container.list_blobs(name_starts_with=ready_prefix):
         if blob.name.endswith("/"):
             continue
 
         filename = os.path.basename(blob.name)
 
-        # 🚫 Skip Logic App marker files
+        # Skip internal markers
         if filename.lower().endswith(".done"):
             continue
 
-
-        filename = os.path.basename(blob.name)
-
-        sas = generate_blob_sas(
-            account_name=blob_service.account_name,
-            container_name="silver",
-            blob_name=blob.name,
-            account_key=blob_service.credential.account_key,
-            permission=BlobSasPermissions(read=True),
-            expiry=datetime.utcnow() + timedelta(hours=2),
-        )
-
-        url = (
-            f"https://{blob_service.account_name}.blob.core.windows.net/"
-            f"silver/{blob.name}?{sas}"
-        )
-
-        files.append({
+        result["outputs"].append({
             "filename": filename,
-            "url": url
+            "url": generate_read_sas_url(
+                blob_service, "silver", blob.name
+            )
         })
 
-    return {"files": sorted(files, key=lambda x: x["filename"])}
+    # --------------------------------------------------
+    # 2️⃣ REJECTED / BLOCKING LOGS
+    # --------------------------------------------------
+    submission_id = request.args.get("submission_id")
 
+    rejected_prefix = (
+        f"rejected/logs/vendor={vendor}/"
+        f"submission={submission_id}/"
+    )
+
+    for blob in container.list_blobs(name_starts_with=rejected_prefix):
+        if blob.name.endswith("/"):
+            continue
+
+        log_blob = container.get_blob_client(blob.name)
+        raw = log_blob.download_blob().readall()
+        log_json = json.loads(raw)
+
+        result["promotion_status"] = "HALTED"
+
+        result["rejection_logs"].append({
+            "filename": os.path.basename(blob.name),
+            "url": generate_read_sas_url(
+                blob_service, "silver", blob.name
+            ),
+            # 👇 surfaced fields (controlled)
+            "stage": log_json.get("stage"),
+            "file": log_json.get("file"),
+            "error_type": log_json.get("error_type"),
+            "error_message": log_json.get("error_message"),
+            "logged_at": log_json.get("logged_at"),
+        })
+
+    return result
 
 # ---------------------------------------
 # MAIN

@@ -174,7 +174,7 @@ def upload_json_blob(
 
 
 
-def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path, 
+def upload_to_azure_bronze_opticat(vendor,submission_id, xml_local_path, pricing_local_path, 
                            connection_string, container_name, upload_folder):
     """
     Upload product XML, pricing XLSX, and assets ZIP to Azure Bronze.
@@ -199,8 +199,8 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path,
     container_client = blob_service_client.get_container_client(container_name)
 
     # --------------- XML + Pricing always uploaded ---------------
-    xml_blob_path = f"raw/{vendor_folder}/product/{timestamp}_product.xml"
-    pricing_blob_path = f"raw/{vendor_folder}/pricing/{timestamp}_pricing.xlsx"
+    xml_blob_path = f"raw/{vendor_folder}/submission={submission_id}/product/{timestamp}_product.xml"
+    pricing_blob_path = f"raw/{vendor_folder}/submission={submission_id}/pricing/{timestamp}_pricing.xlsx"
 
     xml_blob_full = upload_blob(xml_local_path, xml_blob_path, connection_string, container_name)
     pricing_blob_full = upload_blob(pricing_local_path, pricing_blob_path, connection_string, container_name)
@@ -209,6 +209,7 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path,
     # --------------- Create manifest ---------------
     manifest = {
     "vendor": vendor,
+    "submission_id": submission_id,
     "timestamp": timestamp,
     "azure_xml_blob": xml_blob_full,
     "azure_pricing_blob": pricing_blob_full,
@@ -225,7 +226,7 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path,
     with open(local_manifest_path, "w") as f:
         json.dump(manifest, f, indent=4)
 
-    manifest_blob_path = f"raw/{vendor_folder}/logs/{manifest_filename}"
+    manifest_blob_path = f"raw/{vendor_folder}/submission={submission_id}/logs/{manifest_filename}"
     upload_blob(local_manifest_path, manifest_blob_path, connection_string, container_name)
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
@@ -233,6 +234,7 @@ def upload_to_azure_bronze_opticat(vendor, xml_local_path, pricing_local_path,
     
 def upload_to_azure_bronze_non_opticat(
         vendor,
+        submission_id,
         unified_local_path,
         connection_string,
         container_name,
@@ -242,9 +244,9 @@ def upload_to_azure_bronze_non_opticat(
     Mirrors the structure and behavior of upload_to_azure_bronze_opticat.
 
     Structure created in Azure:
-        raw/vendor=<Vendor>/unified/<timestamp>_unified.xlsx
-        raw/vendor=<Vendor>/assets/<timestamp>_assets.zip
-        raw/vendor=<Vendor>/logs/manifest_<timestamp>.json
+        raw/vendor=<Vendor>/submission=<submission_id>/unified/<timestamp>_unified.xlsx
+        raw/vendor=<Vendor>/submission=<submission_id>/assets/<timestamp>_assets.zip
+        raw/vendor=<Vendor>/submission=<submission_id>/logs/manifest_<timestamp>.json
 
     Includes:
         - hash check for assets ZIP
@@ -253,7 +255,7 @@ def upload_to_azure_bronze_non_opticat(
         - store manifest locally and in Azure
     """
 
-    vendor_folder = f"vendor={vendor}"
+    vendor_folder = f"vendor={vendor}/submission={submission_id}"
 
     blob_service_client = get_blob_service_client(connection_string)
     container_client = blob_service_client.get_container_client(container_name)
@@ -261,7 +263,7 @@ def upload_to_azure_bronze_non_opticat(
     safe_vendor = safe_vendor_key(vendor)
 
     # -------------------- Upload unified XLSX --------------------
-    unified_blob_path = f"raw/{vendor_folder}/unified/{timestamp}_unified.xlsx"
+    unified_blob_path = f"raw/{vendor_folder}/submission={submission_id}/unified/{timestamp}_unified.xlsx"
     azure_unified_blob = upload_blob(
         unified_local_path,
         unified_blob_path,
@@ -274,6 +276,7 @@ def upload_to_azure_bronze_non_opticat(
     # -------------------- Create manifest --------------------
     manifest = {
     "vendor": vendor,
+    "submission_id": submission_id,
     "timestamp": timestamp,
     "azure_unified_blob": azure_unified_blob,
     "assets_uploaded_via": "browser_sas",
@@ -289,7 +292,7 @@ def upload_to_azure_bronze_non_opticat(
     with open(local_manifest_path, "w") as f:
         json.dump(manifest, f, indent=4)
 
-    manifest_blob_path = f"raw/{vendor_folder}/logs/{manifest_filename}"
+    manifest_blob_path = f"raw/{vendor_folder}/submission={submission_id}/logs/{manifest_filename}"
     upload_blob(
         local_manifest_path,
         manifest_blob_path,
@@ -299,8 +302,8 @@ def upload_to_azure_bronze_non_opticat(
 
     print(f"📄 Manifest created and uploaded: {manifest_blob_path}")
 
-def cleanup_old_assets_except(container_client, vendor_folder, keep_blob_path):
-    prefix = f"raw/{vendor_folder}/assets/"
+def cleanup_old_assets_except(container_client, vendor_folder, submission_id, keep_blob_path):
+    prefix = f"raw/{vendor_folder}/submission={submission_id}/assets/"
     blobs = container_client.list_blobs(name_starts_with=prefix)
 
     for blob in blobs:
@@ -388,4 +391,19 @@ def write_status_to_azure(vendor, submission_id, stage, status, message=""):
         name=blob_path,
         data=json.dumps(payload, indent=2),
         overwrite=True
+    )
+
+def generate_read_sas_url(blob_service, container_name, blob_name, expiry_hours=2):
+    sas = generate_blob_sas(
+        account_name=blob_service.account_name,
+        container_name=container_name,
+        blob_name=blob_name,
+        account_key=blob_service.credential.account_key,
+        permission=BlobSasPermissions(read=True),
+        expiry=datetime.utcnow() + timedelta(hours=expiry_hours),
+    )
+
+    return (
+        f"https://{blob_service.account_name}.blob.core.windows.net/"
+        f"{container_name}/{blob_name}?{sas}"
     )

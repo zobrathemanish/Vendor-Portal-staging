@@ -426,6 +426,8 @@ a {
                       </select>
                     </div>
 
+                    <input type="hidden" name="vendor_name" id="vendorNameHidden">
+
                     <!-- Asset Section -->
                     <div id="assetSection">
                       <div class="mb-3">
@@ -551,6 +553,20 @@ a {
 </div>
 
 <script>
+  const meta = document.getElementById("submission-meta");
+
+  if (meta) {
+    window.CURRENT_SUBMISSION_ID = meta.dataset.submissionId || null;
+    window.CURRENT_SUBMISSION_VENDOR = meta.dataset.vendor || null;
+
+    console.log("🟢 Submission context initialized", {
+      submission_id: window.CURRENT_SUBMISSION_ID,
+      vendor: window.CURRENT_SUBMISSION_VENDOR
+    });
+  }
+</script>
+
+<script>
   const submissionType = document.getElementById("submissionType");
   const vendorSelect = document.getElementById("vendorSelect");
 
@@ -623,27 +639,48 @@ a {
 
   const progressContainer = document.getElementById("assetUploadProgress");
   const progressBar = document.getElementById("assetProgressBar");
-
   const form = document.querySelector("form");
 
   const MAX_BROWSER_UPLOAD_GB = 1.98;
 
   zipInput?.addEventListener("change", async () => {
+
+    // 🚫 HARD BLOCK until submission exists
+    if (!window.CURRENT_SUBMISSION_ID) {
+      alert(
+        "Submission not initialized yet.\n\n" +
+        "Please refresh the page and try again."
+      );
+      zipInput.value = "";
+      return;
+    }
+
     const files = Array.from(zipInput.files);
     if (!files.length) return;
 
     const vendor = document.getElementById("vendorSelect").value;
+
+    if (!vendor) {
+      alert("Please select a vendor before uploading assets.");
+      zipInput.value = "";
+      return;
+    }
+
     const finalBlobPaths = [];
     let anyUploadOccurred = false;
 
-    // 🔒 Size guard (per ZIP)
+    console.log("🧪 ASSET DEBUG", {
+      submission_id: window.CURRENT_SUBMISSION_ID,
+      vendor
+    });
+
+    // Size guard
     for (const file of files) {
       const fileSizeGB = file.size / (1024 ** 3);
       if (fileSizeGB > MAX_BROWSER_UPLOAD_GB) {
         alert(
           `ZIP "${file.name}" is ${fileSizeGB.toFixed(1)} GB.\n\n` +
-          `Browser uploads above ${MAX_BROWSER_UPLOAD_GB} GB are unreliable.\n` +
-          `Please split this ZIP or contact the data team.`
+          `Please split the ZIP or contact the data team.`
         );
         zipInput.value = "";
         return;
@@ -653,7 +690,6 @@ a {
     assetUploadInProgress = true;
     submitBtn.disabled = true;
 
-    // Reset progress UI
     progressContainer.classList.remove("d-none");
     progressBar.style.width = "0%";
     progressBar.textContent = "0%";
@@ -662,15 +698,17 @@ a {
 
     try {
       for (const file of files) {
-        // 🔐 STEP 1: Compute hash (per ZIP)
+
+        // 🔐 Hash
         const fileHash = await computeFileHash(file);
 
-        // 🔍 STEP 2: Ask backend if THIS ZIP exists
+        // 🔍 Hash check
         const hashCheckRes = await fetch("/api/check-asset-hash", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             vendor,
+            submission_id: window.CURRENT_SUBMISSION_ID,
             file_hash: fileHash,
             filename: file.name
           })
@@ -678,44 +716,38 @@ a {
 
         const hashResult = await hashCheckRes.json();
 
-        // ⏭ REUSE UNCHANGED ZIP
         if (hashResult.skip) {
           finalBlobPaths.push(hashResult.existing_blob_path);
-
           progressBar.style.width = "100%";
           progressBar.classList.remove("progress-bar-animated");
           progressBar.classList.add("bg-info");
           progressBar.textContent = `Reused: ${file.name}`;
-
           continue;
         }
 
         anyUploadOccurred = true;
 
-        // 🔑 STEP 3: Get SAS
+        // 🔑 Get SAS
         const res = await fetch("/api/get-asset-upload-sas", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             vendor,
+            submission_id: window.CURRENT_SUBMISSION_ID,
             filename: file.name
           })
         });
 
-        if (!res.ok) {
-          throw new Error("SAS_GENERATION_FAILED");
-        }
+        if (!res.ok) throw new Error("SAS_GENERATION_FAILED");
 
         const data = await res.json();
         const blobClient = new BlockBlobClient(data.sas_url);
 
-        // ⬆️ STEP 4: Upload ZIP
+        // ⬆️ Upload
         await blobClient.uploadBrowserData(file, {
           blobHTTPHeaders: { blobContentType: "application/zip" },
-          onProgress: (progress) => {
-            const percent = Math.round(
-              (progress.loadedBytes / file.size) * 100
-            );
+          onProgress: (p) => {
+            const percent = Math.round((p.loadedBytes / file.size) * 100);
             progressBar.style.width = `${percent}%`;
             progressBar.textContent = `${file.name}: ${percent}%`;
           }
@@ -724,37 +756,41 @@ a {
         finalBlobPaths.push(data.blob_path);
       }
 
-      // 🧹 STEP 5: Cleanup ONLY if something changed
+      // 🧹 Cleanup
       if (anyUploadOccurred) {
         await fetch("/api/cleanup-old-assets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             vendor,
+            submission_id: window.CURRENT_SUBMISSION_ID,
             keep_blob_paths: finalBlobPaths
           })
         });
       }
 
       blobPathInput.value = JSON.stringify(finalBlobPaths);
-
       progressBar.classList.remove("progress-bar-animated");
       progressBar.classList.add("bg-success");
       progressBar.textContent = "Assets ready";
 
-    } catch (err) {
-      console.error("Asset upload error:", err);
+      const vendorSelect = document.getElementById("vendorSelect");
+      const hiddenVendor = document.getElementById("vendorNameHidden");
 
+      // persist vendor for backend
+      hiddenVendor.value = vendorSelect.value;
+
+      // lock UI only
+      vendorSelect.disabled = true;
+
+
+
+    } catch (err) {
+      console.error(err);
       progressBar.classList.remove("progress-bar-animated");
       progressBar.classList.add("bg-danger");
       progressBar.textContent = "Upload failed";
-
-      alert(
-        err.message === "SAS_GENERATION_FAILED"
-          ? "Failed to initialize asset upload. Please refresh and retry."
-          : "Asset upload failed due to browser or network issues."
-      );
-
+      alert("Asset upload failed. Please refresh and retry.");
       blobPathInput.value = "";
     } finally {
       assetUploadInProgress = false;
@@ -762,19 +798,15 @@ a {
     }
   });
 
-  // 🚫 Prevent submit if assets not uploaded
-  form.addEventListener("submit", function (e) {
-    const submissionType = document.getElementById("submissionType").value;
-
-    // 🚫 Asset validation ONLY for vendor submissions
-    if (submissionType === "vendor") {
+  // 🚫 Block submit if assets missing
+  form.addEventListener("submit", (e) => {
+    if (document.getElementById("submissionType").value === "vendor") {
       if (assetUploadInProgress || !blobPathInput.value) {
         e.preventDefault();
-        alert("Please upload assets successfully before submitting.");
+        alert("Please upload assets before submitting.");
       }
     }
   });
-
 
   async function computeFileHash(file) {
     const buffer = await file.arrayBuffer();
@@ -784,7 +816,6 @@ a {
       .join("");
   }
 </script>
-
 
   </div>
 </div>
@@ -944,11 +975,13 @@ function pollSubmissionStatus(vendor, submissionId) {
         }, 3000);
       } else {
         // ✅ Load output files ONCE when pipeline completes
-        if (data.status === "DONE" && !OUTPUT_FILES_LOADED) {
+        if (
+          (data.status === "DONE" || data.status === "FAILED") &&
+          !OUTPUT_FILES_LOADED
+        ) {
           OUTPUT_FILES_LOADED = true;
-          loadOutputFiles(vendor);
+          loadOutputSummary(vendor, submissionId);
         }
-
         // ✅ Stop poller
         ACTIVE_SUBMISSION_ID = null;
         clearLastPrintedMessage(submissionId);
@@ -971,32 +1004,20 @@ function pollSubmissionStatus(vendor, submissionId) {
 </script>
 
 <script>
-const meta = document.getElementById("submission-meta");
+  if (window.CURRENT_SUBMISSION_ID && window.CURRENT_SUBMISSION_VENDOR) {
 
-if (meta) {
-  const submissionId = meta.dataset.submissionId;
-  const submissionVendor = meta.dataset.vendor;
-  const autostart = meta.dataset.autostart === "1";
+    const submissionId = window.CURRENT_SUBMISSION_ID;
+    const submissionVendor = window.CURRENT_SUBMISSION_VENDOR;
 
-  // ▶️ Start polling ONLY after submit redirect
-  if (autostart && submissionId && submissionVendor) {
-
-    if (STATUS_POLL_TIMEOUT) {
-      clearTimeout(STATUS_POLL_TIMEOUT);
-      STATUS_POLL_TIMEOUT = null;
-    }
+    ACTIVE_SUBMISSION_ID = submissionId;
 
     const box = document.getElementById("submission-status-log");
-    if (box) {
-      box.textContent = "";
-    }
+    if (box) box.textContent = "";
 
-    console.log("🔥 STARTING POLLER", submissionVendor, submissionId);
-    ACTIVE_SUBMISSION_ID = submissionId;
     pollSubmissionStatus(submissionVendor, submissionId);
   }
-}
 </script>
+
 <script>
 function loadOutputFiles(vendor) {
   fetch(`/api/output-files?vendor=${encodeURIComponent(vendor)}`)
@@ -1020,6 +1041,91 @@ function loadOutputFiles(vendor) {
       });
     });
 }
+</script>
+
+<script>
+  function loadOutputSummary(vendor, submissionId) {
+  fetch(`/api/output-summary?vendor=${encodeURIComponent(vendor)}&submission_id=${submissionId}`)
+    .then(res => res.json())
+    .then(data => {
+      const box = document.getElementById("output-files");
+      box.innerHTML = "";
+
+      // -------------------------
+      // STATUS HEADER
+      // -------------------------
+      const header = document.createElement("div");
+      header.style.fontWeight = "600";
+      header.style.marginBottom = "6px";
+
+      if (data.promotion_status === "HALTED") {
+        header.textContent = "⚠ Promotion Halted";
+        header.style.color = "#8B0000";
+      } else {
+        header.textContent = " ";
+        header.style.color = "#006400";
+      }
+
+      box.appendChild(header);
+
+      // -------------------------
+      // OUTPUT FILES
+      // -------------------------
+      if (data.outputs.length) {
+        const title = document.createElement("div");
+        title.innerHTML = "<strong>Outputs</strong>";
+        box.appendChild(title);
+
+        data.outputs.forEach(f => {
+          const a = document.createElement("a");
+          a.href = f.url;
+          a.textContent = f.filename;
+          a.target = "_blank";
+          a.className = "d-block output-link";
+          box.appendChild(a);
+        });
+      }
+
+      // -------------------------
+      // REJECTION LOGS
+      // -------------------------
+      if (data.rejection_logs.length) {
+        const title = document.createElement("div");
+        title.innerHTML = "<strong>Blocking logs</strong>";
+        title.style.marginTop = "8px";
+        title.style.color = "#8B0000";
+        box.appendChild(title);
+
+        data.rejection_logs.forEach(log => {
+
+          // 🔴 Filename (downloadable)
+          const fileLink = document.createElement("a");
+          fileLink.href = log.url;
+          fileLink.textContent = log.filename;
+          fileLink.target = "_blank";
+          fileLink.className = "d-block output-link";
+          box.appendChild(fileLink);
+
+          // 📄 Inline error summary
+          const summary = document.createElement("div");
+          summary.className = "log-summary";
+          summary.innerHTML = `
+            <div><strong>Stage:</strong> ${log.stage}</div>
+            <div><strong>File:</strong> ${log.file || "—"}</div>
+            <div><strong>Error:</strong> ${log.error_type}</div>
+            <div class="log-msg">${log.error_message}</div>
+          `;
+          box.appendChild(summary);
+        });
+      }
+
+
+      if (!data.outputs.length && !data.rejection_logs.length) {
+        box.innerHTML += "<div class='text-muted'>No outputs available.</div>";
+      }
+    });
+}
+
 </script>
 
 
