@@ -929,6 +929,8 @@ window.addEventListener("beforeunload", () => {
 <script>
 function pollSubmissionStatus(vendor, submissionId) {
 
+  console.log("Polling:", submissionId, "Active:", ACTIVE_SUBMISSION_ID);
+
   if (ACTIVE_SUBMISSION_ID !== submissionId) return;
 
   fetch(`/api/submission-status?vendor=${encodeURIComponent(vendor)}&submission_id=${submissionId}`)
@@ -962,31 +964,38 @@ function pollSubmissionStatus(vendor, submissionId) {
         setLastPrintedMessage(submissionId, message);
       }
 
-      // 🛑 Terminal states (match backend)
+      // 🛑 Terminal states (match backend exactly)
       const TERMINAL_STATUSES = [
         "DONE",
         "FAILED",
+        "APPROVED",
+        "ERROR",
         "PLEASE CHECK YOUR EMAIL"
       ];
 
       if (!TERMINAL_STATUSES.includes(data.status)) {
+
         STATUS_POLL_TIMEOUT = setTimeout(() => {
           pollSubmissionStatus(vendor, submissionId);
         }, 3000);
+
       } else {
+
         // ✅ Load output files ONCE when pipeline completes
         if (
-          (data.status === "DONE" || data.status === "FAILED") &&
+          (data.status === "DONE" ||
+          data.status === "FAILED" ||
+          data.status === "APPROVED") &&
           !OUTPUT_FILES_LOADED
         ) {
           OUTPUT_FILES_LOADED = true;
           loadOutputSummary(vendor, submissionId);
         }
+
         // ✅ Stop poller
         ACTIVE_SUBMISSION_ID = null;
         clearLastPrintedMessage(submissionId);
 
-        // ⏳ Let outputs stay visible; don't immediately wipe
         setTimeout(() => {
           box.textContent =
             "ETL PIPELINE EXECUTED.\n" +

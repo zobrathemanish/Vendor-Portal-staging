@@ -263,62 +263,43 @@ def upload_page():
         session.modified = True
 
     return render_template(
-        'uploads.html',
-        submission_id=session.get("active_submission_id"),
-        submission_vendor=session.get("active_submission_vendor")
-    )
+    'uploads.html',
+    submission_id=session.get("last_submission_id") or session.get("active_submission_id"),
+    submission_vendor=session.get("last_submission_vendor") or session.get("active_submission_vendor")
+)
 
 @app.route('/upload/', methods=['POST'])
 @login_required
 def upload_files():
+
     logger.info("Submission received")
 
-    # 🔐 FINALIZE submission
-    final_submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-
-    draft_submission_id = session.get("active_submission_id")
-    logger.info(f"📦 Draft submission_id = {draft_submission_id}")
-    logger.info(f"🚀 Final submission_id = {final_submission_id}")
-
-    # Freeze final ID for THIS request
-    submission_id = final_submission_id
-
-    # 🔄 Rotate session state
-    session["last_submission_id"] = final_submission_id
-    session["last_submission_vendor"] = current_user.vendor
-
-    # 🆕 Create NEW draft immediately for next submission
-    session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-
-    session.modified = True
-
-    vendor_name = request.form.get('vendor_name')
-    vendor_type = request.form.get('vendor_type')
     submission_type = request.form.get("submission_type")
+    vendor_type = request.form.get("vendor_type")
 
+    # Resolve vendor safely
     if current_user.role == "vendor":
         vendor_name = current_user.vendor
     else:
         vendor_name = request.form.get("vendor_name")
 
-    # 🔐 HARD GUARD — vendor MUST exist for any vendor submission
-    if submission_type == "vendor" and not vendor_name:
-        flash("Please select a vendor before submitting.", "danger")
-        return redirect(url_for("upload_page"))
-
-
-    # =====================================================
-    # PRICING REVIEW
-    # =====================================================
+    # -----------------------------------------------------
+    # PRICING REVIEW FLOW (ISOLATED FROM VENDOR FLOW)
+    # -----------------------------------------------------
     if submission_type == "pricing_review":
+
+        submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+        session["last_submission_id"] = submission_id
+        session["last_submission_vendor"] = vendor_name
+        session.modified = True
+
         logger.info(f"Pricing review submitted for vendor={vendor_name}")
         approved_file = request.files.get("approved_pricing_file")
 
         if not vendor_name or not approved_file:
             flash("Vendor and pricing file are required.", "danger")
             return redirect(url_for("upload_page"))
-
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         local_path = save_file(
             approved_file,
@@ -341,48 +322,24 @@ def upload_files():
                 container_name="silver"
             )
 
-            # ---------------------------------------
-            # CREATE NOTIFY MARKER (Bronze)
-            # ---------------------------------------
             marker_payload = {
-                # --------------------
-                # Marker governance
-                # --------------------
                 "schema_version": "2.0",
                 "marker_type": "PRICING_REVIEW",
-
-                # --------------------
-                # Identity
-                # --------------------
                 "vendor": vendor_name,
                 "submission_id": submission_id,
-
-                # --------------------
-                # Submission metadata
-                # --------------------
                 "submission_type": "pricing_review",
-
-                # --------------------
-                # Intent flags
-                # --------------------
                 "actions": {
                     "notify": True,
                     "run_etl": True
                 },
-
-                # --------------------
-                # Context
-                # --------------------
                 "uploaded_file": approved_file.filename,
                 "created_at": datetime.utcnow().isoformat() + "Z"
             }
-
 
             marker_name = (
                 f"raw/notifymarker/"
                 f"{vendor_name}_{submission_id}_PRICING.json"
             )
-
 
             upload_json_blob(
                 data=marker_payload,
@@ -391,17 +348,33 @@ def upload_files():
                 container_name="bronze"
             )
 
-            session["last_submission_id"] = submission_id
-            session["last_submission_vendor"] = vendor_name
-            session.modified = True
-
             flash(f"Pricing review submitted for {vendor_name}.", "success")
-            
+
         except Exception as e:
             flash(f"Pricing upload failed: {e}", "danger")
 
         return redirect(url_for("upload_page"))
 
+    # -----------------------------------------------------
+    # VENDOR SUBMISSION FLOW (UNCHANGED LOGIC)
+    # -----------------------------------------------------
+    if submission_type == "vendor":
+
+        # Finalize submission
+        final_submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        draft_submission_id = session.get("active_submission_id")
+
+        submission_id = final_submission_id
+
+        # Rotate session state
+        session["last_submission_id"] = submission_id
+        session["last_submission_vendor"] = vendor_name
+        session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        session.modified = True
+
+        if not vendor_name:
+            flash("Please select a vendor before submitting.", "danger")
+            return redirect(url_for("upload_page"))
 
     # Shared
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -1397,8 +1370,10 @@ def cleanup_old_assets():
 @login_required
 @app.route("/api/submission-status")
 def submission_status():
-    print("🔥 submission_status ROUTE HIT")
+
     submission_id = request.args.get("submission_id")
+    print("STATUS API CALLED WITH:", submission_id)
+
     if not submission_id:
         return {"status": "MISSING_PARAMS"}, 400
 
