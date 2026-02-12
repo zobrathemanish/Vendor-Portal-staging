@@ -1184,63 +1184,36 @@ function loadOutputFiles(vendor) {
 </script>
 
 <script>
-  function loadOutputSummary(vendor, submissionId) {
+function loadOutputSummary(vendor, submissionId) {
 
   fetch(`/api/output-summary?vendor=${encodeURIComponent(vendor)}&submission_id=${submissionId}`)
     .then(res => res.json())
     .then(data => {
+
       const box = document.getElementById("output-files");
       box.innerHTML = "";
 
       // -------------------------
-      // STATUS HEADER
+      // STATUS HEADER (only if halted)
       // -------------------------
-      const header = document.createElement("div");
-      header.style.fontWeight = "600";
-      header.style.marginBottom = "6px";
-
       if (data.promotion_status === "HALTED") {
+        const header = document.createElement("div");
         header.textContent = "⚠ Promotion Halted";
         header.style.color = "#8B0000";
-      } else {
-        header.textContent = " ";
-        header.style.color = "#006400";
+        header.style.fontWeight = "600";
+        header.style.marginBottom = "10px";
+        box.appendChild(header);
       }
 
-      box.appendChild(header);
-
+      // -------------------------
+      // FILE GRID
+      // -------------------------
       const grid = document.createElement("div");
       grid.className = "file-grid";
       box.appendChild(grid);
 
-      // -------------------------
-      // OUTPUT FILES
-      // -------------------------
-      if (data.outputs.length) {
-        const title = document.createElement("div");
-        title.innerHTML = "<strong>Outputs</strong>";
-        box.appendChild(title);
-
-        data.outputs.forEach(f => {
-          const a = document.createElement("a");
-          a.href = f.url;
-          a.textContent = f.filename;
-          a.target = "_blank";
-          a.className = "d-block output-link";
-          box.appendChild(a);
-        });
-      }
-
-      // -------------------------
-      // REJECTION LOGS
-      // -------------------------
-      if (data.rejection_logs.length) {
-        const title = document.createElement("div");
-        // title.innerHTML = "<strong>Blocking logs</strong>";
-        title.style.marginTop = "8px";
-        title.style.color = "#8B0000";
-        box.appendChild(title);
-
+      // 🔴 Validation Failed Log
+      if (data.rejection_logs && data.rejection_logs.length) {
         data.rejection_logs.forEach(log => {
 
           const tile = document.createElement("a");
@@ -1249,54 +1222,49 @@ function loadOutputFiles(vendor) {
           tile.className = "file-tile";
 
           tile.innerHTML = `
-            <img src="https://cdn-icons-png.flaticon.com/512/136/136530.png" alt="JSON">
+            <img src="https://cdn-icons-png.flaticon.com/512/136/136530.png">
             <div class="file-tile-name">validation-failed.json</div>
           `;
 
           grid.appendChild(tile);
         });
-
-
       }
 
-      // -------------------------
-      // MAPPED OUTPUT
-      // -------------------------
-      if (data.mapped_outputs && data.mapped_outputs.length) {
-        const title = document.createElement("div");
-        // title.innerHTML = "<strong>Mapped Output</strong>";
-        title.style.marginTop = "8px";
-        box.appendChild(title);
-
-        data.mapped_outputs.forEach(file => {
+      // 🟢 Success Outputs (and mapped.xlsx if backend included it)
+      if (data.outputs && data.outputs.length) {
+        data.outputs.forEach(file => {
 
           const tile = document.createElement("a");
           tile.href = file.url;
           tile.target = "_blank";
           tile.className = "file-tile";
 
+          let icon = "https://cdn-icons-png.flaticon.com/512/732/732220.png"; // default Excel
+
+          if (file.filename.toLowerCase().endsWith(".json")) {
+            icon = "https://cdn-icons-png.flaticon.com/512/136/136530.png";
+          }
+
           tile.innerHTML = `
-            <img src="https://cdn-icons-png.flaticon.com/512/732/732220.png" alt="Excel">
-            <div class="file-tile-name">mapped.xlsx</div>
+            <img src="${icon}">
+            <div class="file-tile-name">${file.filename}</div>
           `;
 
           grid.appendChild(tile);
         });
-
       }
 
-
-      if (
-        !data.outputs.length &&
-        !data.rejection_logs.length &&
-        (!data.mapped_outputs || !data.mapped_outputs.length)
-      ) {
-        box.innerHTML += "<div class='text-muted'>No outputs available.</div>";
+      // -------------------------
+      // Empty State
+      // -------------------------
+      if (!grid.children.length) {
+        box.innerHTML = "<div class='text-muted'>No outputs available.</div>";
       }
+
     });
 }
-
 </script>
+
 
 
 </div>

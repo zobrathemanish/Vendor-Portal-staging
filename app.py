@@ -1531,32 +1531,36 @@ def api_output_summary():
             "error_message": log_json.get("error_message"),
             "logged_at": log_json.get("timestamp"),
         })
-
+   
     # --------------------------------------------------
     # 3️⃣ MAPPED OUTPUT (READ FROM BRONZE IF HALTED)
     # --------------------------------------------------
+    print("DEBUG STATUS BEFORE MAPPED:", result["promotion_status"])
 
-    mapped_prefix = (
-        f"raw/vendor={vendor}/"
-        f"submission={submission_id}/mapped/"
-    )
+    if result["promotion_status"] == "HALTED":
+        mapped_prefix = (
+            f"raw/vendor={vendor}/"
+            f"submission={submission_id}/mapped/"
+        )
 
-    bronze_container = blob_service.get_container_client("bronze")
+        bronze_container = blob_service.get_container_client("bronze")
 
-    for blob in bronze_container.list_blobs(name_starts_with=mapped_prefix):
-        if blob.name.lower().endswith(".xlsx"):
+        for blob in bronze_container.list_blobs(name_starts_with=mapped_prefix):
+            print("DEBUG: Found rejection log:", blob.name)
 
-            result.setdefault("mapped_outputs", [])
+            if blob.name.lower().endswith(".xlsx"):
 
-            result["mapped_outputs"].append({
-                "filename": os.path.basename(blob.name),
+                result["outputs"].append({
+                "filename": "mapped.xlsx",
                 "url": generate_read_sas_url(
                     blob_service, "bronze", blob.name
                 )
             })
 
-    
+
+        
     return result
+        
 
 @app.route("/api/download-log")
 @login_required
