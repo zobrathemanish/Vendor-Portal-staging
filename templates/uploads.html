@@ -1120,8 +1120,31 @@ function loadOutputFiles(vendor) {
         });
       }
 
+      // -------------------------
+      // MAPPED OUTPUT
+      // -------------------------
+      if (data.mapped_outputs && data.mapped_outputs.length) {
+        const title = document.createElement("div");
+        title.innerHTML = "<strong>Mapped Output</strong>";
+        title.style.marginTop = "8px";
+        box.appendChild(title);
 
-      if (!data.outputs.length && !data.rejection_logs.length) {
+        data.mapped_outputs.forEach(file => {
+          const a = document.createElement("a");
+          a.href = file.url;
+          a.textContent = file.filename;
+          a.target = "_blank";
+          a.className = "d-block output-link";
+          box.appendChild(a);
+        });
+      }
+
+
+      if (
+        !data.outputs.length &&
+        !data.rejection_logs.length &&
+        (!data.mapped_outputs || !data.mapped_outputs.length)
+      ) {
         box.innerHTML += "<div class='text-muted'>No outputs available.</div>";
       }
     });

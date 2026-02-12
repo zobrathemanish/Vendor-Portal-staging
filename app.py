@@ -27,6 +27,12 @@ from azure.storage.blob import (
 )
 import os
 from dotenv import load_dotenv
+from flask import send_file
+from io import BytesIO
+from azure.storage.blob import BlobServiceClient
+import pandas as pd
+import os
+
 
 load_dotenv()
 
@@ -1424,6 +1430,7 @@ def api_output_summary():
         "outputs": [],
         "rejection_logs": []
     }
+    
 
     # --------------------------------------------------
     # 1️⃣ READY OUTPUT FILES
@@ -1500,8 +1507,12 @@ def api_output_summary():
         if blob.name.endswith("/"):
             continue
 
+         # 🔥 Only parse JSON logs
+        if not blob.name.lower().endswith(".json"):
+            continue
+
         log_blob = container.get_blob_client(blob.name)
-        raw = log_blob.download_blob().readall()
+        raw = log_blob.download_blob().readall().decode("utf-8")
         log_json = json.loads(raw)
 
         result["promotion_status"] = "HALTED"
@@ -1513,13 +1524,95 @@ def api_output_summary():
             ),
             # 👇 surfaced fields (controlled)
             "stage": log_json.get("stage"),
-            "file": log_json.get("file"),
+            "display_file": os.path.basename(
+                log_json.get("file", "")
+            ).replace(".parquet", ""),
             "error_type": log_json.get("error_type"),
             "error_message": log_json.get("error_message"),
-            "logged_at": log_json.get("logged_at"),
+            "logged_at": log_json.get("timestamp"),
         })
 
+    # --------------------------------------------------
+    # 3️⃣ MAPPED OUTPUT (READ FROM BRONZE IF HALTED)
+    # --------------------------------------------------
+
+    mapped_prefix = (
+        f"raw/vendor={vendor}/"
+        f"submission={submission_id}/mapped/"
+    )
+
+    bronze_container = blob_service.get_container_client("bronze")
+
+    for blob in bronze_container.list_blobs(name_starts_with=mapped_prefix):
+        if blob.name.lower().endswith(".xlsx"):
+
+            result.setdefault("mapped_outputs", [])
+
+            result["mapped_outputs"].append({
+                "filename": os.path.basename(blob.name),
+                "url": generate_read_sas_url(
+                    blob_service, "bronze", blob.name
+                )
+            })
+
+    
     return result
+
+@app.route("/api/download-log")
+@login_required
+def download_log():
+
+    vendor = request.args.get("vendor")
+    submission_id = request.args.get("submission_id")
+
+    blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
+    container = blob_service.get_container_client("silver")
+
+    prefix = f"rejected/logs/vendor={vendor}/submission={submission_id}/"
+
+    blobs = list(container.list_blobs(name_starts_with=prefix))
+
+    if not blobs:
+        return {"error": "No log found"}, 404
+
+    # pick latest
+    blob_name = sorted(blobs, key=lambda b: b.last_modified)[-1].name
+
+    blob = container.get_blob_client(blob_name)
+    data = blob.download_blob().readall()
+
+    return send_file(
+        BytesIO(data),
+        download_name=os.path.basename(blob_name),
+        as_attachment=True
+    )
+
+@app.route("/api/log-preview")
+@login_required
+def log_preview():
+
+    vendor = request.args.get("vendor")
+    submission_id = request.args.get("submission_id")
+    blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
+    container = blob_service.get_container_client("silver")
+    prefix = f"rejected/logs/vendor={vendor}/submission={submission_id}/"
+
+    blobs = list(container.list_blobs(name_starts_with=prefix))
+
+    if not blobs:
+        return {"rows": []}
+
+    blob_name = sorted(blobs, key=lambda b: b.last_modified)[-1].name
+    blob = container.get_blob_client(blob_name)
+    data = blob.download_blob().readall()
+
+    df = pd.read_excel(BytesIO(data))
+
+    preview = df.head(20).to_dict(orient="records")
+
+    return {"rows": preview}
+
+
 
 # ---------------------------------------
 # MAIN
