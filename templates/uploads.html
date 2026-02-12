@@ -333,6 +333,139 @@ a {
   text-decoration: underline;
 }
 
+/*new */
+/* ================================
+   OUTPUT REPORT PANEL
+   ================================ */
+
+.output-report {
+  background-color: #f2f2f2;
+  border: 1px solid #c9c9c9;
+  padding: 12px;  
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  width: 19.5vw;
+  box-sizing: border-box;
+}
+
+.output-section-title {
+  font-weight: 600;
+  margin-top: 10px;
+  margin-bottom: 6px;
+}
+
+.output-divider {
+  border-top: 1px solid #e0e0e0;
+  margin: 8px 0;
+}
+
+.output-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  text-decoration: none;
+  color: #003366;
+  transition: background 0.15s ease;
+}
+
+.output-file:hover {
+  background-color: #f3f6fa;
+}
+
+.output-file-icon {
+  font-size: 16px;
+}
+
+.output-file-name {
+  font-weight: 500;
+}
+
+.output-status-halted {
+  color: #8B0000;
+  font-weight: 600;
+}
+
+/* ================================
+   DESKTOP FILE TILE
+   ================================ */
+
+.file-tile {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  width: 90px;
+  padding: 10px;
+  margin: 6px;
+
+  text-decoration: none;
+  color: #000;
+  border-radius: 6px;
+
+  transition: background 0.15s ease;
+}
+
+.file-tile:hover {
+  background-color: #e8edf3;
+}
+
+.file-tile img {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+}
+
+.file-tile-name {
+  font-size: 12px;
+  text-align: center;
+  word-break: break-word;
+}
+
+/* FILE GRID (Windows-like) */
+.file-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.file-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  width: 100px;
+  padding: 10px;
+
+  text-decoration: none;
+  color: #000;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.file-tile:hover {
+  background-color: #e8edf3;
+}
+
+.file-tile img {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+}
+
+.file-tile-name {
+  font-size: 12px;
+  text-align: center;
+  word-break: break-word;
+}
+
+
+
 </style>
 
 </head>
@@ -500,7 +633,7 @@ a {
                 <div class="card system-panel mt-2">
                   <h5>Output status</h5>
 
-                  <div id="output-files" class="output-list text-muted">
+                  <div id="output-files" class="output-report">
                     No outputs available.
                   </div>
                 </div>
@@ -1033,12 +1166,18 @@ function loadOutputFiles(vendor) {
       }
 
       data.files.forEach(f => {
-        const a = document.createElement("a");
-        a.href = f.url;
-        a.textContent = f.filename;
-        a.target = "_blank";
-        a.className = "d-block output-link";
-        box.appendChild(a);
+        const fileRow = document.createElement("a");
+        fileRow.href = file.url;
+        fileRow.target = "_blank";
+        fileRow.className = "output-file";
+
+        fileRow.innerHTML = `
+          <span class="output-file-icon">📊</span>
+          <span class="output-file-name">${file.filename}</span>
+        `;
+
+        box.appendChild(fileRow);
+
       });
     });
 }
@@ -1046,6 +1185,7 @@ function loadOutputFiles(vendor) {
 
 <script>
   function loadOutputSummary(vendor, submissionId) {
+
   fetch(`/api/output-summary?vendor=${encodeURIComponent(vendor)}&submission_id=${submissionId}`)
     .then(res => res.json())
     .then(data => {
@@ -1068,6 +1208,10 @@ function loadOutputFiles(vendor) {
       }
 
       box.appendChild(header);
+
+      const grid = document.createElement("div");
+      grid.className = "file-grid";
+      box.appendChild(grid);
 
       // -------------------------
       // OUTPUT FILES
@@ -1092,32 +1236,27 @@ function loadOutputFiles(vendor) {
       // -------------------------
       if (data.rejection_logs.length) {
         const title = document.createElement("div");
-        title.innerHTML = "<strong>Blocking logs</strong>";
+        // title.innerHTML = "<strong>Blocking logs</strong>";
         title.style.marginTop = "8px";
         title.style.color = "#8B0000";
         box.appendChild(title);
 
         data.rejection_logs.forEach(log => {
 
-          // 🔴 Filename (downloadable)
-          const fileLink = document.createElement("a");
-          fileLink.href = log.url;
-          fileLink.textContent = log.filename;
-          fileLink.target = "_blank";
-          fileLink.className = "d-block output-link";
-          box.appendChild(fileLink);
+          const tile = document.createElement("a");
+          tile.href = log.url;
+          tile.target = "_blank";
+          tile.className = "file-tile";
 
-          // 📄 Inline error summary
-          const summary = document.createElement("div");
-          summary.className = "log-summary";
-          summary.innerHTML = `
-            <div><strong>Stage:</strong> ${log.stage}</div>
-            <div><strong>File:</strong> ${log.file || "—"}</div>
-            <div><strong>Error:</strong> ${log.error_type}</div>
-            <div class="log-msg">${log.error_message}</div>
+          tile.innerHTML = `
+            <img src="https://cdn-icons-png.flaticon.com/512/136/136530.png" alt="JSON">
+            <div class="file-tile-name">validation-failed.json</div>
           `;
-          box.appendChild(summary);
+
+          grid.appendChild(tile);
         });
+
+
       }
 
       // -------------------------
@@ -1125,18 +1264,25 @@ function loadOutputFiles(vendor) {
       // -------------------------
       if (data.mapped_outputs && data.mapped_outputs.length) {
         const title = document.createElement("div");
-        title.innerHTML = "<strong>Mapped Output</strong>";
+        // title.innerHTML = "<strong>Mapped Output</strong>";
         title.style.marginTop = "8px";
         box.appendChild(title);
 
         data.mapped_outputs.forEach(file => {
-          const a = document.createElement("a");
-          a.href = file.url;
-          a.textContent = file.filename;
-          a.target = "_blank";
-          a.className = "d-block output-link";
-          box.appendChild(a);
+
+          const tile = document.createElement("a");
+          tile.href = file.url;
+          tile.target = "_blank";
+          tile.className = "file-tile";
+
+          tile.innerHTML = `
+            <img src="https://cdn-icons-png.flaticon.com/512/732/732220.png" alt="Excel">
+            <div class="file-tile-name">mapped.xlsx</div>
+          `;
+
+          grid.appendChild(tile);
         });
+
       }
 
 

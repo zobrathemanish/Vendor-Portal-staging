@@ -1619,4 +1619,4 @@ def log_preview():
 # ---------------------------------------
 if __name__ == '__main__':
     logger.info("Vendor Portal started")
-    app.run(debug=False)
+    app.run(debug=True)
