@@ -1437,11 +1437,31 @@ def api_output_summary():
             "rejection_logs": []
     }  
 
-    ready_prefix = (
-        f"ready/vendor={vendor}/"
+    # ------------------------------------------
+    # Detect correct ready root (vendor vs pricing_review)
+    # ------------------------------------------
+
+    ready_root = "ready"
+
+    pricing_review_prefix = (
+        f"ready_pricing_review/vendor={vendor}/"
         f"submission={submission_id}/"
         f"review/"
     )
+
+    pricing_blobs = list(
+        container.list_blobs(name_starts_with=pricing_review_prefix)
+    )
+
+    if pricing_blobs:
+        ready_root = "ready_pricing_review"
+
+    ready_prefix = (
+        f"{ready_root}/vendor={vendor}/"
+        f"submission={submission_id}/"
+        f"review/"
+    )
+
 
     print("DEBUG READY PREFIX:", ready_prefix)
 
