@@ -329,8 +329,9 @@ def upload_files():
 
         try:
             blob_path = (
-                f"approved/vendor={vendor_name}/pricing/"
-                f"{timestamp}_pricing.xlsx"
+                f"post_pricing_review/vendor={vendor_name}/"
+                f"submission={submission_id}/"
+                f"mapped/mapped.xlsx"
             )
 
             upload_blob(
@@ -344,20 +345,44 @@ def upload_files():
             # CREATE NOTIFY MARKER (Bronze)
             # ---------------------------------------
             marker_payload = {
-                "submission_id": submission_id,
-                "status": "UPLOADED",
-                "submission_type": "pricing_review",
+                # --------------------
+                # Marker governance
+                # --------------------
+                "schema_version": "2.0",
+                "marker_type": "PRICING_REVIEW",
+
+                # --------------------
+                # Identity
+                # --------------------
                 "vendor": vendor_name,
+                "submission_id": submission_id,
+
+                # --------------------
+                # Submission metadata
+                # --------------------
+                "submission_type": "pricing_review",
+
+                # --------------------
+                # Intent flags
+                # --------------------
+                "actions": {
+                    "notify": True,
+                    "run_etl": True
+                },
+
+                # --------------------
+                # Context
+                # --------------------
                 "uploaded_file": approved_file.filename,
-                "reviewed_pricing_path": f"silver/approved/vendor={vendor_name}/pricing",
-                "uploaded_at": datetime.utcnow().isoformat() + "Z",
-                "action_required": "Run pricing pipeline"
+                "created_at": datetime.utcnow().isoformat() + "Z"
             }
+
 
             marker_name = (
                 f"raw/notifymarker/"
-                f"{vendor_name}_{timestamp}.json"
+                f"{vendor_name}_{submission_id}_PRICING.json"
             )
+
 
             upload_json_blob(
                 data=marker_payload,
@@ -484,7 +509,7 @@ def upload_files():
 
             flash(f'OptiCat files for {vendor_name} uploaded successfully.', 'success')
 
-            trigger_etl(vendor_name, submission_id)
+            # trigger_etl(vendor_name, submission_id)
 
         except Exception as e:
             flash(f'Azure upload failed: {e}', 'danger')
