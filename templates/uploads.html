@@ -981,7 +981,6 @@ function pollSubmissionStatus(vendor, submissionId) {
 
       } else {
 
-        // ✅ Load output files ONCE when pipeline completes
         if (
           (data.status === "DONE" ||
           data.status === "FAILED" ||
@@ -992,16 +991,9 @@ function pollSubmissionStatus(vendor, submissionId) {
           loadOutputSummary(vendor, submissionId);
         }
 
-        // ✅ Stop poller
+        // Stop poller but KEEP the log history
         ACTIVE_SUBMISSION_ID = null;
-        clearLastPrintedMessage(submissionId);
-
-        setTimeout(() => {
-          box.textContent =
-            "ETL PIPELINE EXECUTED.\n" +
-            "Review-ready outputs are available below.\n" +
-            "System idle.\nWaiting for vendor submission.";
-        }, 4000);
+        clearTimeout(STATUS_POLL_TIMEOUT);
       }
     })
     .catch(() => {
