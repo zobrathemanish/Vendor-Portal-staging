@@ -19,12 +19,6 @@ from flask_login import (
     login_required,
     current_user
 )
-from datetime import datetime, timedelta
-from azure.storage.blob import (
-    BlobServiceClient,
-    generate_blob_sas,
-    BlobSasPermissions
-)
 import os
 from dotenv import load_dotenv
 from flask import send_file
@@ -32,14 +26,12 @@ from io import BytesIO
 from azure.storage.blob import BlobServiceClient
 import pandas as pd
 import os
-
+from extensions import logger, LOG_BUFFER
+from services.submission_service import move_assets_to_final_submission, trigger_etl
 
 load_dotenv()
 
-AZURE_CONN = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 
-if not AZURE_CONN:
-    raise RuntimeError("AZURE_STORAGE_CONNECTION_STRING is not set")
 
 
 load_dotenv()
@@ -51,11 +43,21 @@ app = Flask(__name__)
 app.secret_key = "fgi_vendor_portal_secret"   #change later
 app.config['SESSION_TYPE'] = 'filesystem'
 
+from routes.auth_routes import auth_bp
+app.register_blueprint(auth_bp)
+
+from routes.upload_routes import upload_bp
+app.register_blueprint(upload_bp)
+
+from config import Config
+app.config.from_object(Config)
+
+
 # ---------------------------------------
 # LOGIN MANAGER
 # ---------------------------------------
 login_manager = LoginManager()
-login_manager.login_view = "login"   # redirect here if not logged in
+login_manager.login_view = "auth.login"   # redirect here if not logged in
 login_manager.init_app(app)
 
 # Local upload path (Phase 1 temp before Azure)
@@ -65,94 +67,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-
-ETL_TRIGGER_URL = os.getenv("ETL_TRIGGER_URL")  # Logic App or API
-
-def trigger_etl(vendor, submission_id):
-    if not ETL_TRIGGER_URL:
-        logger.error("ETL_TRIGGER_URL not configured")
-        return
-
-    payload = {
-        "vendor": vendor,
-        "submission_id": submission_id
-    }
-
-    try:
-        requests.post(ETL_TRIGGER_URL, json=payload, timeout=5)
-        logger.info(f"ETL triggered for vendor={vendor}")
-    except Exception as e:
-        logger.error(f"ETL trigger failed: {e}")
-
-def move_assets_to_final_submission(
-    vendor,
-    draft_submission_id,
-    final_submission_id,
-    container_name="bronze"
-):
-    blob_service = BlobServiceClient.from_connection_string(
-        os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-    )
-    container = blob_service.get_container_client(container_name)
-
-    draft_prefix = (
-        f"raw/vendor={vendor}/submission={draft_submission_id}/assets/"
-    )
-    final_prefix = (
-        f"raw/vendor={vendor}/submission={final_submission_id}/assets/"
-    )
-
-    blobs = list(container.list_blobs(name_starts_with=draft_prefix))
-    if not blobs:
-        logger.info("📦 No draft assets to move")
-        return
-
-    for blob in blobs:
-        source_blob = container.get_blob_client(blob.name)
-        target_name = blob.name.replace(draft_prefix, final_prefix)
-        target_blob = container.get_blob_client(target_name)
-
-        target_blob.start_copy_from_url(source_blob.url)
-        source_blob.delete_blob()
-
-        logger.info(f"📦 Asset moved → {target_name}")
-
-
-# ================================
-# IN-MEMORY LOG BUFFER (DEV)
-# ================================
-
-LOG_BUFFER = deque(maxlen=200)   # last 200 log lines
-
-# ================================
-# UI LOGGING HANDLER
-# ================================
-
-class UILogHandler(logging.Handler):
-    def emit(self, record):
-        msg = self.format(record)
-        LOG_BUFFER.append(msg)
-
-
-logger = logging.getLogger("vendor_portal")
-logger.setLevel(logging.INFO)
-
-ui_handler = UILogHandler()
-ui_handler.setFormatter(logging.Formatter(
-    "[%(asctime)s] %(levelname)s — %(message)s",
-    "%H:%M:%S"
-))
-
-logger.addHandler(ui_handler)
-
-
-# Azure Storage
-AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-AZURE_CONTAINER_NAME = "bronze"
-
-if not AZURE_CONNECTION_STRING:
-    print("⚠ WARNING: AZURE_STORAGE_CONNECTION_STRING is not set. "
-          "Azure uploads will fail until you configure it.")
 
 
 # def upload_single_product_excel_to_azure(vendor_name, local_path):
@@ -218,401 +132,8 @@ def load_user(user_id):
             )
     return None
 
-# ---------------------------------------
-# ROUTES
-# ---------------------------------------
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
 
-        user_record = USERS.get(email)
-        if user_record and user_record["password"] == password:
-            user = SimpleUser(
-                id=user_record["id"],
-                email=email,
-                role=user_record["role"],
-                vendor=user_record["vendor"]
-            )
-            login_user(user)
-            flash("Logged in successfully", "success")
-            return redirect(url_for("upload_page"))
-
-        flash("Invalid credentials", "danger")
-
-    return render_template("login.html")
-
-@app.route("/logout")
-@login_required
-def logout():
-    logout_user()
-    flash("Logged out", "info")
-    return redirect(url_for("login"))
-
-
-@app.route('/')
-def index():
-    if current_user.is_authenticated:
-        return redirect(url_for('upload_page'))
-    return redirect(url_for('login'))
-
-
-@app.route('/upload/', methods=['GET'])
-@login_required
-def upload_page():
-
-    if "active_submission_id" not in session:
-        session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        session["active_submission_vendor"] = current_user.vendor
-        session.modified = True
-
-    return render_template(
-    'uploads.html',
-    submission_id=session.get("last_submission_id") or session.get("active_submission_id"),
-    submission_vendor=session.get("last_submission_vendor") or session.get("active_submission_vendor")
-)
-
-@app.route('/upload/', methods=['POST'])
-@login_required
-def upload_files():
-
-    logger.info("Submission received")
-
-    submission_type = request.form.get("submission_type")
-    vendor_type = request.form.get("vendor_type")
-
-    # Resolve vendor safely
-    if current_user.role == "vendor":
-        vendor_name = current_user.vendor
-    else:
-        vendor_name = request.form.get("vendor_name")
-
-    # -----------------------------------------------------
-    # PRICING REVIEW FLOW (ISOLATED FROM VENDOR FLOW)
-    # -----------------------------------------------------
-    if submission_type == "pricing_review":
-
-        submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-
-        session["last_submission_id"] = submission_id
-        session["last_submission_vendor"] = vendor_name
-        session.modified = True
-
-        logger.info(f"Pricing review submitted for vendor={vendor_name}")
-        approved_file = request.files.get("approved_pricing_file")
-
-        if not vendor_name or not approved_file:
-            flash("Vendor and pricing file are required.", "danger")
-            return redirect(url_for("upload_page"))
-
-        local_path = save_file(
-            approved_file,
-            vendor_name,
-            "pricing_review",
-            app.config["UPLOAD_FOLDER"]
-        )
-
-        try:
-            blob_path = (
-                f"post_pricing_review/vendor={vendor_name}/"
-                f"submission={submission_id}/"
-                f"mapped/mapped.xlsx"
-            )
-
-            upload_blob(
-                local_path=local_path,
-                blob_path=blob_path,
-                connection_string=AZURE_CONNECTION_STRING,
-                container_name="silver"
-            )
-
-            marker_payload = {
-                "schema_version": "2.0",
-                "marker_type": "PRICING_REVIEW",
-                "vendor": vendor_name,
-                "submission_id": submission_id,
-                "submission_type": "pricing_review",
-                "actions": {
-                    "notify": True,
-                    "run_etl": True
-                },
-                "uploaded_file": approved_file.filename,
-                "created_at": datetime.utcnow().isoformat() + "Z"
-            }
-
-            marker_name = (
-                f"raw/notifymarker/"
-                f"{vendor_name}_{submission_id}_PRICING.json"
-            )
-
-            upload_json_blob(
-                data=marker_payload,
-                blob_path=marker_name,
-                connection_string=AZURE_CONNECTION_STRING,
-                container_name="bronze"
-            )
-
-            flash(f"Pricing review submitted for {vendor_name}.", "success")
-
-        except Exception as e:
-            flash(f"Pricing upload failed: {e}", "danger")
-
-        return redirect(url_for("upload_page"))
-
-    # -----------------------------------------------------
-    # VENDOR SUBMISSION FLOW (UNCHANGED LOGIC)
-    # -----------------------------------------------------
-    if submission_type == "vendor":
-
-        # Finalize submission
-        final_submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        draft_submission_id = session.get("active_submission_id")
-
-        submission_id = final_submission_id
-
-        # Rotate session state
-        session["last_submission_id"] = submission_id
-        session["last_submission_vendor"] = vendor_name
-        session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        session.modified = True
-
-        if not vendor_name:
-            flash("Please select a vendor before submitting.", "danger")
-            return redirect(url_for("upload_page"))
-
-    # Shared
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    # -------------------------------
-    # PROCESS OPTICAT VENDORS
-    # -------------------------------
-    if vendor_type == "opticat":
-        logger.info(f"OptiCat submission for vendor={vendor_name}")
-        product_file = request.files.get('product_file')
-        pricing_file = request.files.get('pricing_file')
-
-        if not product_file or not pricing_file:
-            flash('XML and Pricing XLSX are required for OptiCat vendors.', 'danger')
-            return redirect(url_for('upload_page'))
-
-        # Save locally first
-        product_path = save_file(product_file, vendor_name, "opticat", app.config['UPLOAD_FOLDER'])
-        pricing_path = save_file(pricing_file, vendor_name, "opticat", app.config['UPLOAD_FOLDER'])
-
-         # 🚚 MOVE ASSETS
-        move_assets_to_final_submission(
-            vendor=vendor_name,
-            draft_submission_id=draft_submission_id,
-            final_submission_id=final_submission_id
-        )
-
-
-        try:
-            upload_to_azure_bronze_opticat(
-                vendor=vendor_name,
-                submission_id=submission_id,
-                xml_local_path=product_path,
-                pricing_local_path=pricing_path,
-                connection_string=AZURE_CONNECTION_STRING,
-                container_name=AZURE_CONTAINER_NAME,
-                upload_folder=app.config['UPLOAD_FOLDER']
-            )
-            asset_blob_paths = request.form.getlist("asset_blob_path[]")
-
-            if asset_blob_paths:
-                latest_asset = asset_blob_paths[-1]
-
-                blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
-                container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
-
-            # ---------------------------------------
-            # CREATE NOTIFY MARKER (Vendor Submission)
-            # ---------------------------------------
-            marker_payload = {
-                # --------------------
-                # Marker governance
-                # --------------------
-                "schema_version": "2.0",
-                "marker_type": "VENDOR_SUBMISSION",
-
-                # --------------------
-                # Identity
-                # --------------------
-                "vendor": vendor_name,
-                "submission_id": submission_id,
-
-                # --------------------
-                # Submission metadata
-                # --------------------
-                "submission_type": "vendor_submission",
-                "vendor_type": "opticat",
-
-                # --------------------
-                # Intent flags
-                # --------------------
-                "actions": {
-                    "notify": True,     # Logic App email
-                    "run_etl": True     # ETL watcher allowed
-                },
-
-                # --------------------
-                # Context (optional but useful)
-                # --------------------
-                "uploaded_files": [
-                    product_file.filename,
-                    pricing_file.filename
-                ],
-                "raw_vendor_path": f"raw/vendor={vendor_name}",
-
-                "created_at": datetime.utcnow().isoformat() + "Z"
-            }
-
-
-            marker_name = (
-                f"raw/notifymarker/"
-                f"{vendor_name}_{timestamp}.json"
-            )
-
-            upload_json_blob(
-                data=marker_payload,
-                blob_path=marker_name,
-                connection_string=AZURE_CONNECTION_STRING,
-                container_name="bronze"
-            )
-
-            session["last_submission_id"] = submission_id
-            session["last_submission_vendor"] = vendor_name
-            session.modified = True
-
-            flash(f'OptiCat files for {vendor_name} uploaded successfully.', 'success')
-
-            # trigger_etl(vendor_name, submission_id)
-
-        except Exception as e:
-            flash(f'Azure upload failed: {e}', 'danger')
-        
-        logger.info(f"Submitting ETL Request. . . .")
-
-        return redirect(url_for('upload_page'))
-
-    # -------------------------------
-    # PROCESS NON-OPTICAT VENDORS
-    # -------------------------------
-    elif vendor_type == "non-opticat":
-        logger.info(f"Non-OptiCat submission for vendor={vendor_name}")
-        unified_file = request.files.get('non_opticat_file')
-
-        if not unified_file:
-            flash('A unified XLSX file is required for Non-OptiCat vendors.', 'danger')
-            return redirect(url_for('upload_page'))
-
-        # Save unified vendor file
-        unified_path = save_file(unified_file, vendor_name, "non_opticat", app.config['UPLOAD_FOLDER'])
-
-            # 🚚 MOVE ASSETS
-        move_assets_to_final_submission(
-            vendor=vendor_name,
-            draft_submission_id=draft_submission_id,
-            final_submission_id=final_submission_id
-        )
-
-        try:
-            upload_to_azure_bronze_non_opticat(
-                vendor=vendor_name,
-                submission_id=submission_id,
-                unified_local_path=unified_path,
-                connection_string=AZURE_CONNECTION_STRING,
-                container_name=AZURE_CONTAINER_NAME,
-                upload_folder=app.config['UPLOAD_FOLDER']
-            )
-            asset_blob_paths = request.form.getlist("asset_blob_path[]")
-
-            if asset_blob_paths:
-                latest_asset = asset_blob_paths[-1]
-
-                blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
-                container_client = blob_service_client.get_container_client(AZURE_CONTAINER_NAME)
-
-            # ---------------------------------------
-            # CREATE NOTIFY MARKER (Vendor Submission)
-            # ---------------------------------------
-            marker_payload = {
-                # --------------------
-                # Marker governance
-                # --------------------
-                "schema_version": "2.0",
-                "marker_type": "VENDOR_SUBMISSION",
-
-                # --------------------
-                # Identity
-                # --------------------
-                "vendor": vendor_name,
-                "submission_id": submission_id,
-
-                # --------------------
-                # Submission metadata
-                # --------------------
-                "submission_type": "vendor_submission",
-                "vendor_type": "non-opticat",
-
-                # --------------------
-                # Intent flags
-                # --------------------
-                "actions": {
-                    "notify": True,
-                    "run_etl": True
-                },
-
-                # --------------------
-                # Context
-                # --------------------
-                "uploaded_files": [
-                    unified_file.filename
-                ],
-                "raw_vendor_path": f"raw/vendor={vendor_name}",
-
-                "created_at": datetime.utcnow().isoformat() + "Z"
-            }
-
-
-            marker_name = (
-                f"raw/notifymarker/"
-                f"{vendor_name}_{timestamp}.json"
-            )
-
-            upload_json_blob(
-                data=marker_payload,
-                blob_path=marker_name,
-                connection_string=AZURE_CONNECTION_STRING,
-                container_name="bronze"
-            )
-            flash(f'Unified file for {vendor_name} uploaded successfully.', 'success')
-
-            session["last_submission_id"] = submission_id
-            session["last_submission_vendor"] = vendor_name
-            session.modified = True
-
-            write_status_to_azure(
-                vendor=vendor_name,
-                submission_id=submission_id,
-                stage="UPLOAD",
-                status="DONE",
-                message="Files uploaded to bronze"
-            )
-
-            trigger_etl(vendor_name, submission_id)
-
-        except Exception as e:
-            flash(f'Azure upload failed: {e}', 'danger')
-
-        return redirect(url_for('upload_page'))
-
-    else:
-        flash("Unknown vendor type.", "danger")
-        return redirect(url_for("upload_page"))
-    
 from flask import Response
 import time
 
@@ -655,7 +176,8 @@ def get_asset_upload_sas():
     print("🔐 Generating SAS for:", blob_path)
 
     sas_url = generate_upload_sas(
-        container=AZURE_CONTAINER_NAME,
+        container=app.config["AZURE_CONTAINER_NAME"]
+,
         blob_path=blob_path
     )
 
@@ -670,7 +192,7 @@ def download_template():
         return send_from_directory(TEMPLATE_FOLDER, "standard_template.xlsx", as_attachment=True)
     except FileNotFoundError:
         flash("Template not found on server.", "danger")
-        return redirect(url_for('upload_page'))
+        return redirect(url_for('upload.upload_page'))
 
 
 @app.route('/form-help')
@@ -1321,7 +843,7 @@ def check_asset_hash():
     blob_service = BlobServiceClient.from_connection_string(
         os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     )
-    container_client = blob_service.get_container_client(AZURE_CONTAINER_NAME)
+    container_client = blob_service.get_container_client(app.config["AZURE_CONTAINER_NAME"])
 
     prefix = f"raw/vendor={vendor}/submission={submission_id}/assets/"
 
@@ -1362,7 +884,7 @@ def cleanup_old_assets():
     blob_service = BlobServiceClient.from_connection_string(
         os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     )
-    container_client = blob_service.get_container_client(AZURE_CONTAINER_NAME)
+    container_client = blob_service.get_container_client(app.config["AZURE_CONTAINER_NAME"])
 
     prefix = f"raw/vendor={vendor}/submission={submission_id}/assets/"
 
@@ -1422,7 +944,8 @@ def api_output_summary():
     if not vendor:
         return {"promotion_status": "UNKNOWN", "outputs": [], "rejection_logs": []}
 
-    blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
+    blob_service = BlobServiceClient.from_connection_string(app.config["AZURE_CONNECTION_STRING"]
+)
     container = blob_service.get_container_client("silver")
 
     result = {
@@ -1556,9 +1079,6 @@ def api_output_summary():
                     blob_service, "bronze", blob.name
                 )
             })
-
-
-        
     return result
         
 
@@ -1569,7 +1089,8 @@ def download_log():
     vendor = request.args.get("vendor")
     submission_id = request.args.get("submission_id")
 
-    blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
+    blob_service = BlobServiceClient.from_connection_string(app.config["AZURE_CONNECTION_STRING"]
+)
     container = blob_service.get_container_client("silver")
 
     prefix = f"rejected/logs/vendor={vendor}/submission={submission_id}/"
@@ -1597,7 +1118,8 @@ def log_preview():
 
     vendor = request.args.get("vendor")
     submission_id = request.args.get("submission_id")
-    blob_service = BlobServiceClient.from_connection_string(AZURE_CONN)
+    blob_service = BlobServiceClient.from_connection_string(app.config["AZURE_CONNECTION_STRING"]
+)
     container = blob_service.get_container_client("silver")
     prefix = f"rejected/logs/vendor={vendor}/submission={submission_id}/"
 
@@ -1615,8 +1137,6 @@ def log_preview():
     preview = df.head(20).to_dict(orient="records")
 
     return {"rows": preview}
-
-
 
 # ---------------------------------------
 # MAIN
