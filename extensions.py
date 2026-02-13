@@ -1,10 +1,12 @@
-from flask_login import LoginManager
 import logging
 from collections import deque
 from flask_login import LoginManager
+from flask_sqlalchemy import SQLAlchemy
 
-login_manager = LoginManager()
-
+# ----------------------------
+# DATABASE
+# ----------------------------
+db = SQLAlchemy()
 
 # ----------------------------
 # LOGIN MANAGER
