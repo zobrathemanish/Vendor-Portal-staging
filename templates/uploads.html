@@ -155,9 +155,10 @@ body {
   color: #000;
   border: 1px solid #7F9DB9;
   border-radius: 0;
-  height: 28px;
+  height: 29px;
   line-height: 28px;      /* 👈 THIS centers text vertically */
-  padding: 0 12px;        /* 👈 remove vertical padding */
+  padding: 0 15px;        /* 👈 remove vertical padding */
+  margin-top: 2px;
   text-align: center;
 }
 
@@ -435,7 +436,6 @@ a {
   margin-bottom: 0px;   /* reduce vertical spacing */
 }
 
-
 </style>
 
 </head>
@@ -488,12 +488,12 @@ a {
               <div class="col" style="flex: 0 0 750px; max-width: 600px;">
                 <div class="card">
 
-                  <h4 class="mb-4">Vendor file submission</h4>
+                  <h4 class="mb-3">Vendor file submission</h4>
 
                   {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
                       {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                        <div class="alert alert-{{ category }} auto-flash">{{ message }}</div>
                       {% endfor %}
                     {% endif %}
                   {% endwith %}
@@ -588,7 +588,7 @@ a {
 
               <!-- RIGHT SIDE PANEL (STACKED) -->
               <!-- RIGHT SIDE PANEL -->
-              <div class="col" style="flex: 0 0 360px; max-width: 360px;">
+              <div class="col" style="flex: 0 0 360px; max-width: 360px; margin-top: 12px;">
 
                 <!-- SUBMISSION STATUS -->
                 <div class="card system-panel">
@@ -1235,6 +1235,18 @@ function loadOutputSummary(vendor, submissionId) {
 }
 </script>
 
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    const alerts = document.querySelectorAll(".auto-flash");
+    alerts.forEach(a => {
+      setTimeout(() => {
+        a.style.transition = "opacity 250ms ease";
+        a.style.opacity = "0";
+        setTimeout(() => a.remove(), 300);
+      }, 2000); // 2 seconds
+    });
+  });
+</script>
 
 
 </div>
