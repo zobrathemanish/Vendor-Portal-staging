@@ -309,7 +309,7 @@ a {
 }
 
 .status-log::before {
-  content: "ETL PIPELINE CONSOLE";
+  content: var(--console-title, "ETL PIPELINE CONSOLE");
   display: block;
   margin-bottom: 10px;
   text-align: center;
@@ -319,6 +319,7 @@ a {
   border-bottom: 1px solid #999;
   padding-bottom: 10px;
 }
+
 
 .output-list {
   font-size: 12px;
@@ -1118,17 +1119,15 @@ function pollSubmissionStatus(vendor, submissionId) {
   if (window.CURRENT_SUBMISSION_ID && window.CURRENT_SUBMISSION_VENDOR) {
 
     const submissionId = window.CURRENT_SUBMISSION_ID;
+    document.documentElement.style
+  .setProperty("--console-title", `"Submission ID: ${submissionId}"`);
+
     const submissionVendor = window.CURRENT_SUBMISSION_VENDOR;
 
     ACTIVE_SUBMISSION_ID = submissionId;
 
     const box = document.getElementById("submission-status-log");
-    if (box) {
-      box.textContent =
-        "Submission ID: " + submissionId +
-        "\n---------------------------------\n";
-    }
-
+      if (box) box.textContent = "";
 
     pollSubmissionStatus(submissionVendor, submissionId);
   }
