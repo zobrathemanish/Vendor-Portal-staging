@@ -629,7 +629,9 @@ a {
           <a href="{{ url_for('single_product.single_product_page') }}" id="action-f6"><span>F6=Submit Single Product,</span></a>
           <a href="{{ url_for('utility.form_submission_help') }}" id="action-f12"><span>F12=Help</span></a>
           <span class="footer-gap"></span>
-          <span id="action-f3">F3=Log off</span>
+          <a href="{{ url_for('auth.logout') }}" id="action-f3">
+            <span>F3=Log off</span>
+          </a>
         </div>
       </div>
 
@@ -978,8 +980,9 @@ document.addEventListener("keydown", function (e) {
 
     case "F3":
       e.preventDefault();
-      alert("Log off (placeholder)");
+      document.getElementById("action-f3")?.click();
       break;
+
   }
 });
 </script>
