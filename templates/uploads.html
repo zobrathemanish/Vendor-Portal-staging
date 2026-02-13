@@ -340,12 +340,16 @@ a {
 
 .output-report {
   background-color: #f2f2f2;
-  border: 1px solid #c9c9c9;
+  /* border: 1px solid #c9c9c9; */
+  border: 1px solid #f2f2f2;
   padding: 12px;  
   font-family: "Segoe UI", Tahoma, Arial, sans-serif;
   font-size: 13px;
   line-height: 1.5;
-  width: 19.5vw;
+  width: 80vw;        /* match submission */
+  max-width: 380px;   /* match submission */
+  min-width: 320px;   /* match submission */
+  padding: 8px;
   box-sizing: border-box;
 }
 
@@ -388,49 +392,12 @@ a {
   font-weight: 600;
 }
 
-/* ================================
-   DESKTOP FILE TILE
-   ================================ */
-
-.file-tile {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-
-  width: 90px;
-  padding: 10px;
-  margin: 6px;
-
-  text-decoration: none;
-  color: #000;
-  border-radius: 6px;
-
-  transition: background 0.15s ease;
-}
-
-.file-tile:hover {
-  background-color: #e8edf3;
-}
-
-.file-tile img {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 6px;
-}
-
-.file-tile-name {
-  font-size: 12px;
-  text-align: center;
-  word-break: break-word;
-}
-
-/* FILE GRID (Windows-like) */
+/* FILE GRID (Compact Windows style) */
 .file-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .file-tile {
@@ -439,12 +406,10 @@ a {
   align-items: center;
   justify-content: center;
 
-  width: 100px;
-  padding: 10px;
-
+  padding: 6px;
   text-decoration: none;
   color: #000;
-  border-radius: 6px;
+  border-radius: 4px;
   transition: background 0.15s ease;
 }
 
@@ -453,17 +418,22 @@ a {
 }
 
 .file-tile img {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 6px;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 4px;
 }
 
 .file-tile-name {
-  font-size: 12px;
+  font-size: 11px;
   text-align: center;
   word-break: break-word;
 }
 
+
+.system-panel {
+  padding: 10px 12px;
+  margin-bottom: 0px;   /* reduce vertical spacing */
+}
 
 
 </style>
@@ -618,7 +588,7 @@ a {
 
               <!-- RIGHT SIDE PANEL (STACKED) -->
               <!-- RIGHT SIDE PANEL -->
-              <div class="col" style="flex: 0 0 280px; max-width: 280px;">
+              <div class="col" style="flex: 0 0 360px; max-width: 360px;">
 
                 <!-- SUBMISSION STATUS -->
                 <div class="card system-panel">
@@ -630,7 +600,7 @@ a {
                 </div>
 
                 <!-- OUTPUT STATUS (MATCHING CARD) -->
-                <div class="card system-panel mt-2">
+                <div class="card system-panel">
                   <h5>Output status</h5>
 
                   <div id="output-files" class="output-report">
