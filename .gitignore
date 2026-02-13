@@ -4,3 +4,6 @@
 #Flask uploads
 uploads/
 
+seed_users.py
+users.db
+
