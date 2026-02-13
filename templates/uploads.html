@@ -657,6 +657,7 @@ a {
 <div id="submission-meta"
      data-vendor="{{ submission_vendor }}"
      data-submission-id="{{ submission_id }}"
+     data-active-submission-id="{{ active_submission_id }}"
      data-autostart="{{ '1' if submission_id else '' }}">
 </div>
 
@@ -1122,7 +1123,12 @@ function pollSubmissionStatus(vendor, submissionId) {
     ACTIVE_SUBMISSION_ID = submissionId;
 
     const box = document.getElementById("submission-status-log");
-    if (box) box.textContent = "";
+    if (box) {
+      box.textContent =
+        "Submission ID: " + submissionId +
+        "\n---------------------------------\n";
+    }
+
 
     pollSubmissionStatus(submissionVendor, submissionId);
   }

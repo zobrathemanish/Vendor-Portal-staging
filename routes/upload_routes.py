@@ -31,10 +31,13 @@ def upload_page():
         session.modified = True
 
     return render_template(
-        "uploads.html",
-        submission_id=session.get("last_submission_id") or session.get("active_submission_id"),
-        submission_vendor=session.get("last_submission_vendor") or session.get("active_submission_vendor")
-    )
+            "uploads.html",
+            submission_id=session.get("last_submission_id"),   # 👈 ONLY poll this
+            submission_vendor=session.get("last_submission_vendor"),
+            active_submission_id=session.get("active_submission_id"),
+            active_submission_vendor=session.get("active_submission_vendor")
+        )
+
 
 @upload_bp.route('/upload/', methods=['POST'])
 @login_required
