@@ -1,21 +1,275 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Login</title>
+  <meta charset="UTF-8">
+  <title>FGI Vendor Portal - Login</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+  /* ================================
+     WINDX SYSTEM SHELL
+     ================================ */
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    font-size: 14px;
+    color: #000;
+    background-color: #E5E5E5;
+  }
+
+  #app-shell {
+    height: 100%;
+  }
+
+  /* ---------- Title Bar ---------- */
+  .windx-titlebar {
+    border-top: 1px solid #000;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    height: 50px;
+    padding: 0 20px;
+    background: #FFFFFF;
+    font-size: 16px;
+  }
+
+  .title-left { justify-self: start; }
+  .title-center { justify-self: center; font-weight: bold; }
+  .title-right { justify-self: end; }
+
+  /* ---------- System Shell ---------- */
+  .system-shell {
+    display: flex;
+    height: calc(100vh - 50px);
+    width: 100%;
+  }
+
+  /* ---------- Rails ---------- */
+  .system-rail {
+    width: 17px;
+    background: #000;
+    display: flex;
+    justify-content: center;
+  }
+
+  .system-rail-line {
+    width: 2px;
+    background: #FFF;
+    height: 100%;
+  }
+
+  /* ---------- Center ---------- */
+  .system-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #E5E5E5;
+  }
+
+  .system-top-bar {
+    height: 17px;
+    background: #000;
+    display: flex;
+    align-items: center;
+  }
+
+  .system-top-line {
+    width: 100%;
+    height: 2px;
+    background: #FFF;
+  }
+
+  .system-bottom-bar {
+    height: 17px;
+    background: #000;
+    display: flex;
+    align-items: center;
+  }
+
+  .system-bottom-line {
+    width: 100%;
+    height: 2px;
+    background: #FFF;
+  }
+
+  /* ---------- Workspace ---------- */
+  .app-workspace {
+  flex: 1 1 auto;
+  background: #E5E5E5;
+
+  display: flex;
+  justify-content: center;   /* horizontal */
+  align-items: center;       /* vertical */
+
+  min-height: 0;
+}
+
+
+
+  .workspace-frame {
+  background: #F2F2F2;
+  padding: 70px 70px;   /* vertical spacing */
+  width: calc(100% - 450px);   /* leaves margin on both sides */
+  max-width: 1200px;            /* remove width restriction */
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;   /* horizontal center */
+  align-items: center;       /* vertical center */
+}
+
+
+  /* ---------- Login Card ---------- */
+  .card.text-center {
+    padding: 28px;
+    border: 1px solid #D0D0D0;
+    background-color: #FFFFFF;
+    width: 420px;
+    margin: 0;     /* let flexbox handle centering */
+}
+
+
+  .card.text-center h5 {
+    font-weight: 600;
+  }
+
+  .form-control {
+    font-size: 13px;
+    border-radius: 0;
+    background-color: #FFFFFF;
+    border: 1px solid #7F9DB9;
+    padding: 4px 6px;
+  }
+
+  .form-control:focus {
+    outline: none;
+    border-color: #003399;
+    box-shadow: none;
+  }
+
+  .btn-primary {
+    background: #FFFFFF;
+    color: #000;
+    border: 1px solid #7F9DB9;
+    border-radius: 0;
+    height: 29px;
+    line-height: 28px;
+    padding: 0 15px;
+  }
+
+  .btn-primary:hover {
+    background-color: #E8E8E8;
+  }
+
+  </style>
 </head>
+
 <body>
-  <h3>FGI Vendor Portal Login</h3>
 
-  <form method="POST">
-    <input name="email" placeholder="Email" required><br><br>
-    <input name="password" type="password" placeholder="Password" required><br><br>
-    <button type="submit">Login</button>
-  </form>
+<div id="app-shell">
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, msg in messages %}
-      <p>{{ msg }}</p>
-    {% endfor %}
-  {% endwith %}
+  <!-- TITLE BAR -->
+  <div class="windx-titlebar">
+    <div class="title-left" id="sys-date"></div>
+    <div class="title-center">Fort Garry Industries</div>
+    <div class="title-right" id="sys-time"></div>
+  </div>
+
+  <div class="system-shell">
+
+    <!-- LEFT RAIL -->
+    <div class="system-rail">
+      <div class="system-rail-line"></div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="system-center">
+
+      <div class="system-top-bar">
+        <div class="system-top-line"></div>
+      </div>
+
+      <!-- LOGIN WORKSPACE -->
+      <div class="app-workspace">
+
+        <div class="workspace-frame">
+
+          <div class="card text-center">
+
+            <div class="mb-4">
+              <img src="{{ url_for('static', filename='image.png') }}"
+                   alt="FGI Logo"
+                   style="max-width: 180px;">
+            </div>
+
+            <h5 class="mb-4">Vendor Portal Login</h5>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('auth.login') }}">
+
+              <div class="mb-3 text-start">
+                <label class="form-label fw-semibold">User ID</label>
+                <input type="email" class="form-control" name="userid" required>
+              </div>
+
+              <div class="mb-4 text-start">
+                <label class="form-label fw-semibold">Password</label>
+                <input type="password" class="form-control" name="password" required>
+              </div>
+
+              <div class="d-grid">
+                <button type="submit" class="btn btn-primary">
+                  Login
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="system-bottom-bar">
+        <div class="system-bottom-line"></div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT RAIL -->
+    <div class="system-rail">
+      <div class="system-rail-line"></div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+function updateSystemTime() {
+  const now = new Date();
+  document.getElementById("sys-date").textContent =
+    now.toLocaleDateString();
+  document.getElementById("sys-time").textContent =
+    now.toLocaleTimeString();
+}
+updateSystemTime();
+setInterval(updateSystemTime, 1000);
+</script>
+
 </body>
 </html>
