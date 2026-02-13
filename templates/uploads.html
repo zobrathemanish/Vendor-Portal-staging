@@ -620,7 +620,10 @@ a {
       <!-- WINDX FOOTER (INSIDE RECTANGLE) -->
       <div class="windx-footer-panel">
         <div class="footer-left">
-          <span>User: MANISH</span>
+          <span>
+            User: {{ current_user.username | upper }}
+            ({{ current_user.role | upper }})
+          </span>
           
         </div>
 
