@@ -1,6 +1,22 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
-from models.user import SimpleUser, USERS
+from models.simple_user import SimpleUser, USERS
+
+from models.simple_user import SimpleUser, USERS
+from extensions import login_manager
+
+@login_manager.user_loader
+def load_user(user_id):
+    for email, u in USERS.items():
+        if str(u["id"]) == str(user_id):
+            return SimpleUser(
+                id=u["id"],
+                email=email,
+                role=u["role"],
+                vendor=u["vendor"]
+            )
+    return None
+
 
 auth_bp = Blueprint("auth", __name__)
 
