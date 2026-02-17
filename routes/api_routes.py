@@ -228,13 +228,26 @@ def api_output_summary():
         f"review/"
     )
 
+    DISPLAY_FILES = {
+    "etl_mapped.xlsx",
+    "delta_mapped.xlsx",
+    "etl_review_reports.xlsx",
+    "etl_mapped_summary.json",
+    "errors_all.xlsx",
+}
+
     for blob in container.list_blobs(name_starts_with=ready_prefix):
+
         if blob.name.endswith("/"):
             continue
 
         filename = os.path.basename(blob.name)
 
+        # Skip internal artifacts
         if filename.lower().endswith(".done"):
+            continue
+
+        if filename not in DISPLAY_FILES:
             continue
 
         result["outputs"].append({

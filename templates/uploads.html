@@ -1116,7 +1116,9 @@ function pollSubmissionStatus(vendor, submissionId) {
 </script>
 
 <script>
-  if (window.CURRENT_SUBMISSION_ID && window.CURRENT_SUBMISSION_VENDOR) {
+  const autoStart = meta.dataset.autostart === "1";
+
+if (autoStart && window.CURRENT_SUBMISSION_ID && window.CURRENT_SUBMISSION_VENDOR) {
 
     const submissionId = window.CURRENT_SUBMISSION_ID;
     document.documentElement.style
