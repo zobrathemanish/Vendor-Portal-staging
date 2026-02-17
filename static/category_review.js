@@ -1,7 +1,7 @@
 (async function () {
 
   const el = {
-    table: document.getElementById("queueTable"),
+    container: document.getElementById("queueTable").parentElement.parentElement.parentElement,
     search: document.getElementById("search"),
     filterDecision: document.getElementById("filterDecision"),
 
@@ -10,11 +10,6 @@
     badgePending: document.getElementById("badge-pending"),
     badgeApproved: document.getElementById("badge-approved"),
     badgeRejected: document.getElementById("badge-rejected"),
-
-    detailCard: document.getElementById("detailCard"),
-    detailTitle: document.getElementById("detailTitle"),
-    detailMeta: document.getElementById("detailMeta"),
-    detailBody: document.getElementById("detailBody"),
   };
 
   let state = {
@@ -36,12 +31,20 @@
     el.badgeRejected.textContent = `rejected: ${state.summary.rejected || 0}`;
   }
 
-  function renderTable() {
+  function groupByVendor(items) {
+    return items.reduce((acc, item) => {
+      if (!acc[item.vendor]) acc[item.vendor] = [];
+      acc[item.vendor].push(item);
+      return acc;
+    }, {});
+  }
+
+  function render() {
 
     const q = (el.search.value || "").toLowerCase();
     const f = el.filterDecision.value;
 
-    const filtered = state.items
+    let filtered = state.items
       .filter(i =>
         (!q ||
           i.part_number.toLowerCase().includes(q) ||
@@ -51,35 +54,63 @@
       .filter(i => f === "all" || i.decision === f);
 
     if (!filtered.length) {
-      el.table.innerHTML = `
-        <tr>
-          <td colspan="7" class="text-center text-muted py-4">
-            No items found.
-          </td>
-        </tr>`;
+      el.container.innerHTML = `
+        <div class="text-center text-muted py-5">
+          No items found.
+        </div>`;
       return;
     }
 
-    el.table.innerHTML = filtered.map(item => `
-      <tr>
-        <td>${item.vendor}</td>
-        <td class="fw-semibold">${item.part_number}</td>
-        <td class="text-center">${item.row_inserts}</td>
-        <td class="text-center">${item.row_updates}</td>
-        <td class="text-center">${item.row_deletes}</td>
-        <td>${decisionBadge(item.decision)}</td>
-        <td>
-          <div class="d-flex gap-1">
-            <button class="btn btn-sm btn-success"
-              onclick="updateDecision('${item.vendor}','${item.part_number}','approve')">✔</button>
-            <button class="btn btn-sm btn-danger"
-              onclick="updateDecision('${item.vendor}','${item.part_number}','reject')">✖</button>
-            <button class="btn btn-sm btn-outline-secondary"
-              onclick="updateDecision('${item.vendor}','${item.part_number}','pending')">⏸</button>
+    const grouped = groupByVendor(filtered);
+
+    el.container.innerHTML = Object.entries(grouped).map(([vendor, items]) => {
+
+      const rows = items.map(item => `
+        <tr>
+          <td class="fw-semibold">${item.part_number}</td>
+          <td class="text-center">${item.row_inserts}</td>
+          <td class="text-center">${item.row_updates}</td>
+          <td class="text-center">${item.row_deletes}</td>
+          <td>${decisionBadge(item.decision)}</td>
+          <td>
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-success"
+                onclick="updateDecision('${item.vendor}','${item.part_number}','approve')">✔</button>
+              <button class="btn btn-sm btn-danger"
+                onclick="updateDecision('${item.vendor}','${item.part_number}','reject')">✖</button>
+              <button class="btn btn-sm btn-outline-secondary"
+                onclick="updateDecision('${item.vendor}','${item.part_number}','pending')">⏸</button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+
+      return `
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div class="fw-semibold">📦 ${vendor}</div>
+            <div class="small text-muted">${items.length} part(s)</div>
           </div>
-        </td>
-      </tr>
-    `).join("");
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Part Number</th>
+                  <th class="text-center">Insert</th>
+                  <th class="text-center">Update</th>
+                  <th class="text-center">Delete</th>
+                  <th>Status</th>
+                  <th style="width:180px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }).join("");
   }
 
   window.updateDecision = async function(vendor, part, decision) {
@@ -100,19 +131,16 @@
 
     if (item) item.decision = decision;
 
-    renderTable();
-    updateCounts();
-  };
-
-  function updateCounts() {
     state.summary.pending = state.items.filter(i => i.decision === "pending").length;
     state.summary.approved = state.items.filter(i => i.decision === "approve").length;
     state.summary.rejected = state.items.filter(i => i.decision === "reject").length;
-    renderSummary();
-  }
 
-  el.search.oninput = renderTable;
-  el.filterDecision.onchange = renderTable;
+    renderSummary();
+    render();
+  };
+
+  el.search.oninput = render;
+  el.filterDecision.onchange = render;
 
   async function loadQueue() {
     try {
@@ -123,15 +151,13 @@
       state.summary = data.summary || {};
 
       renderSummary();
-      renderTable();
+      render();
 
     } catch (err) {
-      el.table.innerHTML = `
-        <tr>
-          <td colspan="7" class="text-danger text-center py-4">
-            Failed to load queue.
-          </td>
-        </tr>`;
+      el.container.innerHTML = `
+        <div class="text-danger text-center py-5">
+          Failed to load queue.
+        </div>`;
       console.error(err);
     }
   }
