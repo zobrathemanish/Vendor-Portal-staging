@@ -9,9 +9,13 @@ auth_bp = Blueprint("auth", __name__)
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    print("Authenticated:", current_user.is_authenticated)
+    if current_user.is_authenticated:
+        # Already logged in → redirect based on role
+        return _role_redirect(current_user)
+
     if request.method == "POST":
         username = request.form.get("userid")
         password = request.form.get("password")
@@ -21,7 +25,9 @@ def login():
         if user and user.is_active and user.check_password(password):
             login_user(user)
             flash("Logged in successfully", "success")
-            return redirect(url_for("upload.upload_page"))
+
+            # 🔥 ROLE BASED REDIRECT
+            return _role_redirect(user)
 
         flash("Invalid credentials", "danger")
 
@@ -35,9 +41,36 @@ def logout():
     flash("Logged out", "info")
     return redirect(url_for("auth.login"))
 
+
 @auth_bp.route("/")
 def index():
     if current_user.is_authenticated:
-        return redirect(url_for("upload.upload_page"))
+        return _role_redirect(current_user)
+
     return redirect(url_for("auth.login"))
 
+
+# ======================================================
+# 🔐 ROLE REDIRECT LOGIC (Enterprise Clean)
+# ======================================================
+
+def _role_redirect(user):
+    """
+    Centralized role-based routing logic.
+    Keeps login clean and future-proof.
+    """
+
+    if user.role == "category":
+        return redirect(url_for("category_review.category_review_page"))
+
+    elif user.role == "pricing":
+        return redirect(url_for("upload.upload_page"))
+
+    elif user.role == "vendor":
+        return redirect(url_for("upload.upload_page"))
+
+    elif user.role == "admin":
+        return redirect(url_for("upload.upload_page"))
+
+    # Default fallback
+    return redirect(url_for("upload.upload_page"))

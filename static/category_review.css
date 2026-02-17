@@ -1,0 +1,174 @@
+/* =========================================================
+   GLOBAL LAYOUT
+========================================================= */
+
+body {
+  background-color: #f8f9fa;
+  font-size: 14px;
+}
+
+h4 {
+  font-weight: 600;
+}
+
+/* =========================================================
+   HEADER BADGES
+========================================================= */
+
+.badge {
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+#badge-status {
+  text-transform: uppercase;
+}
+
+/* =========================================================
+   VENDOR SELECT
+========================================================= */
+
+#vendorSelect {
+  font-weight: 500;
+}
+
+#vendorSelect:focus {
+  box-shadow: none;
+  border-color: #adb5bd;
+}
+
+/* =========================================================
+   LEFT PANEL – PART LIST
+========================================================= */
+
+#partList .list-group-item {
+  transition: background-color 0.15s ease, transform 0.05s ease;
+  border: none;
+  border-bottom: 1px solid #f1f3f5;
+}
+
+#partList .list-group-item:hover {
+  background-color: #f1f3f5;
+}
+
+#partList .list-group-item.active {
+  background-color: #e9ecef;
+  color: #212529;
+  border-left: 4px solid #0d6efd;
+}
+
+#partList .list-group-item.active .badge {
+  filter: brightness(1.05);
+}
+
+/* =========================================================
+   DIFF TABLE STYLING
+========================================================= */
+
+.table {
+  font-size: 13px;
+}
+
+.table thead th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.table td.field {
+  font-weight: 600;
+  background: #ffffff;
+}
+
+.table td.before {
+  background: #f8f9fa;
+  color: #495057;
+}
+
+.table td.after {
+  background: #e6f4ea;
+  color: #0f5132;
+  font-weight: 600;
+}
+
+/* =========================================================
+   DETAIL PANEL
+========================================================= */
+
+#detailTitle {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+#detailMeta {
+  font-size: 12px;
+}
+
+/* =========================================================
+   BUTTON POLISH
+========================================================= */
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-success,
+.btn-danger,
+.btn-outline-secondary {
+  transition: all 0.15s ease;
+}
+
+.btn-success:hover {
+  transform: translateY(-1px);
+}
+
+.btn-danger:hover {
+  transform: translateY(-1px);
+}
+
+.btn-outline-secondary:hover {
+  transform: translateY(-1px);
+}
+
+/* =========================================================
+   EMPTY STATES
+========================================================= */
+
+.text-muted {
+  opacity: 0.85;
+}
+
+/* =========================================================
+   CARD POLISH
+========================================================= */
+
+.card {
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+}
+
+.card-header {
+  border-bottom: 1px solid #e9ecef;
+}
+
+/* =========================================================
+   SCROLL AREA SMOOTHNESS
+========================================================= */
+
+#partList {
+  scrollbar-width: thin;
+}
+
+#partList::-webkit-scrollbar {
+  width: 6px;
+}
+
+#partList::-webkit-scrollbar-thumb {
+  background-color: #ced4da;
+  border-radius: 4px;
+}
+
+#partList::-webkit-scrollbar-thumb:hover {
+  background-color: #adb5bd;
+}
