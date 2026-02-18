@@ -120,6 +120,24 @@ def upsert_decision(container, vendor: str, part_number: str, decision: str, use
 
     _upload_bytes(container, decisions_path(vendor), _parquet_bytes_from_df(df))
 
+def load_asset_quality(container, vendor: str) -> pd.DataFrame:
+    try:
+        path = f"ready/vendor={vendor}/assets/_metadata/asset_quality.parquet"
+        print("LOADING ASSET QUALITY FROM →", path)
+
+        raw = _download_bytes(container, path)
+        df = _df_from_parquet_bytes(raw)
+
+        print("ASSET QUALITY ROW COUNT →", len(df))
+        print("ASSET QUALITY COLUMNS →", list(df.columns))
+
+        return df
+
+    except Exception as e:
+        print("ASSET QUALITY LOAD FAILED ❌", e)
+        return pd.DataFrame()
+
+
 # =========================================================
 # PAGE ROUTE
 # =========================================================
@@ -352,3 +370,308 @@ def api_category_review_work_queue():
         "summary": summary,
         "items": items
     })
+
+@category_review_bp.route("/api/category-review/part-intelligence")
+@login_required
+def api_part_intelligence():
+
+    if current_user.role != "category":
+        abort(403)
+
+    vendor = request.args.get("vendor")
+    part = request.args.get("part")
+
+    if not vendor or not part:
+        return jsonify({"error": "Missing params"}), 400
+
+    container = _container()
+    df = load_delta(container, vendor)
+
+    if df.empty:
+        return jsonify({"error": "No delta found"}), 404
+
+    df_part = df[
+        (df["Part Number"].astype(str) == str(part)) &
+        (df["_delta_type"] == "insert")
+    ].copy()
+
+    print("DELTA ROWS FOR PART:", part)
+    print(df_part[["Part Number", "__Section"]])
+
+
+    if df_part.empty:
+        return jsonify({"error": "No insert data found"}), 404
+
+    # =====================================================
+    # SECTION SPLITS
+    # =====================================================
+
+    item_master = df_part[df_part["__Section"] == "Item_Master"]
+    desc_df = df_part[df_part["__Section"] == "Descriptions"]
+    ext_df = df_part[df_part["__Section"] == "Extended_Info"]
+    pkg_df = df_part[df_part["__Section"] == "Packages"]
+    asset_df = df_part[df_part["__Section"] == "Digital_Assets"]
+    pricing_df = df_part[df_part["__Section"] == "Pricing"]
+
+
+    # =====================================================
+    # CORE FIELDS
+    # =====================================================
+
+    def first_val(df, col):
+        return df[col].iloc[0] if col in df.columns and not df.empty else ""
+
+    brand = first_val(item_master, "Brand Label")
+    category = first_val(item_master, "Category")
+    unspsc = first_val(item_master, "UNSPSC")
+    hazmat = first_val(item_master, "HazmatFlag")
+    status = first_val(item_master, "Product Status")
+    quantity_uom = first_val(item_master, "Quantity UOM")
+
+    # Short Description
+    short_desc = ""
+    for _, r in desc_df.iterrows():
+        if r.get("Description Code") in ["DES", "SHO"]:
+            short_desc = r.get("Description Value", "")
+            break
+
+    # Extended Info
+    cto = ""
+    hsb = ""
+
+    for _, r in ext_df.iterrows():
+        if r.get("Extended Info Code") == "CTO":
+            cto = r.get("Extended Info Value", "")
+        if r.get("Extended Info Code") == "HSB":
+            hsb = r.get("Extended Info Value", "")
+
+    # Effective Date (Pricing tab)
+    effective_date = ""
+
+    if not pricing_df.empty and "Effective Date" in pricing_df.columns:
+        val = pricing_df["Effective Date"].iloc[0]
+        if pd.notna(val):
+            effective_date = str(val)
+
+
+    # =====================================================
+    # PACKAGE WEIGHT CHECK
+    # =====================================================
+
+    valid_weight = False
+
+    if not pkg_df.empty:
+        for _, r in pkg_df.iterrows():
+            weight = r.get("Weight")
+            weight_uom = r.get("Weight UOM")
+            if pd.notna(weight) and float(weight) > 0 and pd.notna(weight_uom):
+                valid_weight = True
+                break
+
+
+    # =====================================================
+    # ASSET QUALITY (Metadata for scoring only)
+    # =====================================================
+
+    asset_meta = load_asset_quality(container, vendor)
+
+    asset_part = pd.DataFrame()
+
+    if not asset_meta.empty and "part_number" in asset_meta.columns:
+        asset_meta["part_number"] = (
+            asset_meta["part_number"]
+            .astype(str)
+            .str.strip()
+        )
+
+        asset_part = asset_meta[
+            asset_meta["part_number"] == str(part).strip()
+        ]
+
+    # -----------------------------------------------------
+    # Default values
+    # -----------------------------------------------------
+    image_preview_url = None
+    jpg_count = 0
+    valid_resolution = False
+    avg_size_ok = False
+
+    # =====================================================
+    # IMAGE PREVIEW (Independent of Metadata)
+    # =====================================================
+
+    primary_filename = f"{part}_P04_01.jpg"
+
+    blob_path = (
+        f"ready/vendor={vendor}/"
+        f"assets/part_number={part}/"
+        f"images/{primary_filename}"
+    )
+
+    try:
+        container.get_blob_client(blob_path).get_blob_properties()
+
+        image_preview_url = (
+            f"/api/category-review/asset-preview"
+            f"?vendor={vendor}&part={part}&file={primary_filename}"
+        )
+
+        jpg_count = 1
+
+    except Exception:
+        pass
+
+    # =====================================================
+    # METADATA-BASED SCORING (If Available)
+    # =====================================================
+
+    if not asset_part.empty:
+
+        # Image count from metadata
+        jpg_count = len(asset_part)
+
+        # Resolution compliance
+        if "final_resolution" in asset_part.columns:
+            valid_resolution = any(
+                asset_part["final_resolution"] == "1000x1000"
+            )
+
+        # File size sanity
+        if "file_size_bytes" in asset_part.columns:
+            avg_size = asset_part["file_size_bytes"].mean()
+            if avg_size and avg_size < 5_000_000:
+                avg_size_ok = True
+
+
+    # =====================================================
+    # ASSET QUALITY SCORE
+    # =====================================================
+
+    asset_score = 0
+
+    # Image count score
+    if jpg_count >= 3:
+        asset_score += 40
+    elif jpg_count >= 1:
+        asset_score += 20
+
+    # Resolution score
+    if valid_resolution:
+        asset_score += 40
+
+    # File size score
+    if avg_size_ok:
+        asset_score += 20
+
+
+    # =====================================================
+    # MISSING ATTRIBUTES
+    # =====================================================
+
+
+    missing_attributes = []
+
+    if not brand:
+        missing_attributes.append("Brand")
+
+    if not category:
+        missing_attributes.append("Category")
+
+    if not status:
+        missing_attributes.append("Product Status")
+
+    if not short_desc:
+        missing_attributes.append("Short Description")
+
+    if not cto:
+        missing_attributes.append("Country of Origin")
+
+    if not valid_weight:
+        missing_attributes.append("Weight")
+
+    if not quantity_uom:
+        missing_attributes.append("Quantity UOM")
+
+    if not effective_date:
+        missing_attributes.append("Effective Date")
+
+
+
+    # =====================================================
+    # DATA QUALITY SCORE
+    # =====================================================
+
+    data_score = 0
+
+    if brand: data_score += 15
+    if category: data_score += 20
+    if status: data_score += 10
+    if short_desc: data_score += 15
+    if cto: data_score += 10
+    if valid_weight: data_score += 15
+    if quantity_uom: data_score += 10
+    if effective_date: data_score += 5
+
+    print("IMAGE DEBUG →", {
+    "vendor": vendor,
+    "part": part,
+    "jpg_count": jpg_count,
+    "preview_url": image_preview_url
+})
+
+    # =====================================================
+    # RESPONSE
+    # =====================================================
+
+    return jsonify({
+        "brand": brand,
+        "hazmat": hazmat,
+        "category": category,
+        "unspsc": unspsc,
+        "status": status,
+        "short_description": short_desc,
+        "country_of_origin": cto,
+        "hsb": hsb,
+        "effective_date": effective_date,
+        "weight_present": valid_weight,
+        "image_completeness": f"{jpg_count} / 3",
+        "data_quality_score": data_score,
+        "asset_quality_score": asset_score,
+        "missing_attributes" : missing_attributes,
+        "image_preview_url": image_preview_url
+    })
+
+@category_review_bp.route("/api/category-review/asset-preview")
+@login_required
+def api_asset_preview():
+
+    if current_user.role != "category":
+        abort(403)
+
+    vendor = request.args.get("vendor")
+    part = request.args.get("part")
+    filename = request.args.get("file")
+
+    if not vendor or not part or not filename:
+        abort(400)
+
+    container = _container()
+
+    blob_path = (
+        f"ready/vendor={vendor}/"
+        f"assets/part_number={part}/"
+        f"images/{filename}"
+    )
+
+    print("ASSET PREVIEW PATH:", blob_path)
+
+    try:
+        data = _download_bytes(container, blob_path)
+    except Exception:
+        abort(404)
+
+    return current_app.response_class(
+        data,
+        mimetype="image/jpeg"
+    )
+

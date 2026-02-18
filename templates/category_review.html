@@ -68,20 +68,41 @@
     </div>
   </div>
 
-  <!-- DETAIL PANEL -->
-  <div class="card shadow-sm mt-4 d-none" id="detailCard">
-    <div class="card-header bg-white">
-      <div class="fw-semibold" id="detailTitle">Part Details</div>
-      <div class="text-muted small" id="detailMeta"></div>
-    </div>
-    <div class="card-body" id="detailBody"></div>
-  </div>
+</div>
 
+<!-- ============================= -->
+<!-- PRODUCT INTELLIGENCE MODAL  -->
+<!-- ============================= -->
+
+<div class="modal fade" id="partModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Product Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body" id="modalBody">
+        Loading...
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-success" id="modalApprove">Approve</button>
+        <button class="btn btn-danger" id="modalReject">Reject</button>
+        <button class="btn btn-outline-secondary" id="modalHold">Hold</button>
+      </div>
+
+    </div>
+  </div>
 </div>
 
 <script>
   window.REVIEW_CTX = {};
 </script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('static', filename='category_review.js') }}"></script>
+
 </body>
 </html>

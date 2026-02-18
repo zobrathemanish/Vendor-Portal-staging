@@ -1,7 +1,7 @@
 (async function () {
 
   const el = {
-    container: document.getElementById("queueTable").parentElement.parentElement.parentElement,
+    container: document.getElementById("queueTable"),
     search: document.getElementById("search"),
     filterDecision: document.getElementById("filterDecision"),
 
@@ -10,11 +10,19 @@
     badgePending: document.getElementById("badge-pending"),
     badgeApproved: document.getElementById("badge-approved"),
     badgeRejected: document.getElementById("badge-rejected"),
+
+    modal: new bootstrap.Modal(document.getElementById("partModal")),
+    modalTitle: document.getElementById("modalTitle"),
+    modalBody: document.getElementById("modalBody"),
+    modalApprove: document.getElementById("modalApprove"),
+    modalReject: document.getElementById("modalReject"),
+    modalHold: document.getElementById("modalHold"),
   };
 
   let state = {
     items: [],
-    summary: {}
+    summary: {},
+    selected: null
   };
 
   function decisionBadge(decision) {
@@ -29,14 +37,6 @@
     el.badgePending.textContent = `pending: ${state.summary.pending || 0}`;
     el.badgeApproved.textContent = `approved: ${state.summary.approved || 0}`;
     el.badgeRejected.textContent = `rejected: ${state.summary.rejected || 0}`;
-  }
-
-  function groupByVendor(items) {
-    return items.reduce((acc, item) => {
-      if (!acc[item.vendor]) acc[item.vendor] = [];
-      acc[item.vendor].push(item);
-      return acc;
-    }, {});
   }
 
   function render() {
@@ -55,92 +55,120 @@
 
     if (!filtered.length) {
       el.container.innerHTML = `
-        <div class="text-center text-muted py-5">
-          No items found.
-        </div>`;
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">
+            No items found.
+          </td>
+        </tr>`;
       return;
     }
 
-    const grouped = groupByVendor(filtered);
-
-    el.container.innerHTML = Object.entries(grouped).map(([vendor, items]) => {
-
-      const rows = items.map(item => `
-        <tr>
-          <td class="fw-semibold">${item.part_number}</td>
-          <td class="text-center">${item.row_inserts}</td>
-          <td class="text-center">${item.row_updates}</td>
-          <td class="text-center">${item.row_deletes}</td>
-          <td>${decisionBadge(item.decision)}</td>
-          <td>
-            <div class="d-flex gap-1">
-              <button class="btn btn-sm btn-success"
-                onclick="updateDecision('${item.vendor}','${item.part_number}','approve')">✔</button>
-              <button class="btn btn-sm btn-danger"
-                onclick="updateDecision('${item.vendor}','${item.part_number}','reject')">✖</button>
-              <button class="btn btn-sm btn-outline-secondary"
-                onclick="updateDecision('${item.vendor}','${item.part_number}','pending')">⏸</button>
-            </div>
-          </td>
-        </tr>
-      `).join("");
-
-      return `
-        <div class="card shadow-sm mb-4">
-          <div class="card-header bg-white d-flex justify-content-between align-items-center">
-            <div class="fw-semibold">📦 ${vendor}</div>
-            <div class="small text-muted">${items.length} part(s)</div>
+    el.container.innerHTML = filtered.map(item => `
+      <tr class="queue-row" data-vendor="${item.vendor}" data-part="${item.part_number}">
+        <td>${item.vendor}</td>
+        <td class="fw-semibold text-primary">${item.part_number}</td>
+        <td class="text-center">${item.row_inserts}</td>
+        <td class="text-center">${item.row_updates}</td>
+        <td class="text-center">${item.row_deletes}</td>
+        <td>${decisionBadge(item.decision)}</td>
+        <td>
+          <div class="d-flex gap-1">
+            <button class="btn btn-sm btn-success">✔</button>
+            <button class="btn btn-sm btn-danger">✖</button>
+            <button class="btn btn-sm btn-outline-secondary">⏸</button>
           </div>
-          <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Part Number</th>
-                  <th class="text-center">Insert</th>
-                  <th class="text-center">Update</th>
-                  <th class="text-center">Delete</th>
-                  <th>Status</th>
-                  <th style="width:180px;">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rows}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-    }).join("");
+        </td>
+      </tr>
+    `).join("");
+
+    // 🔥 Make entire row clickable
+    document.querySelectorAll(".queue-row").forEach(row => {
+      row.style.cursor = "pointer";
+      row.onclick = function (e) {
+
+        // prevent clicking action buttons triggering modal
+        if (e.target.tagName === "BUTTON") return;
+
+        const vendor = this.dataset.vendor;
+        const part = this.dataset.part;
+
+        const item = state.items.find(i =>
+          i.vendor === vendor && i.part_number === part
+        );
+
+        if (item) openModal(item);
+      };
+    });
   }
 
-  window.updateDecision = async function(vendor, part, decision) {
+  async function openModal(item) {
 
-    await fetch("/api/category-review/decision", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        vendor: vendor,
-        part_number: part,
-        decision: decision
-      })
-    });
+    state.selected = item;
 
-    const item = state.items.find(i =>
-      i.vendor === vendor && i.part_number === part
+    el.modalTitle.textContent = `Part ${item.part_number} (${item.vendor})`;
+
+    const isInsert =
+        Number(item.row_inserts) > 0 &&
+        Number(item.row_updates) === 0 &&
+        Number(item.row_deletes) === 0;
+
+    if (!isInsert) {
+        el.modalBody.innerHTML = `
+        <div class="alert alert-info">
+            Intelligence view available for INSERT only.
+        </div>
+        `;
+        el.modal.show();
+        return;
+    }
+    
+
+    el.modalBody.innerHTML = `<div class="text-center py-4">Loading intelligence...</div>`;
+    el.modal.show();
+
+    const res = await fetch(
+        `/api/category-review/part-intelligence?vendor=${item.vendor}&part=${item.part_number}`
     );
 
-    if (item) item.decision = decision;
+    const data = await res.json();
 
-    state.summary.pending = state.items.filter(i => i.decision === "pending").length;
-    state.summary.approved = state.items.filter(i => i.decision === "approve").length;
-    state.summary.rejected = state.items.filter(i => i.decision === "reject").length;
+    el.modalBody.innerHTML = `
+        <div class="row">
 
-    renderSummary();
-    render();
-  };
+        <div class="col-md-8">
+            <table class="table table-sm table-bordered">
+            <tr><th>Brand</th><td>${data.brand || "-"}</td></tr>
+            <tr><th>Hazardous?</th><td>${data.hazmat || "-"}</td></tr>
+            <tr><th>Category</th><td>${data.category || "-"}</td></tr>
+            <tr><th>Product Status</th><td>${data.status || "-"}</td></tr>
+            <tr><th>Short Description</th><td>${data.short_description || "-"}</td></tr>
+            <tr><th>Country of Origin</th><td>${data.country_of_origin || "-"}</td></tr>
+            <tr><th>HSB</th><td>${data.hsb || "-"}</td></tr>
+            <tr><th>Image Completeness</th><td>${data.image_completeness}</td></tr>
+            <tr><th>Data Quality Score</th><td>${data.data_quality_score}%</td></tr>
+            <tr><th>Missing Attributes</th>
+            <td>${(data.missing_attributes && data.missing_attributes.length)
+                    ? data.missing_attributes.join(", ")
+                    : "None"}</td></tr>
+            </table>
+        </div>
 
-  el.search.oninput = render;
-  el.filterDecision.onchange = render;
+        <div class="col-md-4 text-center">
+            ${
+            data.image_preview_url
+            ? `<img src="${data.image_preview_url}" 
+                    class="img-fluid rounded shadow-sm"
+                    style="max-height:300px;">`
+            : `<div class="border rounded p-3 bg-light">
+                    No Image Available
+                </div>`
+            }
+        </div>
+        </div>
+    `;
+    }
+
+
 
   async function loadQueue() {
     try {
@@ -155,9 +183,11 @@
 
     } catch (err) {
       el.container.innerHTML = `
-        <div class="text-danger text-center py-5">
-          Failed to load queue.
-        </div>`;
+        <tr>
+          <td colspan="7" class="text-danger text-center py-5">
+            Failed to load queue.
+          </td>
+        </tr>`;
       console.error(err);
     }
   }
