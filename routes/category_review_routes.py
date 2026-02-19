@@ -9,6 +9,95 @@ from flask import Blueprint, request, render_template, current_app, jsonify, abo
 from azure.storage.blob import BlobServiceClient
 from flask_login import login_required, current_user
 
+"""
+INSERT
+    Approve → Add
+    Reject  → Ignore
+
+UPDATE
+    Approve → Replace
+    Reject  → Mark inactive
+
+DELETE
+    → Mark inactive
+
+"""
+
+
+# SECTION_COLUMNS = {
+
+#     "Item_Master": [
+#         "Part Number",
+#         "Brand Label",
+#         "Category",
+#         "UNSPSC",
+#         "HazmatFlag",
+#         "Product Status",
+#         "Quantity UOM",
+#         "Barcode Type",
+#         "Barcode Number",
+#         "Quantity UOM",
+#         "Quantity Size",
+#         "Minimum Order Quantity UOM",
+#         "VMRS Code"
+
+#     ],
+
+#     "Descriptions": [
+#         "Part Number",
+#         "Description Code",
+#         "Description Value",
+#         "Sequence"
+#     ],
+
+#     "Extended_Info": [
+#         "Part Number",
+#         "Extended Info Code",
+#         "Extended Info Value"
+#     ],
+#      "Attributes": [
+#         "Part Number",
+#         "Attribute Name",
+#         "Attribute Value"
+#     ],
+
+#     "Packages": [
+#         "Part Number",
+#         "Package UOM",
+#         "Package QuantityofEaches",
+#         "Weight",
+#         "Weight UOM",
+#         "Dimension UOM",
+#         "Ship Length",
+#         "Ship Width",
+#         "Ship Height",
+#         "Merch Length",
+#         "Merch Width",
+#         "Merch Height",
+#         "Package Content"
+#     ],
+
+#     "Digital_Assets": [
+#         "Part Number",
+#         "Media Type",
+#         "Filename",
+#         "FilePath",
+#         "FileType",
+#         "Representation",
+#         "Orientation",
+#         "Height",
+#         "Width",
+#     ],
+
+#     "Pricing": [
+#         "Part Number",
+#         "Effective Date",
+#         "Price",
+#         "Currency"
+#     ],
+# }
+
+
 category_review_bp = Blueprint(
     "category_review",
     __name__,
@@ -340,9 +429,63 @@ def apply_delta_to_current_state(container, vendor: str):
 
     _upload_bytes(container, current_parquet_path, parquet_bytes)
 
-    # ---------- XLSX ----------
+    # ---------- XLSX (Dynamic Multi-Tab Clean Version) ----------
     xlsx_buf = BytesIO()
-    df_current.to_excel(xlsx_buf, index=False)
+
+    with pd.ExcelWriter(xlsx_buf, engine="xlsxwriter") as writer:
+
+        if "__Section" in df_current.columns:
+
+            sections = sorted(
+                df_current["__Section"].dropna().unique()
+            )
+
+            INTERNAL_COLUMNS = {"__Section", "_delta_type"}
+
+            for section in sections:
+
+                df_section = df_current[
+                    df_current["__Section"] == section
+                ].copy()
+
+                # Drop internal/governance columns
+                df_section = df_section.drop(
+                    columns=[
+                        c for c in df_section.columns
+                        if c in INTERNAL_COLUMNS
+                    ],
+                    errors="ignore"
+                )
+
+                # 🔥 Keep only columns that have at least one non-null value
+                non_empty_cols = [
+                    c for c in df_section.columns
+                    if df_section[c].notna().any()
+                ]
+
+                df_section = df_section[non_empty_cols]
+
+                # Keep Part Number first if present
+                if "Part Number" in df_section.columns:
+                    cols = ["Part Number"] + [
+                        c for c in df_section.columns
+                        if c != "Part Number"
+                    ]
+                    df_section = df_section[cols]
+
+                df_section.to_excel(
+                    writer,
+                    sheet_name=str(section)[:31],  # Excel limit
+                    index=False
+                )
+
+        else:
+            df_current.to_excel(
+                writer,
+                sheet_name="Data",
+                index=False
+            )
+
     xlsx_bytes = xlsx_buf.getvalue()
 
     current_xlsx_path = (
@@ -351,7 +494,7 @@ def apply_delta_to_current_state(container, vendor: str):
 
     _upload_bytes(container, current_xlsx_path, xlsx_bytes)
 
-    print("📦 Current state Parquet + XLSX written")
+    print("📦 Current state Parquet + Clean Multi-Tab XLSX written")
 
 
     # -----------------------------------------------------
@@ -562,9 +705,9 @@ def api_category_review_decision():
     }
 
     # -----------------------------------------------------
-    # Identify parts that REQUIRE decision (exclude delete-only)
+    # Identify delete-only parts
     # -----------------------------------------------------
-    parts_requiring_decision = []
+    delete_only_parts = []
 
     for p in parts:
         part_rows = delta[
@@ -575,17 +718,28 @@ def api_category_review_decision():
             part_rows[DELTA_TYPE_COL].dropna().tolist()
         )
 
-        # DELETE-only parts do NOT require decision
-        if "delete" in delta_types and len(delta_types) == 1:
-            continue
-
-        parts_requiring_decision.append(p)
+        if delta_types == {"delete"}:
+            delete_only_parts.append(p)
 
     # -----------------------------------------------------
-    # Trigger promotion if all required parts reviewed
+    # Parts that actually require decision
     # -----------------------------------------------------
-    if all(decisions_map.get(p) in {"approve", "reject"} for p in parts_requiring_decision):
+    review_required_parts = [
+        p for p in parts if p not in delete_only_parts
+    ]
+
+    print("Review-required parts:", review_required_parts)
+    print("Decisions map:", decisions_map)
+
+    # -----------------------------------------------------
+    # Promotion trigger condition
+    # -----------------------------------------------------
+    if all(decisions_map.get(p) in {"approve", "reject"} for p in review_required_parts):
+        print("✅ All review-required parts decided. Triggering promotion.")
         apply_delta_to_current_state(container, vendor)
+    else:
+        print("⏳ Waiting on remaining decisions.")
+
 
     return jsonify({"ok": True})
 
@@ -601,28 +755,56 @@ def api_category_review_work_queue():
     container = _container()
     prefix = f"{CATEGORY_QUEUE_ROOT}/vendor="
 
-    vendors = {}
-    items = []
+    # ---------------------------------------------
+    # STEP 1: Collect vendors safely
+    # ---------------------------------------------
+    vendors = set()
 
     for blob in container.list_blobs(name_starts_with=prefix):
         parts = blob.name.split("/")
+        if len(parts) >= 2 and parts[1].startswith("vendor="):
+            vendors.add(parts[1].replace("vendor=", ""))
 
-        if len(parts) < 4:
-            continue
+    items = []
 
-        if not parts[1].startswith("vendor="):
-            continue
+    # ---------------------------------------------
+    # STEP 2: Process vendors one by one
+    # ---------------------------------------------
+    for vendor in vendors:
 
-        vendor = parts[1].replace("vendor=", "")
-
-        if not blob.name.endswith("delta_mapped.parquet"):
-            continue
-
-        # Load delta
         delta = load_delta(container, vendor)
         if delta.empty:
             continue
 
+        part_numbers = sorted([
+            p for p in delta["Part Number"].dropna().astype(str).unique()
+            if p.strip()
+        ])
+
+        # -----------------------------------------
+        # DELETE-ONLY CHECK
+        # -----------------------------------------
+        delete_only_parts = []
+
+        for p in part_numbers:
+            part_rows = delta[
+                delta["Part Number"].astype(str) == p
+            ]
+            delta_types = set(
+                part_rows[DELTA_TYPE_COL].dropna().tolist()
+            )
+
+            if delta_types == {"delete"}:
+                delete_only_parts.append(p)
+
+        if part_numbers and len(delete_only_parts) == len(part_numbers):
+            print("🟡 Delete-only queue detected. Auto-promoting.")
+            apply_delta_to_current_state(container, vendor)
+            continue  # Skip building items for this vendor
+
+        # -----------------------------------------
+        # Normal Queue Build
+        # -----------------------------------------
         metadata = load_metadata(container, vendor)
         submission_id = metadata.get("submission_id") if metadata else None
 
@@ -632,14 +814,10 @@ def api_category_review_work_queue():
             for _, r in decisions.iterrows()
         }
 
-        part_numbers = sorted([
-            p for p in delta["Part Number"].dropna().astype(str).unique()
-            if p.strip()
-        ])
-
         for pn in part_numbers:
-
-            pn_rows = delta[delta["Part Number"].astype(str) == pn]
+            pn_rows = delta[
+                delta["Part Number"].astype(str) == pn
+            ]
 
             items.append({
                 "vendor": vendor,
@@ -651,6 +829,9 @@ def api_category_review_work_queue():
                 "row_deletes": int((pn_rows[DELTA_TYPE_COL] == "delete").sum()),
             })
 
+    # ---------------------------------------------
+    # Summary
+    # ---------------------------------------------
     summary = {
         "vendors": len(set([i["vendor"] for i in items])),
         "parts_total": len(items),
