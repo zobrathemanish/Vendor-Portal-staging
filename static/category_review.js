@@ -72,12 +72,29 @@
         <td class="text-center">${item.row_deletes}</td>
         <td>${decisionBadge(item.decision)}</td>
         <td>
-          <div class="d-flex gap-1">
-            <button class="btn btn-sm btn-success">✔</button>
-            <button class="btn btn-sm btn-danger">✖</button>
-            <button class="btn btn-sm btn-outline-secondary">⏸</button>
-          </div>
+          ${
+            (Number(item.row_deletes) > 0 &&
+            Number(item.row_inserts) === 0 &&
+            Number(item.row_updates) === 0)
+            ? `<span class="badge text-bg-warning">Auto Delete</span>`
+            : `
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-success btn-approve"
+                        data-vendor="${item.vendor}"
+                        data-part="${item.part_number}">✔</button>
+
+                <button class="btn btn-sm btn-danger btn-reject"
+                        data-vendor="${item.vendor}"
+                        data-part="${item.part_number}">✖</button>
+
+                <button class="btn btn-sm btn-outline-secondary btn-hold"
+                        data-vendor="${item.vendor}"
+                        data-part="${item.part_number}">⏸</button>
+              </div>
+            `
+          }
         </td>
+
       </tr>
     `).join("");
 
@@ -99,7 +116,47 @@
         if (item) openModal(item);
       };
     });
-  }
+
+        // Approve
+    document.querySelectorAll(".btn-approve").forEach(btn => {
+      btn.onclick = async function(e) {
+        e.stopPropagation();
+
+        await sendDecision(
+          this.dataset.vendor,
+          this.dataset.part,
+          "approve"
+        );
+      };
+    });
+
+    // Reject
+    document.querySelectorAll(".btn-reject").forEach(btn => {
+      btn.onclick = async function(e) {
+        e.stopPropagation();
+
+        await sendDecision(
+          this.dataset.vendor,
+          this.dataset.part,
+          "reject"
+        );
+      };
+    });
+
+    // Hold
+    document.querySelectorAll(".btn-hold").forEach(btn => {
+      btn.onclick = async function(e) {
+        e.stopPropagation();
+
+        await sendDecision(
+          this.dataset.vendor,
+          this.dataset.part,
+          "pending"
+        );
+      };
+    });
+
+      }
 
   async function openModal(item) {
 
@@ -121,7 +178,7 @@
         el.modal.show();
         return;
     }
-    
+  
 
     el.modalBody.innerHTML = `<div class="text-center py-4">Loading intelligence...</div>`;
     el.modal.show();
@@ -175,8 +232,12 @@
       const res = await fetch("/api/category-review/work-queue");
       const data = await res.json();
 
+      console.log("📦 Queue data received:", data);
+
       state.items = data.items || [];
       state.summary = data.summary || {};
+
+      console.log("📊 Updated summary:", state.summary);
 
       renderSummary();
       render();
@@ -188,9 +249,38 @@
             Failed to load queue.
           </td>
         </tr>`;
-      console.error(err);
+      console.error("❌ Failed to load queue:", err);
     }
   }
+
+  async function sendDecision(vendor, part, decision) {
+
+    console.log("➡ Sending decision:", {
+      vendor,
+      part,
+      decision
+    });
+
+    const res = await fetch("/api/category-review/decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vendor: vendor,
+        part_number: part,
+        decision: decision
+      })
+    });
+
+    const result = await res.json();
+
+    console.log("✅ Backend response:", result);
+
+    await loadQueue();
+
+    console.log("🔄 Queue refreshed");
+  }
+
+
 
   loadQueue();
 

@@ -70,3 +70,32 @@ app.register_blueprint(category_review_bp)
 if __name__ == "__main__":
     logger.info("Vendor Portal started")
     app.run(debug=True)
+
+'''
+We have only the delta rows in category UI. A single vendor can have multiple rows some with insert, update, or delete delta type 
+(change type). This is the point where we promote data to silver/approved. 
+- We need to take the new etl_mapped and wait for the category team to use the UI:
+- Delta type insert: If they hit 'approve' on UI, there's nothing we need to do. 
+- Delta type insert: If they hit 'disapprove' on UI, we need to delete that from our etl_mapped.xlsx and etl_mapped.parquet
+- It could happen multiple times until all is completed.
+- Delta type update: Approve, no changes to etl mapped
+- Delta type update: Disapprove, (fetch etl_mapped from current_state and the old row should be in new etl_mapped, but also update the 
+product lifestatus to obsolete.)
+- Delta type delete: Do not show the approve/Disapprove/Hold button for this. 
+
+- After all the rows in insert, update is approved/disapproved.. replace the latest etl_mapped to current_state and move it to gold/selected
+
+Or:
+INSERT
+    Approve → Add
+    Reject  → Ignore
+
+UPDATE
+    Approve → Replace
+    Reject  → Mark inactive
+
+DELETE
+    → Mark inactive
+
+
+'''
