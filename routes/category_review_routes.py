@@ -827,6 +827,31 @@ def api_part_intelligence():
         df["Part Number"].astype(str) == str(part)
     ].copy()
 
+    # =====================================================
+    # IMAGE PREVIEW (Independent of Metadata)
+    # =====================================================
+
+    primary_filename = f"{part}_P04_01.jpg"
+
+    blob_path = (
+        f"ready/vendor={vendor}/"
+        f"assets/part_number={part}/"
+        f"images/{primary_filename}"
+    )
+
+    try:
+        container.get_blob_client(blob_path).get_blob_properties()
+
+        image_preview_url = (
+            f"/api/category-review/asset-preview"
+            f"?vendor={vendor}&part={part}&file={primary_filename}"
+        )
+
+        jpg_count = 1
+
+    except Exception:
+        pass
+
     if df_part.empty:
         return jsonify({"error": "No delta data found"}), 404
 
@@ -922,7 +947,8 @@ def api_part_intelligence():
 
         return jsonify(json_safe({
             "mode": "update",
-            "changes": changes
+            "changes": changes,
+            "image_preview_url": image_preview_url
         }))
 
 
@@ -1028,30 +1054,7 @@ def api_part_intelligence():
     valid_resolution = False
     avg_size_ok = False
 
-    # =====================================================
-    # IMAGE PREVIEW (Independent of Metadata)
-    # =====================================================
 
-    primary_filename = f"{part}_P04_01.jpg"
-
-    blob_path = (
-        f"ready/vendor={vendor}/"
-        f"assets/part_number={part}/"
-        f"images/{primary_filename}"
-    )
-
-    try:
-        container.get_blob_client(blob_path).get_blob_properties()
-
-        image_preview_url = (
-            f"/api/category-review/asset-preview"
-            f"?vendor={vendor}&part={part}&file={primary_filename}"
-        )
-
-        jpg_count = 1
-
-    except Exception:
-        pass
 
     # =====================================================
     # METADATA-BASED SCORING (If Available)

@@ -255,22 +255,21 @@
     );
 
     const data = await res.json();
+  // =====================================================
+  // UPDATE MODE – Show Field-Level Diff + Image
+  // =====================================================
+  if (data.mode === "update") {
 
-    // =====================================================
-    // UPDATE MODE – Show Field-Level Diff
-    // =====================================================
-    if (data.mode === "update") {
+    let diffContent = "";
 
-      if (!data.changes || data.changes.length === 0) {
-        el.modalBody.innerHTML = `
-          <div class="alert alert-info">
-            No attribute-level differences detected.
-          </div>
-        `;
-        return;
-      }
-
-      el.modalBody.innerHTML = `
+    if (!data.changes || data.changes.length === 0) {
+      diffContent = `
+        <div class="alert alert-info">
+          No attribute-level differences detected.
+        </div>
+      `;
+    } else {
+      diffContent = `
         <table class="table table-sm table-bordered">
           <thead>
             <tr>
@@ -290,9 +289,32 @@
           </tbody>
         </table>
       `;
-      return;
     }
 
+    el.modalBody.innerHTML = `
+      <div class="row">
+
+        <div class="col-md-8">
+          ${diffContent}
+        </div>
+
+        <div class="col-md-4 text-center">
+          ${
+            data.image_preview_url
+              ? `<img src="${data.image_preview_url}" 
+                    class="img-fluid rounded shadow-sm"
+                    style="max-height:300px;">`
+              : `<div class="border rounded p-3 bg-light">
+                  No Image Available
+                </div>`
+          }
+        </div>
+
+      </div>
+    `;
+
+    return;
+  }
     // =====================================================
     // INSERT MODE – Existing Intelligence View
     // =====================================================
