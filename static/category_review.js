@@ -226,6 +226,23 @@
 
   state.selected = item;
 
+      // Detect delete-only row
+  const isDeleteOnly =
+    Number(item.row_deletes) > 0 &&
+    Number(item.row_inserts) === 0 &&
+    Number(item.row_updates) === 0;
+
+  // Show / hide modal buttons
+  if (isDeleteOnly) {
+    el.modalApprove.style.display = "none";
+    el.modalReject.style.display = "none";
+    el.modalHold.style.display = "none";
+  } else {
+    el.modalApprove.style.display = "inline-block";
+    el.modalReject.style.display = "inline-block";
+    el.modalHold.style.display = "inline-block";
+  }
+
   el.modalTitle.textContent = `Part ${item.part_number} (${item.vendor})`;
 
   el.modalBody.innerHTML = `<div class="text-center py-4">Loading intelligence...</div>`;
