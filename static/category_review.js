@@ -140,7 +140,7 @@
             (Number(item.row_deletes) > 0 &&
             Number(item.row_inserts) === 0 &&
             Number(item.row_updates) === 0)
-            ? `<span class="badge text-bg-warning">Auto Delete</span>`
+            ? `<span class="badge text-bg-warning"> No actions needed </span>`
             : `
               <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-success btn-approve"
@@ -278,7 +278,7 @@
 if (data.mode === "delete") {
 
   el.modalBody.innerHTML = `
-    <div class="alert alert-danger">
+    <div class="alert alert-warning mb-3">
       ⚠ This product will be marked as Inactive.
     </div>
 
@@ -311,67 +311,71 @@ if (data.mode === "delete") {
   return;
 }
 
-  // =====================================================
-  // UPDATE MODE – Show Field-Level Diff + Image
-  // =====================================================
-  
-  if (data.mode === "update") {
+// =====================================================
+// UPDATE MODE – Show Field-Level Diff + Image
+// =====================================================
 
-    let diffContent = "";
+if (data.mode === "update") {
 
-    if (!data.changes || data.changes.length === 0) {
-      diffContent = `
-        <div class="alert alert-info">
-          No attribute-level differences detected.
-        </div>
-      `;
-    } else {
-      diffContent = `
-        <table class="table table-sm table-bordered">
-          <thead>
-            <tr>
-              <th>Field</th>
-              <th>Before</th>
-              <th>After</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.changes.map(c => `
-              <tr>
-                <td>${c.field}</td>
-                <td class="text-danger">${c.before || "-"}</td>
-                <td class="text-success">${c.after || "-"}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      `;
-    }
+  let diffContent = "";
 
-    el.modalBody.innerHTML = `
-      <div class="row">
-
-        <div class="col-md-8">
-          ${diffContent}
-        </div>
-
-        <div class="col-md-4 text-center">
-          ${
-            data.image_preview_url
-              ? `<img src="${data.image_preview_url}" 
-                    class="img-fluid rounded shadow-sm"
-                    style="max-height:300px;">`
-              : `<div class="border rounded p-3 bg-light">
-                  No Image Available
-                </div>`
-          }
-        </div>
-
+  if (!data.changes || data.changes.length === 0) {
+    diffContent = `
+      <div class="alert alert-info">
+        No attribute-level differences detected.
       </div>
     `;
-
-    return;
+  } else {
+    diffContent = `
+      <table class="table table-sm table-bordered">
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Before</th>
+            <th>After</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.changes.map(c => `
+            <tr>
+              <td>${c.field}</td>
+              <td class="text-danger">${c.before || "-"}</td>
+              <td class="text-success">${c.after || "-"}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
   }
+
+  el.modalBody.innerHTML = `
+    <div class="alert alert-warning mb-3">
+      ⚠ If disapproved, this product will be marked as <strong>Inactive</strong>.
+    </div>
+
+    <div class="row">
+
+      <div class="col-md-8">
+        ${diffContent}
+      </div>
+
+      <div class="col-md-4 text-center">
+        ${
+          data.image_preview_url
+            ? `<img src="${data.image_preview_url}" 
+                  class="img-fluid rounded shadow-sm"
+                  style="max-height:300px;">`
+            : `<div class="border rounded p-3 bg-light">
+                No Image Available
+              </div>`
+        }
+      </div>
+
+    </div>
+  `;
+
+  return;
+}
     // =====================================================
     // INSERT MODE – Existing Intelligence View
     // =====================================================
