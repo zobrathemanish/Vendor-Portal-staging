@@ -243,7 +243,23 @@
     el.modalHold.style.display = "inline-block";
   }
 
-  el.modalTitle.textContent = `Part ${item.part_number} (${item.vendor})`;
+  let deltaLabel = "";
+
+  if (Number(item.row_deletes) > 0 &&
+      Number(item.row_inserts) === 0 &&
+      Number(item.row_updates) === 0) {
+    deltaLabel = " No Longer in Vendor Catalogue";
+  }
+  else if (Number(item.row_inserts) > 0 &&
+          Number(item.row_updates) === 0) {
+    deltaLabel = "New Item in Vendor Catalogue";
+  }
+  else if (Number(item.row_updates) > 0) {
+    deltaLabel = "Part Attributes Updated in Vendor Catalogue";
+  }
+
+  el.modalTitle.textContent =
+    `Part ${item.part_number} (${item.vendor}) - ${deltaLabel}`;
 
   el.modalBody.innerHTML = `<div class="text-center py-4">Loading intelligence...</div>`;
   el.modal.show();
