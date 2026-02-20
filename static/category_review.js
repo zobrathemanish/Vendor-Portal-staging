@@ -25,6 +25,70 @@
     selected: null
   };
 
+  // =====================================================
+  // MODAL DECISION BUTTONS
+  // =====================================================
+
+  el.modalApprove.onclick = async function () {
+    if (!state.selected) return;
+
+    await sendDecision(
+      state.selected.vendor,
+      state.selected.part_number,
+      "approve"
+    );
+
+    el.modal.hide();
+  };
+
+  el.modalReject.onclick = async function () {
+    if (!state.selected) return;
+
+    await sendDecision(
+      state.selected.vendor,
+      state.selected.part_number,
+      "reject"
+    );
+
+    el.modal.hide();
+  };
+
+  el.modalHold.onclick = async function () {
+    if (!state.selected) return;
+
+    await sendDecision(
+      state.selected.vendor,
+      state.selected.part_number,
+      "pending"
+    );
+
+    el.modal.hide();
+  };
+
+  async function handleModalDecision(decision) {
+    if (!state.selected) return;
+
+    el.modalApprove.disabled = true;
+    el.modalReject.disabled = true;
+    el.modalHold.disabled = true;
+
+    await sendDecision(
+      state.selected.vendor,
+      state.selected.part_number,
+      decision
+    );
+
+    el.modal.hide();
+
+    el.modalApprove.disabled = false;
+    el.modalReject.disabled = false;
+    el.modalHold.disabled = false;
+  }
+
+  el.modalApprove.onclick = () => handleModalDecision("approve");
+  el.modalReject.onclick = () => handleModalDecision("reject");
+  el.modalHold.onclick = () => handleModalDecision("pending");
+
   function decisionBadge(decision) {
     if (decision === "approve") return `<span class="badge text-bg-success">Approved</span>`;
     if (decision === "reject") return `<span class="badge text-bg-danger">Rejected</span>`;
