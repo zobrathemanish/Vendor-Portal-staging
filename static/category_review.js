@@ -255,9 +255,50 @@
     );
 
     const data = await res.json();
+
+    // =====================================================
+    // DELETE MODE
+    // =====================================================
+if (data.mode === "delete") {
+
+  el.modalBody.innerHTML = `
+    <div class="alert alert-danger">
+      ⚠ This product will be marked as Inactive.
+    </div>
+
+    <div class="row">
+
+      <div class="col-md-8">
+        <table class="table table-sm table-bordered">
+          <tr><th>Brand</th><td>${data.brand || "-"}</td></tr>
+          <tr><th>Category</th><td>${data.category || "-"}</td></tr>
+          <tr><th>Status</th><td>${data.status || "-"}</td></tr>
+          <tr><th>Short Description</th><td>${data.short_description || "-"}</td></tr>
+        </table>
+      </div>
+
+      <div class="col-md-4 text-center">
+        ${
+          data.image_preview_url
+            ? `<img src="${data.image_preview_url}" 
+                   class="img-fluid rounded shadow-sm"
+                   style="max-height:300px;">`
+            : `<div class="border rounded p-3 bg-light">
+                 No Image Available
+               </div>`
+        }
+      </div>
+
+    </div>
+  `;
+
+  return;
+}
+
   // =====================================================
   // UPDATE MODE – Show Field-Level Diff + Image
   // =====================================================
+  
   if (data.mode === "update") {
 
     let diffContent = "";

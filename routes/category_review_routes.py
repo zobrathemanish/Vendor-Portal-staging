@@ -24,7 +24,8 @@ DELETE
     → Mark inactive
 
 """
-
+image_preview_url = None
+jpg_count = 0
 
 category_review_bp = Blueprint(
     "category_review",
@@ -856,6 +857,58 @@ def api_part_intelligence():
         return jsonify({"error": "No delta data found"}), 404
 
     delta_types = set(df_part["_delta_type"].dropna().tolist())
+    print("DELTA TYPES FOR PART:", part, delta_types)
+
+    # =====================================================
+    # DELETE MODE – Load Baseline Intelligence
+    # =====================================================
+    if delta_types == {"delete"}:
+
+        baseline_path = (
+            f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
+        )
+
+        try:
+            baseline_bytes = _download_bytes(container, baseline_path)
+            df_baseline = _df_from_parquet_bytes(baseline_bytes)
+        except:
+            return jsonify({"error": "Baseline not found"}), 404
+
+        df_part = df_baseline[
+            df_baseline["Part Number"].astype(str) == str(part)
+        ]
+
+        if df_part.empty:
+            return jsonify({"error": "No baseline data found"}), 404
+
+        # Now reuse same logic as insert to extract fields
+        item_master = df_part[df_part["__Section"] == "Item_Master"]
+        desc_df = df_part[df_part["__Section"] == "Descriptions"]
+        ext_df = df_part[df_part["__Section"] == "Extended_Info"]
+        pkg_df = df_part[df_part["__Section"] == "Packages"]
+        pricing_df = df_part[df_part["__Section"] == "Pricing"]
+
+        def first_val(df, col):
+            return df[col].iloc[0] if col in df.columns and not df.empty else ""
+
+        brand = first_val(item_master, "Brand Label")
+        category = first_val(item_master, "Category")
+        status = first_val(item_master, "Product Status")
+
+        short_desc = ""
+        for _, r in desc_df.iterrows():
+            if r.get("Description Code") in ["DES", "SHO"]:
+                short_desc = r.get("Description Value", "")
+                break
+
+        return jsonify(json_safe({
+            "mode": "delete",
+            "brand": brand,
+            "category": category,
+            "status": status,
+            "short_description": short_desc,
+            "image_preview_url": image_preview_url
+        }))
 
    # =====================================================
     # UPDATE MODE – Section-Aware Diff
@@ -1049,12 +1102,8 @@ def api_part_intelligence():
     # -----------------------------------------------------
     # Default values
     # -----------------------------------------------------
-    image_preview_url = None
-    jpg_count = 0
     valid_resolution = False
     avg_size_ok = False
-
-
 
     # =====================================================
     # METADATA-BASED SCORING (If Available)
