@@ -24,80 +24,6 @@ DELETE
 """
 
 
-# SECTION_COLUMNS = {
-
-#     "Item_Master": [
-#         "Part Number",
-#         "Brand Label",
-#         "Category",
-#         "UNSPSC",
-#         "HazmatFlag",
-#         "Product Status",
-#         "Quantity UOM",
-#         "Barcode Type",
-#         "Barcode Number",
-#         "Quantity UOM",
-#         "Quantity Size",
-#         "Minimum Order Quantity UOM",
-#         "VMRS Code"
-
-#     ],
-
-#     "Descriptions": [
-#         "Part Number",
-#         "Description Code",
-#         "Description Value",
-#         "Sequence"
-#     ],
-
-#     "Extended_Info": [
-#         "Part Number",
-#         "Extended Info Code",
-#         "Extended Info Value"
-#     ],
-#      "Attributes": [
-#         "Part Number",
-#         "Attribute Name",
-#         "Attribute Value"
-#     ],
-
-#     "Packages": [
-#         "Part Number",
-#         "Package UOM",
-#         "Package QuantityofEaches",
-#         "Weight",
-#         "Weight UOM",
-#         "Dimension UOM",
-#         "Ship Length",
-#         "Ship Width",
-#         "Ship Height",
-#         "Merch Length",
-#         "Merch Width",
-#         "Merch Height",
-#         "Package Content"
-#     ],
-
-#     "Digital_Assets": [
-#         "Part Number",
-#         "Media Type",
-#         "Filename",
-#         "FilePath",
-#         "FileType",
-#         "Representation",
-#         "Orientation",
-#         "Height",
-#         "Width",
-#     ],
-
-#     "Pricing": [
-#         "Part Number",
-#         "Effective Date",
-#         "Price",
-#         "Currency"
-#     ],
-# }
-
-
 category_review_bp = Blueprint(
     "category_review",
     __name__,
@@ -865,9 +791,108 @@ def api_part_intelligence():
         return jsonify({"error": "No delta found"}), 404
 
     df_part = df[
-        (df["Part Number"].astype(str) == str(part)) &
-        (df["_delta_type"] == "insert")
+        df["Part Number"].astype(str) == str(part)
     ].copy()
+
+    if df_part.empty:
+        return jsonify({"error": "No delta data found"}), 404
+
+    delta_types = set(df_part["_delta_type"].dropna().tolist())
+
+   # =====================================================
+    # UPDATE MODE – Section-Aware Diff
+    # =====================================================
+    if "update" in delta_types:
+
+        baseline_path = (
+            f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
+        )
+
+        try:
+            baseline_bytes = _download_bytes(container, baseline_path)
+            df_baseline = _df_from_parquet_bytes(baseline_bytes)
+        except:
+            return jsonify({"error": "Baseline not found"}), 404
+
+        ready_path = (
+            f"category_queue/vendor={vendor}/active/etl_mapped.parquet"
+        )
+
+        ready_bytes = _download_bytes(container, ready_path)
+        df_ready = _df_from_parquet_bytes(ready_bytes)
+
+        df_baseline_part = df_baseline[
+            df_baseline["Part Number"].astype(str) == str(part)
+        ]
+
+        df_ready_part = df_ready[
+            df_ready["Part Number"].astype(str) == str(part)
+        ]
+
+        IGNORE_COLUMNS = {
+            "__Section",
+            "_delta_type",
+            "_row_hash_before",
+            "_row_hash_after"
+        }
+
+        def normalize(v):
+            if pd.isna(v):
+                return ""
+            return str(v).strip()
+
+        changes = []
+
+        # 🔥 Compare per section
+        all_sections = set(
+            df_baseline_part["__Section"].dropna().tolist()
+        ).union(
+            df_ready_part["__Section"].dropna().tolist()
+        )
+
+        for section in all_sections:
+
+            base_section = df_baseline_part[
+                df_baseline_part["__Section"] == section
+            ]
+
+            ready_section = df_ready_part[
+                df_ready_part["__Section"] == section
+            ]
+
+            if base_section.empty and ready_section.empty:
+                continue
+
+            # Use first row per section (safe in your design)
+            base_row = base_section.iloc[0] if not base_section.empty else None
+            ready_row = ready_section.iloc[0] if not ready_section.empty else None
+
+            all_cols = set(
+                list(base_section.columns) + list(ready_section.columns)
+            )
+
+            for col in all_cols:
+
+                if col in IGNORE_COLUMNS:
+                    continue
+
+                before = normalize(base_row[col]) if base_row is not None and col in base_section.columns else ""
+                after  = normalize(ready_row[col]) if ready_row is not None and col in ready_section.columns else ""
+
+                if before != after:
+                    changes.append({
+                        "section": section,
+                        "field": col,
+                        "before": before or "-",
+                        "after": after or "-"
+                    })
+
+        return jsonify({
+            "mode": "update",
+            "changes": changes
+        })
+
+
 
     print("DELTA ROWS FOR PART:", part)
     print(df_part[["Part Number", "__Section"]])

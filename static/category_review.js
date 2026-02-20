@@ -160,40 +160,66 @@
 
   async function openModal(item) {
 
-    state.selected = item;
+  state.selected = item;
 
-    el.modalTitle.textContent = `Part ${item.part_number} (${item.vendor})`;
+  el.modalTitle.textContent = `Part ${item.part_number} (${item.vendor})`;
 
-    const isInsert =
-        Number(item.row_inserts) > 0 &&
-        Number(item.row_updates) === 0 &&
-        Number(item.row_deletes) === 0;
+  el.modalBody.innerHTML = `<div class="text-center py-4">Loading intelligence...</div>`;
+  el.modal.show();
 
-    if (!isInsert) {
-        el.modalBody.innerHTML = `
-        <div class="alert alert-info">
-            Intelligence view available for INSERT only.
-        </div>
-        `;
-        el.modal.show();
-        return;
-    }
-  
-
-    el.modalBody.innerHTML = `<div class="text-center py-4">Loading intelligence...</div>`;
-    el.modal.show();
+  try {
 
     const res = await fetch(
-        `/api/category-review/part-intelligence?vendor=${item.vendor}&part=${item.part_number}`
+      `/api/category-review/part-intelligence?vendor=${item.vendor}&part=${item.part_number}`
     );
 
     const data = await res.json();
 
+    // =====================================================
+    // UPDATE MODE – Show Field-Level Diff
+    // =====================================================
+    if (data.mode === "update") {
+
+      if (!data.changes || data.changes.length === 0) {
+        el.modalBody.innerHTML = `
+          <div class="alert alert-info">
+            No attribute-level differences detected.
+          </div>
+        `;
+        return;
+      }
+
+      el.modalBody.innerHTML = `
+        <table class="table table-sm table-bordered">
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Before</th>
+              <th>After</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.changes.map(c => `
+              <tr>
+                <td>${c.field}</td>
+                <td class="text-danger">${c.before || "-"}</td>
+                <td class="text-success">${c.after || "-"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+      return;
+    }
+
+    // =====================================================
+    // INSERT MODE – Existing Intelligence View
+    // =====================================================
     el.modalBody.innerHTML = `
-        <div class="row">
+      <div class="row">
 
         <div class="col-md-8">
-            <table class="table table-sm table-bordered">
+          <table class="table table-sm table-bordered">
             <tr><th>Brand</th><td>${data.brand || "-"}</td></tr>
             <tr><th>Hazardous?</th><td>${data.hazmat || "-"}</td></tr>
             <tr><th>Category</th><td>${data.category || "-"}</td></tr>
@@ -201,30 +227,44 @@
             <tr><th>Short Description</th><td>${data.short_description || "-"}</td></tr>
             <tr><th>Country of Origin</th><td>${data.country_of_origin || "-"}</td></tr>
             <tr><th>HSB</th><td>${data.hsb || "-"}</td></tr>
-            <tr><th>Image Completeness</th><td>${data.image_completeness}</td></tr>
-            <tr><th>Data Quality Score</th><td>${data.data_quality_score}%</td></tr>
-            <tr><th>Missing Attributes</th>
-            <td>${(data.missing_attributes && data.missing_attributes.length)
-                    ? data.missing_attributes.join(", ")
-                    : "None"}</td></tr>
-            </table>
+            <tr><th>Image Completeness</th><td>${data.image_completeness || "-"}</td></tr>
+            <tr><th>Data Quality Score</th><td>${data.data_quality_score || 0}%</td></tr>
+            <tr>
+              <th>Missing Attributes</th>
+              <td>${
+                (data.missing_attributes && data.missing_attributes.length)
+                  ? data.missing_attributes.join(", ")
+                  : "None"
+              }</td>
+            </tr>
+          </table>
         </div>
 
         <div class="col-md-4 text-center">
-            ${
+          ${
             data.image_preview_url
-            ? `<img src="${data.image_preview_url}" 
-                    class="img-fluid rounded shadow-sm"
-                    style="max-height:300px;">`
-            : `<div class="border rounded p-3 bg-light">
-                    No Image Available
-                </div>`
-            }
+              ? `<img src="${data.image_preview_url}" 
+                     class="img-fluid rounded shadow-sm"
+                     style="max-height:300px;">`
+              : `<div class="border rounded p-3 bg-light">
+                   No Image Available
+                 </div>`
+          }
         </div>
-        </div>
-    `;
-    }
 
+      </div>
+    `;
+
+  } catch (err) {
+
+    el.modalBody.innerHTML = `
+      <div class="alert alert-danger">
+        Failed to load intelligence data.
+      </div>
+    `;
+    console.error(err);
+  }
+}
 
 
   async function loadQueue() {
