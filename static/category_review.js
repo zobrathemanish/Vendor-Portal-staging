@@ -480,12 +480,15 @@ if (data.mode === "update") {
     console.log("✅ Backend response:", result);
 
     await loadQueue();
+    
 
     console.log("🔄 Queue refreshed");
   }
 
 
-
+  // Enable search + filter reactivity
+  el.search.addEventListener("input", render);
+  el.filterDecision.addEventListener("change", render);
   loadQueue();
 
 })();
