@@ -8,6 +8,8 @@ import pyarrow.parquet as pq
 from flask import Blueprint, request, render_template, current_app, jsonify, abort
 from azure.storage.blob import BlobServiceClient
 from flask_login import login_required, current_user
+import numpy as np
+import pandas as pd
 
 """
 INSERT
@@ -151,7 +153,38 @@ def load_asset_quality(container, vendor: str) -> pd.DataFrame:
     except Exception as e:
         print("ASSET QUALITY LOAD FAILED ❌", e)
         return pd.DataFrame()
-    
+
+def json_safe(obj):
+    """
+    Recursively convert pandas / numpy objects to JSON-safe types.
+    """
+
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+
+    if isinstance(obj, list):
+        return [json_safe(v) for v in obj]
+
+    # Pandas NA
+    if obj is pd.NA:
+        return None
+
+    # numpy nan
+    if isinstance(obj, float) and np.isnan(obj):
+        return None
+
+    # numpy types
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+
+    # pandas timestamp
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+
+    return obj
 # =========================================================
 # PROMOTION LOGGING
 # =========================================================
@@ -887,10 +920,10 @@ def api_part_intelligence():
                         "after": after or "-"
                     })
 
-        return jsonify({
+        return jsonify(json_safe({
             "mode": "update",
             "changes": changes
-        })
+        }))
 
 
 
@@ -1122,7 +1155,7 @@ def api_part_intelligence():
     # RESPONSE
     # =====================================================
 
-    return jsonify({
+    payload = {
         "brand": brand,
         "hazmat": hazmat,
         "category": category,
@@ -1136,9 +1169,11 @@ def api_part_intelligence():
         "image_completeness": f"{jpg_count} / 3",
         "data_quality_score": data_score,
         "asset_quality_score": asset_score,
-        "missing_attributes" : missing_attributes,
+        "missing_attributes": missing_attributes,
         "image_preview_url": image_preview_url
-    })
+    }
+
+    return jsonify(json_safe(payload))
 
 @category_review_bp.route("/api/category-review/asset-preview")
 @login_required
