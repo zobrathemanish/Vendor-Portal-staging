@@ -380,6 +380,28 @@ def apply_delta_to_current_state(container, vendor: str):
 
     # ---------- PARQUET ----------
     parquet_buf = BytesIO()
+
+    # -----------------------------------------------------
+    # Normalize known numeric columns
+    # -----------------------------------------------------
+
+    NUMERIC_COLUMNS = [
+        "Merch Length",
+        "Merch Width",
+        "Merch Height",
+        "Weight",
+        "Quantity",
+        "Cost",
+        "Price"
+    ]
+
+    for col in NUMERIC_COLUMNS:
+        if col in df_current.columns:
+            df_current[col] = pd.to_numeric(
+                df_current[col],
+                errors="coerce"
+            )
+
     pq.write_table(pa.Table.from_pandas(df_current), parquet_buf)
     parquet_bytes = parquet_buf.getvalue()
 
