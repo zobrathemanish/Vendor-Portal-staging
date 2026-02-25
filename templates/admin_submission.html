@@ -30,6 +30,18 @@
 </head>
 
 <body>
+    <!-- LOADING OVERLAY -->
+<div id="loadingOverlay"
+     class="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center"
+     style="background: rgba(255,255,255,0.85); z-index: 9999; display:none;">
+
+  <div class="text-center">
+    <div class="spinner-border text-primary mb-3" role="status"></div>
+    <div id="loadingMessage" class="fw-semibold">Initializing...</div>
+  </div>
+
+</div>
+
 <div class="container-fluid py-4">
 
   <!-- HEADER -->
@@ -71,6 +83,10 @@
 
 <script>
 let submissions = [];
+let isLoading = false;
+
+const loadingOverlay = document.getElementById("loadingOverlay");
+const loadingMessage = document.getElementById("loadingMessage");
 
 function buildApiUrl() {
   const latestOnly = document.getElementById("latestOnly").checked ? "1" : "0";
@@ -78,10 +94,36 @@ function buildApiUrl() {
 }
 
 async function loadSubmissions() {
-  const url = buildApiUrl();
-  const res = await fetch(url);
-  submissions = await res.json();
-  renderDashboard();
+
+  showLoading("Connecting to control tower API...");
+
+  try {
+    const res = await fetch(buildApiUrl());
+    submissions = await res.json();
+
+    renderDashboard();
+
+  } catch (err) {
+    console.error(err);
+  }
+
+  // FORCE remove overlay no matter what
+  document.getElementById("loadingOverlay").remove();
+}
+
+function showLoading(message) {
+  if (!loadingOverlay) return;
+  document.getElementById("loadingMessage").textContent = message;
+  loadingOverlay.style.display = "flex";
+}
+
+function hideLoading() {
+  if (!loadingOverlay) return;
+  loadingOverlay.style.display = "none";
+}
+
+function updateLoading(message) {
+  document.getElementById("loadingMessage").textContent = message;
 }
 
 function renderDashboard() {
@@ -239,10 +281,13 @@ document.getElementById("latestOnly").addEventListener("change", () => {
 });
 
 // Initial load
+hideLoading(); // force it hidden first
 loadSubmissions();
 
+
+
 // Auto-refresh every 60s (keeps toggle behavior)
-setInterval(loadSubmissions, 60000);
+// setInterval(loadSubmissions, 60000);
 </script>
 
 </body>

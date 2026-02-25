@@ -59,58 +59,34 @@ def list_all_submission_prefixes():
 # STAGE + FAILURE
 # =========================================================
 
-def detect_stage(vendor, submission_id):
+def detect_stage_fast(vendor, submission_id, blob_names):
 
-    # APPROVED
-    if blob_exists(
-        f"approved/logs/vendor={vendor}/submission={submission_id}/promotion_log.json"
-    ):
+    if any("approved/logs" in b for b in blob_names):
         return "approved"
 
-    # CATEGORY QUEUE (vendor-level)
-    if blob_exists(f"category_queue/vendor={vendor}/etl_mapped.xlsx"):
-        return "category_queue"
-
-    # READY PRICING REVIEW (final pricing output)
-    if any(container.list_blobs(
-        name_starts_with=f"ready_pricing_review/vendor={vendor}/submission={submission_id}/"
-    )):
+    if any("ready_pricing_review" in b for b in blob_names):
         return "ready_pricing_review"
 
-    # POST PRICING (processing)
-    if any(container.list_blobs(
-        name_starts_with=f"post_pricing_review/vendor={vendor}/submission={submission_id}/"
-    )):
+    if any("post_pricing_review" in b for b in blob_names):
         return "post_pricing_review"
 
-    # READY
-    if any(container.list_blobs(
-        name_starts_with=f"ready/vendor={vendor}/submission={submission_id}/"
-    )):
+    if any("ready/vendor=" in b for b in blob_names):
         return "ready"
 
-    # IN REVIEW
-    if any(container.list_blobs(
-        name_starts_with=f"in_review/vendor={vendor}/submission={submission_id}/"
-    )):
+    if any("in_review/vendor=" in b for b in blob_names):
         return "in_review"
 
-    # REJECTED
-    if any(container.list_blobs(
-        name_starts_with=f"rejected/logs/vendor={vendor}/submission={submission_id}/"
-    )):
+    if any("rejected/logs" in b for b in blob_names):
         return "rejected"
 
     return "bronze_only"
 
-def detect_failure(vendor, submission_id):
-    prefix = f"rejected/logs/vendor={vendor}/submission={submission_id}/"
-    blobs = container.list_blobs(name_starts_with=prefix)
+def detect_failure_fast(blob_names):
 
-    for blob in blobs:
-        if "VALIDATION" in blob.name:
+    for b in blob_names:
+        if "VALIDATION" in b:
             return "validation"
-        if "INGESTION" in blob.name:
+        if "INGESTION" in b:
             return "ingestion"
 
     return None
@@ -120,14 +96,7 @@ def detect_failure(vendor, submission_id):
 # STAGE-AWARE PROGRESS
 # =========================================================
 
-def build_pipeline_state(vendor, submission_id, stage):
-
-    base_in_review = f"in_review/vendor={vendor}/submission={submission_id}/"
-    base_ready = f"ready/vendor={vendor}/submission={submission_id}/"
-    base_post = f"post_pricing_review/vendor={vendor}/submission={submission_id}/"
-    base_ready_pricing = f"ready_pricing_review/vendor={vendor}/submission={submission_id}/review/"
-    base_category_queue = f"category_queue/vendor={vendor}/etl_mapped.xlsx"
-    base_approved = f"approved/logs/vendor={vendor}/submission={submission_id}/promotion_log.json"
+def build_pipeline_state_fast(vendor, submission_id, stage, blob_names):
 
     pipeline = {
         "ingestion": "pending",
@@ -139,116 +108,63 @@ def build_pipeline_state(vendor, submission_id, stage):
         "integrity": "pending",
         "etl": "pending",
         "delta": "pending",
-        "post_review_etl": "pending",   # NEW
+        "post_review_etl": "pending",
         "pricing": "pending",
         "category": "pending",
         "analytics": "pending",
     }
 
-    # --------------------------------------------------
-    # FAILURE (hard override)
-    # --------------------------------------------------
     if stage == "rejected":
         pipeline["ingestion"] = "failed"
         pipeline["validation"] = "failed"
         return pipeline
 
-    # --------------------------------------------------
-    # ORIGINAL ETL PASS (IN_REVIEW → READY)
-    # --------------------------------------------------
-    if blob_exists(f"{base_in_review}mapped/mapped.xlsx"):
+    # Original ETL artifacts
+    if any("mapped/mapped.xlsx" in b for b in blob_names):
         pipeline["mapping"] = "success"
 
-    if blob_exists(f"{base_in_review}canonical/media_canonical.xlsx"):
+    if any("media_canonical.xlsx" in b for b in blob_names):
         pipeline["media"] = "success"
 
-    if blob_exists(f"{base_in_review}profiling/health_issues.xlsx"):
+    if any("health_issues.xlsx" in b for b in blob_names):
         pipeline["profiling"] = "success"
 
-    if blob_exists(f"{base_in_review}autofix/autofix_report.xlsx"):
+    if any("autofix_report.xlsx" in b for b in blob_names):
         pipeline["autofix"] = "success"
 
-    if blob_exists(f"{base_in_review}integrity/integrity_report.xlsx"):
+    if any("integrity_report.xlsx" in b for b in blob_names):
         pipeline["integrity"] = "success"
 
-    # Validation + Ingestion considered successful once in_review reached
-    if stage in ["in_review", "ready", "post_pricing_review", 
+    if any("review/etl_mapped.xlsx" in b for b in blob_names):
+        pipeline["etl"] = "success"
+
+    if any("review/delta_mapped.xlsx" in b for b in blob_names):
+        pipeline["delta"] = "success"
+
+    if any("ready_pricing_review" in b and "etl_mapped.xlsx" in b for b in blob_names):
+        pipeline["post_review_etl"] = "success"
+
+    if stage in ["in_review", "ready", "post_pricing_review",
                  "ready_pricing_review", "category_queue", "approved"]:
         pipeline["validation"] = "success"
         pipeline["ingestion"] = "success"
 
-    # READY STAGE ETL
-    if blob_exists(f"{base_ready}review/etl_mapped.xlsx"):
-        pipeline["etl"] = "success"
-
-    if blob_exists(f"{base_ready}review/delta_mapped.xlsx"):
-        pipeline["delta"] = "success"
-
-    # --------------------------------------------------
-    # POST PRICING REVIEW PROCESSING (SECOND PASS PREP)
-    # --------------------------------------------------
-    if blob_exists(f"{base_post}profiling/health_issues.xlsx"):
-        pipeline["profiling"] = "success"
-
-    if blob_exists(f"{base_post}autofix/autofix_report.xlsx"):
-        pipeline["autofix"] = "success"
-
-    if blob_exists(f"{base_post}integrity_report.xlsx"):
-        pipeline["integrity"] = "success"
-
-    # --------------------------------------------------
-    # POST REVIEW FINAL ETL OUTPUT
-    # --------------------------------------------------
-    if blob_exists(f"{base_ready_pricing}etl_mapped.xlsx"):
-        pipeline["post_review_etl"] = "success"
-
-    if blob_exists(f"{base_ready_pricing}delta_mapped.xlsx"):
-        pipeline["delta"] = "success"
-
-    # Turn before artifacts green
-    if stage in ["ready_pricing_review", "category_queue", "approved"]:
-        pipeline["mapping"] = "success"
-        pipeline["media"] = "success"
-        pipeline["profiling"] = "success"
-        pipeline["autofix"] = "success"
-        pipeline["integrity"] = "success"
-        pipeline["etl"] = "success"
-
-    # --------------------------------------------------
-    # PRICING STATE (LIFECYCLE)
-    # --------------------------------------------------
     if stage == "post_pricing_review":
         pipeline["pricing"] = "processing"
 
     elif stage in ["ready_pricing_review", "category_queue", "approved"]:
         pipeline["pricing"] = "approved"
 
-    elif stage == "ready":
-        pipeline["pricing"] = "pending"
-
-    # --------------------------------------------------
-    # CATEGORY STATE
-    # --------------------------------------------------
     if stage == "category_queue":
         pipeline["category"] = "pending"
 
-    if blob_exists(base_approved):
+    if any("approved/logs" in b for b in blob_names):
         pipeline["category"] = "approved"
 
-    # --------------------------------------------------
-    # ANALYTICS
-    # --------------------------------------------------
-    scorecard_path = (
-        f"analytics/vendor_scorecard/vendor={vendor}/"
-        f"submission={submission_id}/"
-        f"vendor_scorecard_{submission_id}.xlsx"
-    )
-
-    if blob_exists(scorecard_path):
+    if any("vendor_scorecard" in b for b in blob_names):
         pipeline["analytics"] = "generated"
 
     return pipeline
-
 
 # =========================================================
 # ADMIN UI PAGE
@@ -279,9 +195,27 @@ def get_admin_submissions():
         all_submissions = list_all_submission_prefixes()
 
         for vendor, submission_id in all_submissions:
-            stage = detect_stage(vendor, submission_id)
-            failure = detect_failure(vendor, submission_id)
-            pipeline = build_pipeline_state(vendor, submission_id, stage)
+
+            # Fetch ALL blobs for this submission in one call
+            submission_prefixes = [
+                f"in_review/vendor={vendor}/submission={submission_id}/",
+                f"ready/vendor={vendor}/submission={submission_id}/",
+                f"post_pricing_review/vendor={vendor}/submission={submission_id}/",
+                f"ready_pricing_review/vendor={vendor}/submission={submission_id}/",
+                f"rejected/logs/vendor={vendor}/submission={submission_id}/",
+                f"approved/logs/vendor={vendor}/submission={submission_id}/"
+            ]
+
+            blob_names = set()
+
+            for prefix in submission_prefixes:
+                blobs = container.list_blobs(name_starts_with=prefix)
+                for b in blobs:
+                    blob_names.add(b.name)
+
+            stage = detect_stage_fast(vendor, submission_id, blob_names)
+            failure = detect_failure_fast(blob_names)
+            pipeline = build_pipeline_state_fast(vendor, submission_id, stage, blob_names)
 
             results.append({
                 "vendor": vendor,
