@@ -70,7 +70,7 @@ def _role_redirect(user):
         return redirect(url_for("upload.upload_page"))
 
     elif user.role == "admin":
-        return redirect(url_for("admin.admin_dashboard"))
+        return redirect(url_for("admin.admin_submissions_page"))
 
     # Default fallback
     return redirect(url_for("upload.upload_page"))

@@ -1,7 +1,8 @@
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, request
 from flask_login import login_required, current_user
 import os
 from azure.storage.blob import BlobServiceClient
+from flask import request
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -29,6 +30,8 @@ def list_all_submission_prefixes():
         "in_review/vendor=",
         "ready/vendor=",
         "post_pricing_review/vendor=",
+        "ready_pricing_review/vendor=",
+        "approved/logs/vendor="
     ]
 
     submissions = set()
@@ -57,19 +60,48 @@ def list_all_submission_prefixes():
 # =========================================================
 
 def detect_stage(vendor, submission_id):
-    stage_paths = {
-        "rejected": f"rejected/logs/vendor={vendor}/submission={submission_id}/",
-        "post_pricing_review": f"post_pricing_review/vendor={vendor}/submission={submission_id}/",
-        "ready": f"ready/vendor={vendor}/submission={submission_id}/",
-        "in_review": f"in_review/vendor={vendor}/submission={submission_id}/",
-    }
 
-    for stage, prefix in stage_paths.items():
-        if any(container.list_blobs(name_starts_with=prefix)):
-            return stage
+    # APPROVED
+    if blob_exists(
+        f"approved/logs/vendor={vendor}/submission={submission_id}/promotion_log.json"
+    ):
+        return "approved"
+
+    # CATEGORY QUEUE (vendor-level)
+    if blob_exists(f"category_queue/vendor={vendor}/etl_mapped.xlsx"):
+        return "category_queue"
+
+    # READY PRICING REVIEW (final pricing output)
+    if any(container.list_blobs(
+        name_starts_with=f"ready_pricing_review/vendor={vendor}/submission={submission_id}/"
+    )):
+        return "ready_pricing_review"
+
+    # POST PRICING (processing)
+    if any(container.list_blobs(
+        name_starts_with=f"post_pricing_review/vendor={vendor}/submission={submission_id}/"
+    )):
+        return "post_pricing_review"
+
+    # READY
+    if any(container.list_blobs(
+        name_starts_with=f"ready/vendor={vendor}/submission={submission_id}/"
+    )):
+        return "ready"
+
+    # IN REVIEW
+    if any(container.list_blobs(
+        name_starts_with=f"in_review/vendor={vendor}/submission={submission_id}/"
+    )):
+        return "in_review"
+
+    # REJECTED
+    if any(container.list_blobs(
+        name_starts_with=f"rejected/logs/vendor={vendor}/submission={submission_id}/"
+    )):
+        return "rejected"
 
     return "bronze_only"
-
 
 def detect_failure(vendor, submission_id):
     prefix = f"rejected/logs/vendor={vendor}/submission={submission_id}/"
@@ -93,6 +125,7 @@ def build_pipeline_state(vendor, submission_id, stage):
     base_in_review = f"in_review/vendor={vendor}/submission={submission_id}/"
     base_ready = f"ready/vendor={vendor}/submission={submission_id}/"
     base_post = f"post_pricing_review/vendor={vendor}/submission={submission_id}/"
+    base_ready_pricing = f"ready_pricing_review/vendor={vendor}/submission={submission_id}/"   # ADD
 
     pipeline = {
         "ingestion": "unknown",
@@ -103,7 +136,9 @@ def build_pipeline_state(vendor, submission_id, stage):
         "autofix": "pending",
         "integrity": "pending",
         "etl": "pending",
+        "delta": "pending",        
         "pricing": "pending",
+        "category": "pending",     
         "analytics": "pending",
     }
 
@@ -144,14 +179,46 @@ def build_pipeline_state(vendor, submission_id, stage):
             "success" if blob_exists(f"{base_ready}review/etl_mapped.xlsx") else "missing"
         )
 
-    # POST PRICING
+    # POST PRICING (processing layer)
     if stage == "post_pricing_review":
-        pipeline["pricing"] = "approved"
-        pipeline["etl"] = (
-            "success" if blob_exists(f"{base_post}etl_mapped.xlsx") else "missing"
+        pipeline["pricing"] = "processing"
+
+        pipeline["profiling"] = (
+            "success" if blob_exists(f"{base_post}profiling/health_issues.xlsx") else "missing"
         )
+
+        pipeline["autofix"] = (
+            "success" if blob_exists(f"{base_post}autofix/autofix_report.xlsx") else "missing"
+        )
+
+        pipeline["integrity"] = (
+            "success" if blob_exists(f"{base_post}integrity_report.xlsx") else "missing"
+        )
+
     elif stage == "ready":
         pipeline["pricing"] = "pending"
+
+    # READY PRICING REVIEW (final pricing artifacts)
+    if stage == "ready_pricing_review":
+        pipeline["pricing"] = "approved"
+
+        pipeline["etl"] = (
+            "success" if blob_exists(f"{base_ready_pricing}etl_mapped.xlsx") else "missing"
+        )
+
+        pipeline["delta"] = (
+            "success" if blob_exists(f"{base_ready_pricing}delta_mapped.xlsx") else "missing"
+        )
+
+    # CATEGORY QUEUE
+    if stage == "category_queue":
+        pipeline["pricing"] = "approved"
+        pipeline["category"] = "pending"
+
+    # APPROVED
+    if stage == "approved":
+        pipeline["pricing"] = "approved"
+        pipeline["category"] = "approved"
 
     # ANALYTICS
     scorecard_path = (
@@ -208,6 +275,17 @@ def get_admin_submissions():
             })
 
         results.sort(key=lambda x: x["submission_id"], reverse=True)
+
+        # latest_only=1 (default) keeps only newest submission per vendor
+        latest_only_param = request.args.get("latest_only", "1").lower() in ("1", "true", "yes")
+
+        if latest_only_param:
+            latest_only = {}
+            for r in results:
+                v = r["vendor"]
+                if v not in latest_only:
+                    latest_only[v] = r
+            results = list(latest_only.values())
 
         return jsonify(results)
 
