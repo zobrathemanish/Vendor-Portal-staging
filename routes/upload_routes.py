@@ -59,9 +59,13 @@ def upload_files():
     # -----------------------------------------------------
     # PRICING REVIEW FLOW (ISOLATED FROM VENDOR FLOW)
     # -----------------------------------------------------
+    
     if submission_type == "pricing_review":
 
-        submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        submission_id = get_latest_vendor_submission_id(vendor_name)
+        if not submission_id:
+            flash("No existing submission found for this vendor.", "danger")
+            return redirect(url_for("upload.upload_page"))
 
         session["last_submission_id"] = submission_id
         session["last_submission_vendor"] = vendor_name
@@ -95,6 +99,28 @@ def upload_files():
                 container_name="silver"
             )
 
+            # ---------------------------------------
+            # CLEAR OLD PRICING LOCK (ALLOW RE-RUN)
+            # ---------------------------------------
+
+            blob_service = BlobServiceClient.from_connection_string(
+                current_app.config["AZURE_CONNECTION_STRING"]
+            )
+            silver = blob_service.get_container_client("silver")
+
+            lock_blob = (
+                f"logs/vendor={vendor_name}/"
+                f"submission={submission_id}/"
+                f"lock_PRICING_REVIEW.json"
+            )
+
+            try:
+                silver.delete_blob(lock_blob)
+                logger.info("Old PRICING_REVIEW lock cleared")
+            except Exception:
+                # lock may not exist — that's fine
+                pass
+
             marker_payload = {
                 "schema_version": "2.0",
                 "marker_type": "PRICING_REVIEW",
@@ -109,9 +135,12 @@ def upload_files():
                 "created_at": datetime.utcnow().isoformat() + "Z"
             }
 
+            #added so that pricing upload is always triggered
+            event_ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+
             marker_name = (
                 f"raw/notifymarker/"
-                f"{vendor_name}_{submission_id}_PRICING.json"
+                f"{vendor_name}_{submission_id}_PRICING_{event_ts}.json"
             )
 
             upload_json_blob(
@@ -134,14 +163,12 @@ def upload_files():
     if submission_type == "vendor":
 
         # Finalize submission
-        final_submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        
-        submission_id = final_submission_id
+        submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
-        # Rotate session state
         session["last_submission_id"] = submission_id
         session["last_submission_vendor"] = vendor_name
-        session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        session["active_submission_id"] = None
+
         session.modified = True
 
         if not vendor_name:
@@ -237,7 +264,7 @@ def upload_files():
 
             marker_name = (
                 f"raw/notifymarker/"
-                f"{vendor_name}_{timestamp}.json"
+                f"{vendor_name}_{submission_id}.json"
             )
 
             upload_json_blob(
@@ -343,9 +370,9 @@ def upload_files():
 
             marker_name = (
                 f"raw/notifymarker/"
-                f"{vendor_name}_{timestamp}.json"
+                f"{vendor_name}_{submission_id}.json"
             )
-
+            
             upload_json_blob(
                 data=marker_payload,
                 blob_path=marker_name,

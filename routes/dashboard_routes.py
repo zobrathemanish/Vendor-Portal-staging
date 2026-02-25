@@ -161,7 +161,13 @@ def build_pipeline_state_fast(vendor, submission_id, stage, blob_names):
     if any("approved/logs" in b for b in blob_names):
         pipeline["category"] = "approved"
 
-    if any("vendor_scorecard" in b for b in blob_names):
+    analytics_prefix = (
+    f"analytics/vendor_scorecard/vendor={vendor}/submission={submission_id}/"
+)
+
+    analytics_files = list(container.list_blobs(name_starts_with=analytics_prefix))
+
+    if any("vendor_scorecard" in blob.name for blob in analytics_files):
         pipeline["analytics"] = "generated"
 
     return pipeline
@@ -190,55 +196,70 @@ def get_admin_submissions():
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        results = []
+        results = {}
 
-        all_submissions = list_all_submission_prefixes()
+        # 🔥 SINGLE CONTAINER SCAN
+        all_blobs = container.list_blobs()
 
-        for vendor, submission_id in all_submissions:
+        submission_map = {}
 
-            # Fetch ALL blobs for this submission in one call
-            submission_prefixes = [
-                f"in_review/vendor={vendor}/submission={submission_id}/",
-                f"ready/vendor={vendor}/submission={submission_id}/",
-                f"post_pricing_review/vendor={vendor}/submission={submission_id}/",
-                f"ready_pricing_review/vendor={vendor}/submission={submission_id}/",
-                f"rejected/logs/vendor={vendor}/submission={submission_id}/",
-                f"approved/logs/vendor={vendor}/submission={submission_id}/"
-            ]
+        for blob in all_blobs:
+            name = blob.name
 
-            blob_names = set()
+            if "vendor=" not in name or "submission=" not in name:
+                continue
 
-            for prefix in submission_prefixes:
-                blobs = container.list_blobs(name_starts_with=prefix)
-                for b in blobs:
-                    blob_names.add(b.name)
+            parts = name.split("/")
+
+            vendor = None
+            submission_id = None
+
+            for part in parts:
+                if part.startswith("vendor="):
+                    vendor = part.replace("vendor=", "")
+                if part.startswith("submission="):
+                    submission_id = part.replace("submission=", "")
+
+            if not vendor or not submission_id:
+                continue
+
+            key = (vendor, submission_id)
+
+            if key not in submission_map:
+                submission_map[key] = set()
+
+            submission_map[key].add(name)
+
+        # 🔥 Now build results from memory (FAST)
+        for (vendor, submission_id), blob_names in submission_map.items():
 
             stage = detect_stage_fast(vendor, submission_id, blob_names)
             failure = detect_failure_fast(blob_names)
             pipeline = build_pipeline_state_fast(vendor, submission_id, stage, blob_names)
 
-            results.append({
+            results[(vendor, submission_id)] = {
                 "vendor": vendor,
                 "submission_id": submission_id,
                 "stage": stage,
                 "failure": failure,
                 "pipeline": pipeline,
-            })
+            }
 
-        results.sort(key=lambda x: x["submission_id"], reverse=True)
+        final_results = list(results.values())
+        final_results.sort(key=lambda x: x["submission_id"], reverse=True)
 
-        # latest_only=1 (default) keeps only newest submission per vendor
+        # latest_only filter
         latest_only_param = request.args.get("latest_only", "1").lower() in ("1", "true", "yes")
 
         if latest_only_param:
             latest_only = {}
-            for r in results:
+            for r in final_results:
                 v = r["vendor"]
                 if v not in latest_only:
                     latest_only[v] = r
-            results = list(latest_only.values())
+            final_results = list(latest_only.values())
 
-        return jsonify(results)
+        return jsonify(final_results)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

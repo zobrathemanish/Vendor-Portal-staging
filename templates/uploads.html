@@ -1116,23 +1116,25 @@ function pollSubmissionStatus(vendor, submissionId) {
 </script>
 
 <script>
-  const autoStart = meta.dataset.autostart === "1";
-
-if (autoStart && window.CURRENT_SUBMISSION_ID && window.CURRENT_SUBMISSION_VENDOR) {
+if (window.CURRENT_SUBMISSION_ID && window.CURRENT_SUBMISSION_VENDOR) {
 
     const submissionId = window.CURRENT_SUBMISSION_ID;
-    document.documentElement.style
-  .setProperty("--console-title", `"Submission ID: ${submissionId}"`);
-
     const submissionVendor = window.CURRENT_SUBMISSION_VENDOR;
+
+    document.documentElement.style
+      .setProperty("--console-title", `"Submission ID: ${submissionId}"`);
 
     ACTIVE_SUBMISSION_ID = submissionId;
 
     const box = document.getElementById("submission-status-log");
-      if (box) box.textContent = "";
+    if (box) box.textContent = "";
 
+    // 🔥 Reset output loading state
+    OUTPUT_FILES_LOADED = false;
+
+    // 🔥 Always restart polling
     pollSubmissionStatus(submissionVendor, submissionId);
-  }
+}
 </script>
 
 <script>

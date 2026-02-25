@@ -407,3 +407,47 @@ def generate_read_sas_url(blob_service, container_name, blob_name, expiry_hours=
         f"https://{blob_service.account_name}.blob.core.windows.net/"
         f"{container_name}/{blob_name}?{sas}"
     )
+
+
+def get_latest_vendor_submission_id(
+    vendor: str,
+    container_name: str = "silver",
+    connection_string: str | None = None
+) -> str | None:
+    """
+    Returns the latest submission_id for a vendor
+    by scanning known silver workflow prefixes.
+
+    Assumes submission_id format: YYYYMMDD_HHMMSS
+    """
+
+    conn_str = connection_string or os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    if not conn_str:
+        raise RuntimeError("Azure connection string not configured")
+
+    blob_service = BlobServiceClient.from_connection_string(conn_str)
+    container = blob_service.get_container_client(container_name)
+
+    prefixes = [
+        f"in_review/vendor={vendor}/",
+        f"ready/vendor={vendor}/",
+        f"post_pricing_review/vendor={vendor}/",
+        f"ready_pricing_review/vendor={vendor}/",
+        f"approved/logs/vendor={vendor}/",
+    ]
+
+    submissions = set()
+
+    for prefix in prefixes:
+        blobs = container.list_blobs(name_starts_with=prefix)
+
+        for blob in blobs:
+            parts = blob.name.split("/")
+            for part in parts:
+                if part.startswith("submission="):
+                    submissions.add(part.replace("submission=", ""))
+
+    if not submissions:
+        return None
+
+    return sorted(submissions, reverse=True)[0]
