@@ -125,102 +125,119 @@ def build_pipeline_state(vendor, submission_id, stage):
     base_in_review = f"in_review/vendor={vendor}/submission={submission_id}/"
     base_ready = f"ready/vendor={vendor}/submission={submission_id}/"
     base_post = f"post_pricing_review/vendor={vendor}/submission={submission_id}/"
-    base_ready_pricing = f"ready_pricing_review/vendor={vendor}/submission={submission_id}/"   # ADD
+    base_ready_pricing = f"ready_pricing_review/vendor={vendor}/submission={submission_id}/review/"
+    base_category_queue = f"category_queue/vendor={vendor}/etl_mapped.xlsx"
+    base_approved = f"approved/logs/vendor={vendor}/submission={submission_id}/promotion_log.json"
 
     pipeline = {
-        "ingestion": "unknown",
-        "validation": "unknown",
+        "ingestion": "pending",
+        "validation": "pending",
         "mapping": "pending",
         "media": "pending",
         "profiling": "pending",
         "autofix": "pending",
         "integrity": "pending",
         "etl": "pending",
-        "delta": "pending",        
+        "delta": "pending",
+        "post_review_etl": "pending",   # NEW
         "pricing": "pending",
-        "category": "pending",     
+        "category": "pending",
         "analytics": "pending",
     }
 
-    # REJECTED
+    # --------------------------------------------------
+    # FAILURE (hard override)
+    # --------------------------------------------------
     if stage == "rejected":
         pipeline["ingestion"] = "failed"
         pipeline["validation"] = "failed"
         return pipeline
 
-    # IN REVIEW
-    if stage in ["in_review", "ready", "post_pricing_review"]:
-        pipeline["ingestion"] = "success"
+    # --------------------------------------------------
+    # ORIGINAL ETL PASS (IN_REVIEW → READY)
+    # --------------------------------------------------
+    if blob_exists(f"{base_in_review}mapped/mapped.xlsx"):
+        pipeline["mapping"] = "success"
+
+    if blob_exists(f"{base_in_review}canonical/media_canonical.xlsx"):
+        pipeline["media"] = "success"
+
+    if blob_exists(f"{base_in_review}profiling/health_issues.xlsx"):
+        pipeline["profiling"] = "success"
+
+    if blob_exists(f"{base_in_review}autofix/autofix_report.xlsx"):
+        pipeline["autofix"] = "success"
+
+    if blob_exists(f"{base_in_review}integrity/integrity_report.xlsx"):
+        pipeline["integrity"] = "success"
+
+    # Validation + Ingestion considered successful once in_review reached
+    if stage in ["in_review", "ready", "post_pricing_review", 
+                 "ready_pricing_review", "category_queue", "approved"]:
         pipeline["validation"] = "success"
+        pipeline["ingestion"] = "success"
 
-        pipeline["mapping"] = (
-            "success" if blob_exists(f"{base_in_review}mapped/mapped.xlsx") else "missing"
-        )
+    # READY STAGE ETL
+    if blob_exists(f"{base_ready}review/etl_mapped.xlsx"):
+        pipeline["etl"] = "success"
 
-        pipeline["media"] = (
-            "success" if blob_exists(f"{base_in_review}canonical/media_canonical.xlsx") else "missing"
-        )
+    if blob_exists(f"{base_ready}review/delta_mapped.xlsx"):
+        pipeline["delta"] = "success"
 
-        pipeline["profiling"] = (
-            "success" if blob_exists(f"{base_in_review}profiling/health_issues.xlsx") else "missing"
-        )
+    # --------------------------------------------------
+    # POST PRICING REVIEW PROCESSING (SECOND PASS PREP)
+    # --------------------------------------------------
+    if blob_exists(f"{base_post}profiling/health_issues.xlsx"):
+        pipeline["profiling"] = "success"
 
-        pipeline["autofix"] = (
-            "success" if blob_exists(f"{base_in_review}autofix/autofix_report.xlsx") else "missing"
-        )
+    if blob_exists(f"{base_post}autofix/autofix_report.xlsx"):
+        pipeline["autofix"] = "success"
 
-        pipeline["integrity"] = (
-            "success" if blob_exists(f"{base_in_review}integrity/integrity_report.xlsx") else "missing"
-        )
+    if blob_exists(f"{base_post}integrity_report.xlsx"):
+        pipeline["integrity"] = "success"
 
-    # READY
-    if stage in ["ready", "post_pricing_review"]:
-        pipeline["etl"] = (
-            "success" if blob_exists(f"{base_ready}review/etl_mapped.xlsx") else "missing"
-        )
+    # --------------------------------------------------
+    # POST REVIEW FINAL ETL OUTPUT
+    # --------------------------------------------------
+    if blob_exists(f"{base_ready_pricing}etl_mapped.xlsx"):
+        pipeline["post_review_etl"] = "success"
 
-    # POST PRICING (processing layer)
+    if blob_exists(f"{base_ready_pricing}delta_mapped.xlsx"):
+        pipeline["delta"] = "success"
+
+    # Turn before artifacts green
+    if stage in ["ready_pricing_review", "category_queue", "approved"]:
+        pipeline["mapping"] = "success"
+        pipeline["media"] = "success"
+        pipeline["profiling"] = "success"
+        pipeline["autofix"] = "success"
+        pipeline["integrity"] = "success"
+        pipeline["etl"] = "success"
+
+    # --------------------------------------------------
+    # PRICING STATE (LIFECYCLE)
+    # --------------------------------------------------
     if stage == "post_pricing_review":
         pipeline["pricing"] = "processing"
 
-        pipeline["profiling"] = (
-            "success" if blob_exists(f"{base_post}profiling/health_issues.xlsx") else "missing"
-        )
-
-        pipeline["autofix"] = (
-            "success" if blob_exists(f"{base_post}autofix/autofix_report.xlsx") else "missing"
-        )
-
-        pipeline["integrity"] = (
-            "success" if blob_exists(f"{base_post}integrity_report.xlsx") else "missing"
-        )
+    elif stage in ["ready_pricing_review", "category_queue", "approved"]:
+        pipeline["pricing"] = "approved"
 
     elif stage == "ready":
         pipeline["pricing"] = "pending"
 
-    # READY PRICING REVIEW (final pricing artifacts)
-    if stage == "ready_pricing_review":
-        pipeline["pricing"] = "approved"
-
-        pipeline["etl"] = (
-            "success" if blob_exists(f"{base_ready_pricing}etl_mapped.xlsx") else "missing"
-        )
-
-        pipeline["delta"] = (
-            "success" if blob_exists(f"{base_ready_pricing}delta_mapped.xlsx") else "missing"
-        )
-
-    # CATEGORY QUEUE
+    # --------------------------------------------------
+    # CATEGORY STATE
+    # --------------------------------------------------
     if stage == "category_queue":
-        pipeline["pricing"] = "approved"
         pipeline["category"] = "pending"
 
-    # APPROVED
-    if stage == "approved":
-        pipeline["pricing"] = "approved"
+    if blob_exists(base_approved):
         pipeline["category"] = "approved"
 
+    # --------------------------------------------------
     # ANALYTICS
+    # --------------------------------------------------
     scorecard_path = (
         f"analytics/vendor_scorecard/vendor={vendor}/"
         f"submission={submission_id}/"
