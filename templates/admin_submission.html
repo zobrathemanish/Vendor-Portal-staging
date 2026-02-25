@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Control Tower</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+
+        .status-badge {
+            font-size: 0.72rem;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .status-success { background-color: #d4edda; color: #155724; }
+        .status-failed { background-color: #f8d7da; color: #721c24; }
+        .status-missing { background-color: #fff3cd; color: #856404; }
+        .status-pending { background-color: #e2e3e5; color: #41464b; }
+        .status-approved { background-color: #cfe2ff; color: #084298; }
+        .status-generated { background-color: #e0cffc; color: #5a189a; }
+
+        .card:hover {
+            transform: translateY(-3px);
+            transition: 0.2s ease;
+        }
+
+        .stage-badge {
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container-fluid py-4">
+
+    <!-- HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0">Admin Submission Control Tower</h4>
+
+        <div class="d-flex gap-2">
+            <input type="text" id="searchVendor" class="form-control form-control-sm"
+                   placeholder="Search vendor..." style="width:200px;">
+            <select id="stageFilter" class="form-select form-select-sm" style="width:180px;">
+                <option value="">All Stages</option>
+                <option value="ready">Ready</option>
+                <option value="in_review">In Review</option>
+                <option value="post_pricing_review">Post Pricing</option>
+                <option value="rejected">Rejected</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- SUMMARY COUNTERS -->
+    <div class="row mb-4" id="summaryCounters">
+        <!-- injected dynamically -->
+    </div>
+
+    <!-- SUBMISSIONS -->
+    <div class="row g-3" id="submissionContainer">
+        <!-- cards injected here -->
+    </div>
+
+</div>
+
+<script>
+let submissions = [];
+
+async function loadSubmissions() {
+    const res = await fetch("/api/admin/submissions");
+    submissions = await res.json();
+    renderDashboard();
+}
+
+function renderDashboard() {
+    renderSummary();
+    renderCards();
+}
+
+function renderSummary() {
+    const container = document.getElementById("summaryCounters");
+
+    const total = submissions.length;
+    const ready = submissions.filter(s => s.stage === "ready").length;
+    const rejected = submissions.filter(s => s.stage === "rejected").length;
+    const postPricing = submissions.filter(s => s.stage === "post_pricing_review").length;
+
+    container.innerHTML = `
+        <div class="col-md-3">
+            <div class="card shadow-sm p-3">
+                <h6>Total Submissions</h6>
+                <h4>${total}</h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm p-3">
+                <h6>Ready</h6>
+                <h4>${ready}</h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm p-3">
+                <h6>Post Pricing</h6>
+                <h4>${postPricing}</h4>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm p-3">
+                <h6>Rejected</h6>
+                <h4 class="text-danger">${rejected}</h4>
+            </div>
+        </div>
+    `;
+}
+
+function renderCards() {
+    const container = document.getElementById("submissionContainer");
+    container.innerHTML = "";
+
+    const search = document.getElementById("searchVendor").value.toLowerCase();
+    const stageFilter = document.getElementById("stageFilter").value;
+
+    submissions
+        .filter(s =>
+            s.vendor.toLowerCase().includes(search) &&
+            (stageFilter === "" || s.stage === stageFilter)
+        )
+        .forEach(sub => {
+
+            const col = document.createElement("div");
+            col.className = "col-md-6 col-lg-4";
+
+            col.innerHTML = `
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-0">${sub.vendor}</h6>
+                                <small class="text-muted">${sub.submission_id}</small>
+                            </div>
+                            <span class="badge bg-dark stage-badge">
+                                ${sub.stage.toUpperCase()}
+                            </span>
+                        </div>
+
+                        ${sub.failure ? `
+                            <div class="mt-2 text-danger small">
+                                ⚠ Failure: ${sub.failure.toUpperCase()}
+                            </div>
+                        ` : ""}
+
+                        <hr>
+
+                        <div class="d-flex flex-wrap gap-1">
+                            ${renderPipeline(sub.pipeline)}
+                        </div>
+
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(col);
+        });
+}
+
+function renderPipeline(pipeline) {
+    let html = "";
+
+    Object.entries(pipeline).forEach(([step, status]) => {
+        html += `
+            <span class="status-badge status-${status}">
+                ${capitalize(step)}
+            </span>
+        `;
+    });
+
+    return html;
+}
+
+function capitalize(text) {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+document.getElementById("searchVendor").addEventListener("input", renderCards);
+document.getElementById("stageFilter").addEventListener("change", renderCards);
+
+loadSubmissions();
+
+// Optional auto-refresh every 60 seconds
+setInterval(loadSubmissions, 60000);
+</script>
+
+</body>
+</html>
