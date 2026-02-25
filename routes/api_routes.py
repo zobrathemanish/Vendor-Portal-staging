@@ -20,10 +20,6 @@ from azure.storage.blob import BlobServiceClient
 from services.azure_service import generate_upload_sas, generate_read_sas_url, read_json_blob_from_azure
 from extensions import LOG_BUFFER
 
-
-
-from extensions import LOG_BUFFER
-
 api_bp = Blueprint("api", __name__)
 
 @api_bp.route("/logs/stream")
@@ -59,10 +55,9 @@ def get_asset_upload_sas():
 
     blob_path = (
         f"raw/vendor={vendor}/"
-        f"submission={submission_id}/"
-        f"assets/{timestamp}_{filename}"
+        f"staging/assets/{timestamp}_{filename}"
     )
-
+    
     sas_url = generate_upload_sas(
         container=current_app.config["AZURE_CONTAINER_NAME"],
         blob_path=blob_path

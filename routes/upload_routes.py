@@ -1,3 +1,5 @@
+#upload_routes.py
+
 from flask import Blueprint, render_template, session, request, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from datetime import datetime
@@ -12,7 +14,7 @@ from services.azure_service import (
     write_status_to_azure,
 )
 from services.submission_service import (
-    move_assets_to_final_submission,
+    move_staging_assets_to_submission,
     trigger_etl
 )
 
@@ -133,8 +135,7 @@ def upload_files():
 
         # Finalize submission
         final_submission_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        draft_submission_id = session.get("active_submission_id")
-
+        
         submission_id = final_submission_id
 
         # Rotate session state
@@ -167,10 +168,9 @@ def upload_files():
         pricing_path = save_file(pricing_file, vendor_name, "opticat", current_app.config['UPLOAD_FOLDER'])
 
          # 🚚 MOVE ASSETS
-        move_assets_to_final_submission(
+        move_staging_assets_to_submission(
             vendor=vendor_name,
-            draft_submission_id=draft_submission_id,
-            final_submission_id=final_submission_id
+            final_submission_id=submission_id
         )
 
 
@@ -277,10 +277,9 @@ def upload_files():
         unified_path = save_file(unified_file, vendor_name, "non_opticat", current_app.config['UPLOAD_FOLDER'])
 
             # 🚚 MOVE ASSETS
-        move_assets_to_final_submission(
+        move_staging_assets_to_submission(
             vendor=vendor_name,
-            draft_submission_id=draft_submission_id,
-            final_submission_id=final_submission_id
+            final_submission_id=submission_id
         )
 
         try:

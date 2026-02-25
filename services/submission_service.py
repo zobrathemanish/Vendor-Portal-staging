@@ -1,3 +1,5 @@
+#services/submission_service.py
+
 import os
 import requests
 from azure.storage.blob import BlobServiceClient
@@ -23,9 +25,8 @@ def trigger_etl(vendor, submission_id):
     except Exception as e:
         logger.error(f"ETL trigger failed: {e}")
 
-def move_assets_to_final_submission(
+def move_staging_assets_to_submission(
     vendor,
-    draft_submission_id,
     final_submission_id,
     container_name="bronze"
 ):
@@ -34,24 +35,33 @@ def move_assets_to_final_submission(
     )
     container = blob_service.get_container_client(container_name)
 
-    draft_prefix = (
-        f"raw/vendor={vendor}/submission={draft_submission_id}/assets/"
+    # 🔹 Staging location (no submission id anymore)
+    staging_prefix = (
+        f"raw/vendor={vendor}/staging/assets/"
     )
+
+    # 🔹 Final submission location
     final_prefix = (
         f"raw/vendor={vendor}/submission={final_submission_id}/assets/"
     )
 
-    blobs = list(container.list_blobs(name_starts_with=draft_prefix))
+    blobs = list(container.list_blobs(name_starts_with=staging_prefix))
+
     if not blobs:
-        logger.info("📦 No draft assets to move")
+        logger.info("📦 No staging assets to move")
         return
 
     for blob in blobs:
         source_blob = container.get_blob_client(blob.name)
-        target_name = blob.name.replace(draft_prefix, final_prefix)
+
+        # Replace staging path with submission path
+        target_name = blob.name.replace(staging_prefix, final_prefix)
         target_blob = container.get_blob_client(target_name)
 
+        # Copy → then delete original
         target_blob.start_copy_from_url(source_blob.url)
         source_blob.delete_blob()
 
         logger.info(f"📦 Asset moved → {target_name}")
+
+    logger.info("✅ All staging assets moved successfully")

@@ -837,6 +837,10 @@ def api_part_intelligence():
     vendor = request.args.get("vendor")
     part = request.args.get("part")
 
+    # Initialize safely for ALL execution paths
+    image_preview_url = None
+    jpg_count = 0
+
     if not vendor or not part:
         return jsonify({"error": "Missing params"}), 400
 
