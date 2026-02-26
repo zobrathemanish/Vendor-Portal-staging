@@ -1121,18 +1121,21 @@ if (window.CURRENT_SUBMISSION_ID && window.CURRENT_SUBMISSION_VENDOR) {
     const submissionId = window.CURRENT_SUBMISSION_ID;
     const submissionVendor = window.CURRENT_SUBMISSION_VENDOR;
 
+    console.log("🔄 Forcing polling restart for:", submissionId);
+
     document.documentElement.style
       .setProperty("--console-title", `"Submission ID: ${submissionId}"`);
 
+    // 🔥 ALWAYS reset lifecycle
     ACTIVE_SUBMISSION_ID = submissionId;
-
-    const box = document.getElementById("submission-status-log");
-    if (box) box.textContent = "";
-
-    // 🔥 Reset output loading state
     OUTPUT_FILES_LOADED = false;
 
-    // 🔥 Always restart polling
+    // 🔥 Clear previous log only if not running
+    const box = document.getElementById("submission-status-log");
+    if (box) {
+        box.textContent = "";
+    }
+
     pollSubmissionStatus(submissionVendor, submissionId);
 }
 </script>

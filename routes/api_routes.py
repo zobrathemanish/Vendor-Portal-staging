@@ -171,7 +171,27 @@ def submission_status():
         return data
 
     except FileNotFoundError:
-        return {"status": "PENDING"}
+
+        # 🔍 check if lock exists (pipeline running)
+        lock_blob = (
+            f"logs/vendor={vendor}/"
+            f"submission={submission_id}/lock_PRICING_REVIEW.json"
+        )
+
+        try:
+            read_json_blob_from_azure(
+                blob_path=lock_blob,
+                container_name="silver"
+            )
+            return {
+                "stage": "POST_REVIEW",
+                "status": "RUNNING"
+            }
+        except FileNotFoundError:
+            return {
+                "stage": "PIPELINE",
+                "status": "PENDING"
+            }
 
 @api_bp.route("/api/output-summary")
 def api_output_summary():

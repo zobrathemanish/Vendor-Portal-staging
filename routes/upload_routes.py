@@ -32,12 +32,17 @@ def upload_page():
         session["active_submission_vendor"] = current_user.vendor
         session.modified = True
 
+    # ✅ one-shot autostart for status polling
+    autostart = session.pop("force_autostart", "0")
+    session.modified = True
+
     return render_template(
             "uploads.html",
             submission_id=session.get("last_submission_id"),   # 👈 ONLY poll this
             submission_vendor=session.get("last_submission_vendor"),
             active_submission_id=session.get("active_submission_id"),
-            active_submission_vendor=session.get("active_submission_vendor")
+            active_submission_vendor=session.get("active_submission_vendor"),
+            autostart=autostart,
         )
 
 
@@ -99,6 +104,19 @@ def upload_files():
                 container_name="silver"
             )
 
+            # =====================================================
+            # 🔥 RESET STATUS BEFORE STARTING NEW POST-REVIEW RUN
+            # =====================================================
+
+            write_status_to_azure(
+                vendor=vendor_name,
+                submission_id=submission_id,
+                stage="POST_REVIEW",
+                status="QUEUED",
+                message="Pricing review submitted (reset lifecycle)"
+            )
+
+
             # ---------------------------------------
             # CLEAR OLD PRICING LOCK (ALLOW RE-RUN)
             # ---------------------------------------
@@ -154,6 +172,10 @@ def upload_files():
 
         except Exception as e:
             flash(f"Pricing upload failed: {e}", "danger")
+        
+        # ✅ Force UI polling on next page load
+        session["force_autostart"] = "1"
+        session.modified = True
 
         return redirect(url_for("upload.upload_page"))
 
@@ -372,7 +394,7 @@ def upload_files():
                 f"raw/notifymarker/"
                 f"{vendor_name}_{submission_id}.json"
             )
-            
+
             upload_json_blob(
                 data=marker_payload,
                 blob_path=marker_name,
