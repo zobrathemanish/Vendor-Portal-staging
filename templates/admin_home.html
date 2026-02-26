@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Control Tower</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* WINDX shell (same as your dashboard) ... keep your exact WindX CSS here */
+
+    #scoreChart { height: 260px !important; }
+
+    .tab-btn {
+      border-radius: 0;
+      border: 1px solid #7F9DB9;
+      background: #FFF;
+      padding: 4px 10px;
+      font-size: 13px;
+    }
+    .tab-btn.active {
+      background: #000;
+      color: #FFF;
+      border-color: #000;
+    }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .status-badge {
+  font-size: 0.72rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.status-success { background-color: #d4edda; color: #155724; }
+.status-failed { background-color: #f8d7da; color: #721c24; }
+.status-missing { background-color: #fff3cd; color: #856404; }
+.status-pending { background-color: #e2e3e5; color: #41464b; }
+.status-approved { background-color: #cfe2ff; color: #084298; }
+.status-generated { background-color: #e0cffc; color: #5a189a; }
+.status-processing { background-color: #ffe5d0; color: #7a2e00; }
+
+.stage-badge { font-size: 0.75rem; }
+  </style>
+  <style>
+  /* ================================
+     WINDX SYSTEM SHELL (same as login)
+     ================================ */
+
+  html, body { margin: 0; padding: 0; height: 100%; }
+
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    font-size: 14px;
+    color: #000;
+    background-color: #E5E5E5;
+  }
+
+  #app-shell { height: 100%; }
+
+  /* ---------- Title Bar ---------- */
+  .windx-titlebar {
+    border-top: 1px solid #000;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    height: 50px;
+    padding: 0 20px;
+    background: #FFFFFF;
+    font-size: 16px;
+  }
+  .title-left { justify-self: start; }
+  .title-center { justify-self: center; font-weight: bold; }
+  .title-right { justify-self: end; }
+
+  /* ---------- System Shell ---------- */
+  .system-shell {
+    display: flex;
+    height: calc(100vh - 50px);
+    width: 100%;
+  }
+
+  /* ---------- Rails ---------- */
+  .system-rail {
+    width: 17px;
+    background: #000;
+    display: flex;
+    justify-content: center;
+  }
+  .system-rail-line {
+    width: 2px;
+    background: #FFF;
+    height: 100%;
+  }
+
+  /* ---------- Center ---------- */
+  .system-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #E5E5E5;
+  }
+
+  .system-top-bar, .system-bottom-bar {
+    height: 17px;
+    background: #000;
+    display: flex;
+    align-items: center;
+  }
+  .system-top-line, .system-bottom-line {
+    width: 100%;
+    height: 2px;
+    background: #FFF;
+  }
+
+  /* ---------- Workspace ---------- */
+  .app-workspace {
+    flex: 1 1 auto;
+    background: #E5E5E5;
+    min-height: 0;
+    display: flex;
+    justify-content: center;
+    align-items: stretch; /* allow full-height frame */
+    padding: 22px 0;      /* breathing room like a desktop */
+  }
+
+  .workspace-frame {
+    background: #F2F2F2;
+    width: calc(100% - 120px);
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 18px 18px;
+    border: 1px solid #D0D0D0;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  /* ================================
+     WINDX-ish component styling
+     ================================ */
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 14px 0;
+  }
+
+  .card {
+    border-radius: 0;
+    border: 1px solid #D0D0D0;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .table {
+    font-size: 13px;
+  }
+
+  .table thead th {
+    background: #000 !important;
+    color: #FFF !important;
+    border-color: #000 !important;
+    font-weight: 600;
+  }
+
+  /* KPI strip cards if you render bootstrap cards in JS */
+  .kpi-card, .kpi {
+    border-radius: 0 !important;
+    border: 1px solid #D0D0D0 !important;
+    background: #FFF;
+  }
+
+  /* Optional: tighten bootstrap spacing */
+  .container-fluid.windx-inner {
+    padding: 0;
+  }
+  </style>
+</head>
+
+<body>
+<div id="app-shell">
+  <!-- TITLE BAR -->
+  <div class="windx-titlebar">
+    <div class="title-left" id="sys-date"></div>
+    <div class="title-center">Fort Garry Industries</div>
+    <div class="title-right" id="sys-time"></div>
+  </div>
+
+  <div class="system-shell">
+    <div class="system-rail"><div class="system-rail-line"></div></div>
+
+    <div class="system-center">
+      <div class="system-top-bar"><div class="system-top-line"></div></div>
+
+      <div class="app-workspace">
+        <div class="workspace-frame">
+
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h3 class="mb-0">Admin Control Tower</h3>
+
+            <!-- Tabs -->
+            <div class="d-flex gap-2">
+              <button class="tab-btn active" id="tabDashboard">Dashboard</button>
+              <button class="tab-btn" id="tabSubmissions">Submissions</button>
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <!-- ===================== -->
+          <!-- PANEL: DASHBOARD -->
+          <!-- ===================== -->
+          <div id="panelDashboard" class="panel active">
+
+            <!-- KPI STRIP -->
+            <div class="row g-3 mb-4" id="kpiStrip"></div>
+
+            <!-- SCORE CHART -->
+            <div class="card mb-4">
+              <div class="card-body">
+                <h5 class="card-title">Vendor Score Distribution</h5>
+                <canvas id="scoreChart" height="80"></canvas>
+              </div>
+            </div>
+
+            <!-- VENDOR TABLE -->
+            <div class="card">
+              <div class="card-body">
+                <h5 class="card-title">Vendor Health Overview</h5>
+                <div class="table-responsive">
+                  <table class="table table-bordered table-hover" id="vendorTable">
+                    <thead>
+                      <tr>
+                        <th>Vendor</th>
+                        <th>Score</th>
+                        <th>Completeness</th>
+                        <th>Autofix</th>
+                        <th>Errors</th>
+                        <th>Deltas</th>
+                        <th>Last Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ===================== -->
+          <!-- PANEL: SUBMISSIONS -->
+          <!-- ===================== -->
+          <div id="panelSubmissions" class="panel">
+
+            <!-- HEADER -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h4 class="mb-0">Admin Submission Control Tower</h4>
+                <div class="text-muted small">Monitor latest vendor state, with optional history.</div>
+              </div>
+
+              <div class="d-flex gap-2 align-items-center">
+                <input type="text" id="searchVendor" class="form-control form-control-sm"
+                       placeholder="Search vendor..." style="width:200px;">
+
+                <select id="stageFilter" class="form-select form-select-sm" style="width:190px;">
+                  <option value="">All Stages</option>
+                  <option value="ready">Ready</option>
+                  <option value="in_review">In Review</option>
+                  <option value="post_pricing_review">Post Pricing</option>
+                  <option value="ready_pricing_review">Ready Pricing Review</option>
+                  <option value="category_queue">Category Queue</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+
+                <div class="form-check form-switch ms-2">
+                  <input class="form-check-input" type="checkbox" id="latestOnly" checked>
+                  <label class="form-check-label small" for="latestOnly">Latest only</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- SUMMARY COUNTERS -->
+            <div class="row g-3 mb-4" id="summaryCounters"></div>
+
+            <!-- CARDS -->
+            <div class="row g-3" id="submissionContainer"></div>
+
+          </div>
+
+        </div>
+      </div>
+
+      <div class="system-bottom-bar"><div class="system-bottom-line"></div></div>
+    </div>
+
+    <div class="system-rail"><div class="system-rail-line"></div></div>
+  </div>
+</div>
+
+<script>
+/* =========================
+   SYSTEM TIME (WindX title bar)
+========================= */
+function updateSystemTime() {
+  const now = new Date();
+  const d = document.getElementById("sys-date");
+  const t = document.getElementById("sys-time");
+  if (d) d.textContent = now.toLocaleDateString();
+  if (t) t.textContent = now.toLocaleTimeString();
+}
+updateSystemTime();
+setInterval(updateSystemTime, 1000);
+
+/* =========================
+   HELPERS
+========================= */
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function capitalize(text) {
+  if (!text) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/* =========================
+   TABS (no reload)
+========================= */
+const tabDashboard = document.getElementById("tabDashboard");
+const tabSubmissions = document.getElementById("tabSubmissions");
+
+const panelDashboard = document.getElementById("panelDashboard");
+const panelSubmissions = document.getElementById("panelSubmissions");
+
+let dashboardLoaded = false;
+let submissionsLoaded = false;
+
+function setActiveTab(which) {
+  if (which === "dashboard") {
+    tabDashboard?.classList.add("active");
+    tabSubmissions?.classList.remove("active");
+    panelDashboard?.classList.add("active");
+    panelSubmissions?.classList.remove("active");
+
+    if (!dashboardLoaded) {
+      dashboardLoaded = true;
+      loadAdminDashboard();
+    }
+  } else {
+    tabSubmissions?.classList.add("active");
+    tabDashboard?.classList.remove("active");
+    panelSubmissions?.classList.add("active");
+    panelDashboard?.classList.remove("active");
+
+    if (!submissionsLoaded) {
+      submissionsLoaded = true;
+      loadSubmissions();
+    }
+  }
+}
+
+tabDashboard?.addEventListener("click", () => setActiveTab("dashboard"));
+tabSubmissions?.addEventListener("click", () => setActiveTab("submissions"));
+
+/* =========================
+   DASHBOARD (Admin Summary)
+========================= */
+let scoreChartInstance = null;
+
+async function loadAdminDashboard() {
+  try {
+    const res = await fetch("/api/admin/summary");
+    if (!res.ok) {
+      console.error("GET /api/admin/summary failed:", res.status);
+      return;
+    }
+
+    const data = await res.json();
+    console.log("Fetched summary:", data);
+
+    if (!Array.isArray(data)) {
+      console.error("Summary API did not return array:", data);
+      return;
+    }
+
+    buildKPIs(data);
+    buildTable(data);
+    buildChart(data);
+  } catch (err) {
+    console.error("Dashboard load failed:", err);
+  }
+}
+
+function avg(arr) {
+  if (!arr || !arr.length) return 0;
+  return arr.reduce((a, b) => a + (Number(b) || 0), 0) / arr.length;
+}
+function sum(arr) {
+  if (!arr || !arr.length) return 0;
+  return arr.reduce((a, b) => a + (Number(b) || 0), 0);
+}
+
+function buildKPIs(data) {
+  const container = document.getElementById("kpiStrip");
+  if (!container) return;
+
+  const totalVendors = data.length;
+  const avgScore = avg(data.map(d => d.overall_score));
+  const avgCompleteness = avg(data.map(d => d.completeness_pct));
+  const totalErrors = sum(data.map(d => d.error_count));
+  const totalDeltas = sum(data.map(d => d.delta_count));
+
+  const kpis = [
+    { label: "Vendors", value: totalVendors },
+    { label: "Avg Score", value: avgScore.toFixed(1) + "%" },
+    { label: "Avg Completeness", value: avgCompleteness.toFixed(1) + "%" },
+    { label: "Total Errors", value: totalErrors },
+    { label: "Total Deltas", value: totalDeltas }
+  ];
+
+  container.innerHTML = "";
+  kpis.forEach(kpi => {
+    container.innerHTML += `
+      <div class="col-md">
+        <div class="card text-center shadow-sm">
+          <div class="card-body">
+            <h6>${escapeHtml(kpi.label)}</h6>
+            <h3>${escapeHtml(kpi.value)}</h3>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+function getScoreBadge(score) {
+  const s = Number(score ?? 0);
+  if (s >= 85) return `<span class="badge bg-success">${s}%</span>`;
+  if (s >= 70) return `<span class="badge bg-warning text-dark">${s}%</span>`;
+  return `<span class="badge bg-danger">${s}%</span>`;
+}
+
+function buildTable(data) {
+  const tbody = document.querySelector("#vendorTable tbody");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+  data.forEach(v => {
+    const vendor = escapeHtml(v.vendor);
+    const scoreBadge = getScoreBadge(v.overall_score);
+
+    tbody.innerHTML += `
+      <tr>
+        <td>${vendor}</td>
+        <td>${scoreBadge}</td>
+        <td>${v.completeness_pct ?? "-"}%</td>
+        <td>${v.autofix_success_pct ?? "-"}%</td>
+        <td>${v.error_count ?? "-"}</td>
+        <td>${v.delta_count ?? "-"}</td>
+        <td>${v.last_updated_utc ? new Date(v.last_updated_utc).toLocaleString() : "-"}</td>
+      </tr>`;
+  });
+}
+
+function buildChart(data) {
+  const canvas = document.getElementById("scoreChart");
+  if (!canvas) return;
+
+  const ctx = canvas.getContext("2d");
+
+  // destroy old chart (prevents overlay/memory leak)
+  if (scoreChartInstance) {
+    scoreChartInstance.destroy();
+    scoreChartInstance = null;
+  }
+
+  scoreChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: data.map(d => d.vendor),
+      datasets: [{
+        label: "Overall Score",
+        data: data.map(d => Number(d.overall_score ?? 0))
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false
+    }
+  });
+}
+
+/* =========================
+   SUBMISSIONS (Admin Submissions)
+========================= */
+let submissions = [];
+
+function buildApiUrl() {
+  const latestOnlyEl = document.getElementById("latestOnly");
+  const latestOnly = latestOnlyEl && latestOnlyEl.checked ? "1" : "0";
+  return `/api/admin/submissions?latest_only=${latestOnly}`;
+}
+
+async function loadSubmissions() {
+  try {
+    const res = await fetch(buildApiUrl());
+    if (!res.ok) {
+      console.error("GET /api/admin/submissions failed:", res.status);
+      return;
+    }
+    submissions = await res.json();
+    console.log("Fetched submissions:", submissions);
+    renderSubmissions();
+  } catch (err) {
+    console.error("Submissions load failed:", err);
+  }
+}
+
+function renderSubmissions() {
+  renderSummary();
+  renderCards();
+}
+
+function renderSummary() {
+  const container = document.getElementById("summaryCounters");
+  if (!container) return;
+
+  const total = submissions.length;
+  const count = (stage) => submissions.filter(s => s.stage === stage).length;
+
+  const ready = count("ready");
+  const inReview = count("in_review");
+  const postPricing = count("post_pricing_review");
+  const readyPricing = count("ready_pricing_review");
+  const categoryQueue = count("category_queue");
+  const approved = count("approved");
+  const rejected = count("rejected");
+
+  container.innerHTML = `
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Total</div><div class="h4 mb-0">${total}</div></div></div>
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Ready</div><div class="h4 mb-0">${ready}</div></div></div>
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">In Review</div><div class="h4 mb-0">${inReview}</div></div></div>
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Post Pricing</div><div class="h4 mb-0">${postPricing}</div></div></div>
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Category Queue</div><div class="h4 mb-0">${categoryQueue}</div></div></div>
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Rejected</div><div class="h4 mb-0 text-danger">${rejected}</div></div></div>
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Ready Pricing</div><div class="h4 mb-0">${readyPricing}</div></div></div>
+    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Approved</div><div class="h4 mb-0">${approved}</div></div></div>
+  `;
+}
+
+function renderPipeline(pipeline) {
+  let html = "";
+  Object.entries(pipeline || {}).forEach(([step, status]) => {
+    html += `<span class="status-badge status-${escapeHtml(status)}">${escapeHtml(capitalize(step))}</span>`;
+  });
+  return html;
+}
+
+function renderCards() {
+  const container = document.getElementById("submissionContainer");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  const searchEl = document.getElementById("searchVendor");
+  const stageEl = document.getElementById("stageFilter");
+
+  const search = (searchEl?.value || "").toLowerCase();
+  const stageFilter = stageEl?.value || "";
+
+  submissions
+    .filter(s =>
+      (s.vendor || "").toLowerCase().includes(search) &&
+      (stageFilter === "" || s.stage === stageFilter)
+    )
+    .forEach(sub => {
+      const col = document.createElement("div");
+      col.className = "col-md-6 col-lg-4";
+
+      col.innerHTML = `
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h6 class="mb-0">${escapeHtml(sub.vendor)}</h6>
+                <small class="text-muted">${escapeHtml(sub.submission_id)}</small>
+              </div>
+              <span class="badge bg-dark stage-badge">${escapeHtml(String(sub.stage || "").toUpperCase())}</span>
+            </div>
+
+            ${sub.failure ? `
+              <div class="mt-2 text-danger small">
+                ⚠ Failure: ${escapeHtml(String(sub.failure).toUpperCase())}
+              </div>
+            ` : ""}
+
+            <hr class="my-3">
+            <div class="d-flex flex-wrap gap-1">
+              ${renderPipeline(sub.pipeline)}
+            </div>
+          </div>
+        </div>
+      `;
+
+      container.appendChild(col);
+    });
+}
+
+/* Events for submissions controls (safe even if not visible) */
+document.getElementById("searchVendor")?.addEventListener("input", renderCards);
+document.getElementById("stageFilter")?.addEventListener("change", renderCards);
+document.getElementById("latestOnly")?.addEventListener("change", loadSubmissions);
+
+/* =========================
+   BOOT
+========================= */
+setActiveTab("dashboard");  // default tab
+</script>
+
+</body>
+</html>

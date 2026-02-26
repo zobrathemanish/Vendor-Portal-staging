@@ -3,6 +3,10 @@ from flask_login import login_required, current_user
 import os
 from azure.storage.blob import BlobServiceClient
 from flask import request
+import json
+from io import BytesIO
+import pyarrow.parquet as pq
+import pandas as pd
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -63,6 +67,9 @@ def detect_stage_fast(vendor, submission_id, blob_names):
 
     if any("approved/logs" in b for b in blob_names):
         return "approved"
+    
+    if any("category_queue" in b for b in blob_names):
+        return "category_queue"
 
     if any("ready_pricing_review" in b for b in blob_names):
         return "ready_pricing_review"
@@ -175,6 +182,12 @@ def build_pipeline_state_fast(vendor, submission_id, stage, blob_names):
 # =========================================================
 # ADMIN UI PAGE
 # =========================================================
+@admin_bp.route("/admin")
+@login_required
+def admin_home():
+    if current_user.role != "admin":
+        return "Unauthorized", 403
+    return render_template("admin_home.html")
 
 @admin_bp.route("/admin/submissions")
 @login_required
@@ -184,10 +197,69 @@ def admin_submissions_page():
 
     return render_template("admin_submission.html")
 
+@admin_bp.route("/admin/dashboard")
+@login_required
+def admin_dashboard_page():
+    if current_user.role != "admin":
+        return "Unauthorized", 403
+
+    return render_template("admin_dashboard.html")
+
 
 # =========================================================
 # ADMIN API
 # =========================================================
+
+@admin_bp.route("/api/admin/summary")
+@login_required
+def get_admin_summary():
+    if current_user.role != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    try:
+        # 1) Prefer a single prebuilt snapshot file if you have it
+        #    (change this path to whatever your ETL writes)
+        candidate_prefixes = [
+            "analytics/admin_snapshot/",
+            "analytics/admin_snapshot/vendor=",
+            "analytics/vendor_scorecard/",
+        ]
+
+        # Find the newest parquet/json under those prefixes
+        best_blob = None
+        for pref in candidate_prefixes:
+            for b in container.list_blobs(name_starts_with=pref):
+                name = b.name.lower()
+                if name.endswith(".parquet") or name.endswith(".json"):
+                    # pick latest by last_modified
+                    if (best_blob is None) or (b.last_modified > best_blob.last_modified):
+                        best_blob = b
+
+        if not best_blob:
+            # No snapshot yet → return empty array
+            return jsonify([])
+
+        blob_client = container.get_blob_client(best_blob.name)
+        raw = blob_client.download_blob().readall()
+
+        if best_blob.name.lower().endswith(".json"):
+            data = json.loads(raw)
+            # ensure list
+            if isinstance(data, dict):
+                data = [data]
+            return jsonify(data)
+
+        # parquet
+        table = pq.read_table(BytesIO(raw))
+        df = table.to_pandas()
+
+        # IMPORTANT: replace NaN with null so JSON is valid
+        df = df.where(pd.notnull(df), None)
+
+        return jsonify(df.to_dict(orient="records"))
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @admin_bp.route("/api/admin/submissions")
 @login_required

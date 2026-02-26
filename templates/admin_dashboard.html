@@ -177,6 +177,18 @@
 
             <h3 class="mb-3">Admin Control Tower</h3>
 
+            <div class="d-flex gap-2 mb-3">
+              <a class="btn btn-sm btn-outline-dark"
+                href="{{ url_for('admin.admin_dashboard_page') }}">
+                Admin Dashboard
+              </a>
+
+              <a class="btn btn-sm btn-outline-dark"
+                href="{{ url_for('admin.admin_submissions_page') }}">
+                Submission Control Tower
+              </a>
+            </div>
+
             <!-- KPI STRIP -->
             <div class="row g-3 mb-4" id="kpiStrip"></div>
 
