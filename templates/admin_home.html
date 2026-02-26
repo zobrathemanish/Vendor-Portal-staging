@@ -246,14 +246,16 @@
                 <div class="table-responsive">
                   <table class="table table-bordered table-hover" id="vendorTable">
                     <thead>
-                     <tr>
-                        <th>Vendor</th>
-                        <th>Overall</th>
-                        <th>Data Quality</th>
-                        <th>Missingness</th>
-                        <th>Autofix</th>
-                        <th>Issues</th>
-                        <th>Last Updated</th>
+                        <tr>
+                            <th>Vendor</th>
+                            <th>Overall</th>
+                            <th>Data Quality</th>
+                            <th>Missingness / Product</th>
+                            <th>Asset Missing %</th>
+                            <th>System Resolved</th>
+                            <th>Autofix Unresolved</th>
+                            <th>Total Issues</th>
+                            <th>Last Updated</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -582,26 +584,39 @@ function buildTable(data) {
   tbody.innerHTML = "";
 
   data.forEach(v => {
-    const vendor = escapeHtml(v.vendor);
-    const scoreBadge = getScoreBadge(v.overall_score);
 
-    // IMPORTANT: match API keys
-    const dq = pct(v.data_quality_score, 2);
+    const vendor = escapeHtml(v.vendor);
+
+    const overall = getScoreBadge(v.overall_score);
+
+    const dataQuality = pct(v.data_quality_score, 2);
     const missingness = pct(v.row_missingness_avg_pct, 2);
-    const issues = num(v.health_issue_count);
-    const autofixRate = pct((Number(v.autofix_resolution_rate) || 0) * 100, 1); // fraction -> %
+    const assetMissing = pct(v.asset_missing_pct, 2);
+
+    const resolved = num(v.autofix_resolved_issues);
+    const unresolved = num(v.autofix_unresolved_issues);
+    const totalIssues = num(v.health_issue_count);
+
     const lastUpdated = pickLastUpdated(v);
 
     tbody.innerHTML += `
       <tr>
         <td>${vendor}</td>
-        <td>${scoreBadge}</td>
-        <td>${escapeHtml(dq)}</td>
-        <td>${escapeHtml(missingness)}</td>
-        <td>${escapeHtml(autofixRate)}</td>
-        <td>${escapeHtml(issues)}</td>
-        <td>${escapeHtml(lastUpdated)}</td>
-      </tr>`;
+        <td>${overall}</td>
+        <td>${dataQuality}</td>
+        <td>${missingness}</td>
+        <td>${assetMissing}</td>
+        <td>${resolved}</td>
+        <td>
+            ${Number(unresolved) > 0 
+                ? `<span class="badge bg-danger">${unresolved}</span>` 
+                : `<span class="badge bg-success">0</span>`
+            }
+        </td>
+        <td>${totalIssues}</td>
+        <td>${lastUpdated}</td>
+      </tr>
+    `;
   });
 }
 
