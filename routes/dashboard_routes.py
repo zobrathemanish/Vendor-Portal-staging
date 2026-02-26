@@ -217,46 +217,51 @@ def get_admin_summary():
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        # 1) Prefer a single prebuilt snapshot file if you have it
-        #    (change this path to whatever your ETL writes)
-        candidate_prefixes = [
-            "analytics/admin_snapshot/",
-            "analytics/admin_snapshot/vendor=",
-            "analytics/vendor_scorecard/",
-        ]
+        stage = request.args.get("stage", "post_pricing_review")
 
-        # Find the newest parquet/json under those prefixes
-        best_blob = None
-        for pref in candidate_prefixes:
-            for b in container.list_blobs(name_starts_with=pref):
-                name = b.name.lower()
-                if name.endswith(".parquet") or name.endswith(".json"):
-                    # pick latest by last_modified
-                    if (best_blob is None) or (b.last_modified > best_blob.last_modified):
-                        best_blob = b
+        if stage not in ["in_review", "post_pricing_review"]:
+            return jsonify({"error": "Invalid stage"}), 400
 
-        if not best_blob:
-            # No snapshot yet → return empty array
-            return jsonify([])
+        results = {}
 
-        blob_client = container.get_blob_client(best_blob.name)
-        raw = blob_client.download_blob().readall()
+        prefix = f"{stage}/"
 
-        if best_blob.name.lower().endswith(".json"):
-            data = json.loads(raw)
-            # ensure list
-            if isinstance(data, dict):
-                data = [data]
-            return jsonify(data)
+        for blob in container.list_blobs(name_starts_with=prefix):
+            parts = blob.name.split("/")
 
-        # parquet
-        table = pq.read_table(BytesIO(raw))
-        df = table.to_pandas()
+            # Expect:
+            # stage/vendor=X/submission=Y/analytics/vendor_scorecard/...
+            if len(parts) < 6:
+                continue
 
-        # IMPORTANT: replace NaN with null so JSON is valid
-        df = df.where(pd.notnull(df), None)
+            vendor_part = parts[1]
+            submission_part = parts[2]
 
-        return jsonify(df.to_dict(orient="records"))
+            if not vendor_part.startswith("vendor="):
+                continue
+            if not submission_part.startswith("submission="):
+                continue
+
+            vendor = vendor_part.replace("vendor=", "")
+            submission_id = submission_part.replace("submission=", "")
+
+            # Only load SCORECARD (contains all summary metrics)
+            if "vendor_scorecard" in blob.name and blob.name.endswith(".xlsx"):
+                blob_client = container.get_blob_client(blob.name)
+                raw = blob_client.download_blob().readall()
+
+                df = pd.read_excel(BytesIO(raw))
+                df = df.where(pd.notnull(df), None)
+
+                # Keep latest submission per vendor
+                if vendor not in results or submission_id > results[vendor]["submission_id"]:
+                    record = df.to_dict(orient="records")[0]
+                    record["vendor"] = vendor
+                    record["submission_id"] = submission_id
+                    record["stage"] = stage
+                    results[vendor] = record
+
+        return jsonify(list(results.values()))
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -202,6 +202,16 @@
 
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h3 class="mb-0">Admin Control Tower</h3>
+    
+                <!-- Stage Toggle (only dashboard scope) -->
+                <div id="stageToggle" class="btn-group btn-group-sm">
+                <button class="btn btn-dark active" data-stage="post_pricing_review">
+                    Post Pricing
+                </button>
+                <button class="btn btn-outline-dark" data-stage="in_review">
+                    Before Pricing
+                </button>
+                </div>
 
             <!-- Tabs -->
             <div class="d-flex gap-2">
@@ -210,6 +220,7 @@
             </div>
           </div>
 
+          
           <hr class="my-3">
 
           <!-- ===================== -->
@@ -235,15 +246,15 @@
                 <div class="table-responsive">
                   <table class="table table-bordered table-hover" id="vendorTable">
                     <thead>
-                      <tr>
+                     <tr>
                         <th>Vendor</th>
-                        <th>Score</th>
-                        <th>Completeness</th>
+                        <th>Overall</th>
+                        <th>Data Quality</th>
+                        <th>Missingness</th>
                         <th>Autofix</th>
-                        <th>Errors</th>
-                        <th>Deltas</th>
+                        <th>Issues</th>
                         <th>Last Updated</th>
-                      </tr>
+                        </tr>
                     </thead>
                     <tbody></tbody>
                   </table>
@@ -355,6 +366,9 @@ function setActiveTab(which) {
     panelDashboard?.classList.add("active");
     panelSubmissions?.classList.remove("active");
 
+    // SHOW stage toggle
+    if (stageToggle) stageToggle.style.display = "flex";
+
     if (!dashboardLoaded) {
       dashboardLoaded = true;
       loadAdminDashboard();
@@ -364,6 +378,9 @@ function setActiveTab(which) {
     tabDashboard?.classList.remove("active");
     panelSubmissions?.classList.add("active");
     panelDashboard?.classList.remove("active");
+
+    // HIDE stage toggle
+    if (stageToggle) stageToggle.style.display = "none";
 
     if (!submissionsLoaded) {
       submissionsLoaded = true;
@@ -379,10 +396,30 @@ tabSubmissions?.addEventListener("click", () => setActiveTab("submissions"));
    DASHBOARD (Admin Summary)
 ========================= */
 let scoreChartInstance = null;
+let currentStage = "post_pricing_review";
+
+document.querySelectorAll("#stageToggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+
+    document.querySelectorAll("#stageToggle button").forEach(b => {
+      b.classList.remove("active");
+      b.classList.add("btn-outline-dark");
+      b.classList.remove("btn-dark");
+    });
+
+    btn.classList.add("active");
+    btn.classList.remove("btn-outline-dark");
+    btn.classList.add("btn-dark");
+
+    currentStage = btn.dataset.stage;
+
+    loadAdminDashboard();
+  });
+});
 
 async function loadAdminDashboard() {
   try {
-    const res = await fetch("/api/admin/summary");
+    const res = await fetch(`/api/admin/summary?stage=${currentStage}`);
     if (!res.ok) {
       console.error("GET /api/admin/summary failed:", res.status);
       return;
@@ -413,22 +450,33 @@ function sum(arr) {
   return arr.reduce((a, b) => a + (Number(b) || 0), 0);
 }
 
+function getScoreBadge(score) {
+  const s = Number(score ?? 0);
+  if (s >= 85) return `<span class="badge bg-success">${s}%</span>`;
+  if (s >= 70) return `<span class="badge bg-warning text-dark">${s}%</span>`;
+  return `<span class="badge bg-danger">${s}%</span>`;
+}
+
+
 function buildKPIs(data) {
   const container = document.getElementById("kpiStrip");
   if (!container) return;
 
   const totalVendors = data.length;
-  const avgScore = avg(data.map(d => d.overall_score));
-  const avgCompleteness = avg(data.map(d => d.completeness_pct));
-  const totalErrors = sum(data.map(d => d.error_count));
-  const totalDeltas = sum(data.map(d => d.delta_count));
+
+  const avgOverall = avg(data.map(d => d.overall_score));
+  const avgDQ = avg(data.map(d => d.data_quality_score));
+  const avgMissingness = avg(data.map(d => d.row_missingness_avg_pct));
+  const totalIssues = sum(data.map(d => d.health_issue_count));
+  const totalAutofixDetected = sum(data.map(d => d.autofix_detected_issues));
 
   const kpis = [
     { label: "Vendors", value: totalVendors },
-    { label: "Avg Score", value: avgScore.toFixed(1) + "%" },
-    { label: "Avg Completeness", value: avgCompleteness.toFixed(1) + "%" },
-    { label: "Total Errors", value: totalErrors },
-    { label: "Total Deltas", value: totalDeltas }
+    { label: "Avg Overall", value: pct(avgOverall) },
+    { label: "Avg Data Quality", value: pct(avgDQ) },
+    { label: "Avg Missingness", value: pct(avgMissingness) },
+    { label: "Total Issues", value: num(totalIssues) },
+    { label: "Autofix Detected", value: num(totalAutofixDetected) },
   ];
 
   container.innerHTML = "";
@@ -445,34 +493,6 @@ function buildKPIs(data) {
   });
 }
 
-function getScoreBadge(score) {
-  const s = Number(score ?? 0);
-  if (s >= 85) return `<span class="badge bg-success">${s}%</span>`;
-  if (s >= 70) return `<span class="badge bg-warning text-dark">${s}%</span>`;
-  return `<span class="badge bg-danger">${s}%</span>`;
-}
-
-function buildTable(data) {
-  const tbody = document.querySelector("#vendorTable tbody");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-  data.forEach(v => {
-    const vendor = escapeHtml(v.vendor);
-    const scoreBadge = getScoreBadge(v.overall_score);
-
-    tbody.innerHTML += `
-      <tr>
-        <td>${vendor}</td>
-        <td>${scoreBadge}</td>
-        <td>${v.completeness_pct ?? "-"}%</td>
-        <td>${v.autofix_success_pct ?? "-"}%</td>
-        <td>${v.error_count ?? "-"}</td>
-        <td>${v.delta_count ?? "-"}</td>
-        <td>${v.last_updated_utc ? new Date(v.last_updated_utc).toLocaleString() : "-"}</td>
-      </tr>`;
-  });
-}
 
 function buildChart(data) {
   const canvas = document.getElementById("scoreChart");
@@ -502,8 +522,91 @@ function buildChart(data) {
   });
 }
 
+function pct(v, digits = 1) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "-";
+  return n.toFixed(digits) + "%";
+}
+
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : "-";
+}
+
+function pickLastUpdated(row) {
+  // Prefer scorecard ts, else profiling ts, else "-"
+  const ts = row.scorecard_generated_ts || row.profiling_generated_ts;
+  return ts ? new Date(ts).toLocaleString() : "-";
+}
+
+function buildKPIs(data) {
+  const container = document.getElementById("kpiStrip");
+  if (!container) return;
+
+  const totalVendors = data.length;
+
+  // IMPORTANT: match API keys
+  const avgOverall = avg(data.map(d => d.overall_score));
+  const avgDQ = avg(data.map(d => d.data_quality_score));
+  const avgMissingness = avg(data.map(d => d.row_missingness_avg_pct)); // already a %
+  const totalIssues = sum(data.map(d => d.health_issue_count));
+  const totalAutofixDetected = sum(data.map(d => d.autofix_detected_issues));
+
+  const kpis = [
+    { label: "Vendors", value: totalVendors },
+    { label: "Avg Overall", value: pct(avgOverall) },
+    { label: "Avg Data Quality", value: pct(avgDQ) },
+    { label: "Avg Missingness", value: pct(avgMissingness) },
+    { label: "Total Issues", value: num(totalIssues) },
+    { label: "Autofix Detected", value: num(totalAutofixDetected) },
+  ];
+
+  container.innerHTML = "";
+  kpis.forEach(kpi => {
+    container.innerHTML += `
+      <div class="col-md">
+        <div class="card text-center shadow-sm">
+          <div class="card-body">
+            <h6>${escapeHtml(kpi.label)}</h6>
+            <h3>${escapeHtml(kpi.value)}</h3>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+function buildTable(data) {
+  const tbody = document.querySelector("#vendorTable tbody");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  data.forEach(v => {
+    const vendor = escapeHtml(v.vendor);
+    const scoreBadge = getScoreBadge(v.overall_score);
+
+    // IMPORTANT: match API keys
+    const dq = pct(v.data_quality_score, 2);
+    const missingness = pct(v.row_missingness_avg_pct, 2);
+    const issues = num(v.health_issue_count);
+    const autofixRate = pct((Number(v.autofix_resolution_rate) || 0) * 100, 1); // fraction -> %
+    const lastUpdated = pickLastUpdated(v);
+
+    tbody.innerHTML += `
+      <tr>
+        <td>${vendor}</td>
+        <td>${scoreBadge}</td>
+        <td>${escapeHtml(dq)}</td>
+        <td>${escapeHtml(missingness)}</td>
+        <td>${escapeHtml(autofixRate)}</td>
+        <td>${escapeHtml(issues)}</td>
+        <td>${escapeHtml(lastUpdated)}</td>
+      </tr>`;
+  });
+}
+
 /* =========================
-   SUBMISSIONS (Admin Submissions)
+SUBMISSIONS (Admin Submissions)
 ========================= */
 let submissions = [];
 
