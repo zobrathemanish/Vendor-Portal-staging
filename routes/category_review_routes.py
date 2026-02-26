@@ -9,7 +9,6 @@ from flask import Blueprint, request, render_template, current_app, jsonify, abo
 from azure.storage.blob import BlobServiceClient
 from flask_login import login_required, current_user
 import numpy as np
-import pandas as pd
 
 """
 INSERT
@@ -24,6 +23,10 @@ DELETE
     → Mark inactive
 
 """
+
+GOLD_CONTAINER = "gold"
+GOLD_SELECTED_ROOT = "selected"
+
 image_preview_url = None
 jpg_count = 0
 
@@ -46,6 +49,10 @@ def _svc() -> BlobServiceClient:
     return BlobServiceClient.from_connection_string(
         current_app.config["AZURE_CONNECTION_STRING"]
     )
+
+def _gold_container():
+    return _svc().get_container_client(GOLD_CONTAINER)
+
 
 def _container():
     return _svc().get_container_client(SILVER_CONTAINER)
@@ -405,12 +412,6 @@ def apply_delta_to_current_state(container, vendor: str):
     pq.write_table(pa.Table.from_pandas(df_current), parquet_buf)
     parquet_bytes = parquet_buf.getvalue()
 
-    current_parquet_path = (
-        f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
-    )
-
-    _upload_bytes(container, current_parquet_path, parquet_bytes)
-
     # ---------- XLSX (Dynamic Multi-Tab Clean Version) ----------
     xlsx_buf = BytesIO()
 
@@ -470,15 +471,39 @@ def apply_delta_to_current_state(container, vendor: str):
 
     xlsx_bytes = xlsx_buf.getvalue()
 
-    current_xlsx_path = (
-        f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.xlsx"
-    )
-
-    _upload_bytes(container, current_xlsx_path, xlsx_bytes)
-
     print("📦 Current state Parquet + Clean Multi-Tab XLSX written")
 
 
+    # -----------------------------------------------------
+    # Write SILVER approved/current_state (single source)
+    # -----------------------------------------------------
+    current_parquet_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
+    current_xlsx_path    = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.xlsx"
+
+    _upload_bytes(container, current_parquet_path, parquet_bytes)
+    _upload_bytes(container, current_xlsx_path, xlsx_bytes)
+
+    # -----------------------------------------------------
+    # Persist latest reviewed delta into SILVER approved/current_state
+    # -----------------------------------------------------
+    latest_delta_bytes = _download_bytes(container, delta_path(vendor))
+    silver_latest_delta_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/delta_mapped.parquet"
+    _upload_bytes(container, silver_latest_delta_path, latest_delta_bytes)
+
+    # -----------------------------------------------------
+    # MIRROR to GOLD selected (identical “latest” artifacts)
+    # -----------------------------------------------------
+    gold = _gold_container()
+
+    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/etl_mapped.parquet"
+    gold_xlsx_path    = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/etl_mapped.xlsx"
+    gold_delta_path   = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/delta_mapped.parquet"
+
+    _upload_bytes(gold, gold_parquet_path, parquet_bytes)
+    _upload_bytes(gold, gold_xlsx_path, xlsx_bytes)
+    _upload_bytes(gold, gold_delta_path, latest_delta_bytes)
+
+    print("✅ GOLD selected mirrored from SILVER current_state (etl_mapped + delta)")
     # -----------------------------------------------------
     # Archive history snapshot (Parquet + XLSX)
     # -----------------------------------------------------
