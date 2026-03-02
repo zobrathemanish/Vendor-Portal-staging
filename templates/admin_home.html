@@ -249,7 +249,10 @@
                         <tr>
                             <th>Vendor</th>
                             <th>Overall</th>
-                            <th>Data Quality</th>
+                            <th>Data Quality (35%)</th>
+                            <th>Automation (25%)</th>
+                            <th>Assets (25%)</th>
+                            <th>Operations (15%)</th>
                             <th>Missingness / Product</th>
                             <th>Asset Missing %</th>
                             <th>System Resolved</th>
@@ -590,6 +593,10 @@ function buildTable(data) {
     const overall = getScoreBadge(v.overall_score);
 
     const dataQuality = pct(v.data_quality_score, 2);
+    const automation = pct(v.automation_score, 2);
+    const assetScore = pct(v.asset_score, 2);
+    const operations = pct(v.operations_score, 2);
+
     const missingness = pct(v.row_missingness_avg_pct, 2);
     const assetMissing = pct(v.asset_missing_pct, 2);
 
@@ -603,16 +610,24 @@ function buildTable(data) {
       <tr>
         <td>${vendor}</td>
         <td>${overall}</td>
+
         <td>${dataQuality}</td>
+        <td>${automation}</td>
+        <td>${assetScore}</td>
+        <td>${operations}</td>
+
         <td>${missingness}</td>
         <td>${assetMissing}</td>
+
         <td>${resolved}</td>
+
         <td>
-            ${Number(unresolved) > 0 
-                ? `<span class="badge bg-danger">${unresolved}</span>` 
-                : `<span class="badge bg-success">0</span>`
-            }
+          ${Number(unresolved) > 0 
+            ? `<span class="badge bg-danger">${unresolved}</span>` 
+            : `<span class="badge bg-success">0</span>`
+          }
         </td>
+
         <td>${totalIssues}</td>
         <td>${lastUpdated}</td>
       </tr>
