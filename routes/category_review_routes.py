@@ -1001,7 +1001,16 @@ def api_part_intelligence():
         def normalize(v):
             if pd.isna(v):
                 return ""
-            return str(v).strip()
+
+            # Try numeric comparison first
+            try:
+                num = float(v)
+                # Remove meaningless trailing zeros
+                if num.is_integer():
+                    return str(int(num))
+                return str(num)
+            except:
+                return str(v).strip()
 
         changes = []
 

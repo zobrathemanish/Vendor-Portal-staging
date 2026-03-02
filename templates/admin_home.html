@@ -179,6 +179,31 @@
   .container-fluid.windx-inner {
     padding: 0;
   }
+
+  .windx-footer-panel {
+  height: 32px;
+  background-color: #B3B3B3;
+  border-top: 1px solid #7A7A7A;
+
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+
+  padding: 0 14px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 14px;
+}
+
+.footer-right a {
+  text-decoration: none;
+  color: #000;
+}
+
+.footer-right a:hover {
+  background-color: #000;
+  color: #FFF;
+}
+
   </style>
 </head>
 
@@ -311,6 +336,20 @@
 
           </div>
 
+        </div>
+      </div>
+
+      <!-- FOOTER -->
+      <div class="windx-footer-panel">
+        <div>
+          User: {{ current_user.username | upper }}
+          ({{ current_user.role | upper }})
+        </div>
+        <div></div>
+        <div class="footer-right">
+          <a href="{{ url_for('auth.logout') }}" id="action-f3">
+            F3=Log off
+          </a>
         </div>
       </div>
 
@@ -760,6 +799,15 @@ document.getElementById("latestOnly")?.addEventListener("change", loadSubmission
    BOOT
 ========================= */
 setActiveTab("dashboard");  // default tab
+</script>
+
+<script>
+document.addEventListener("keydown", function (e) {
+  if (e.key === "F3") {
+    e.preventDefault();
+    window.location.href = "{{ url_for('auth.logout') }}";
+  }
+});
 </script>
 
 </body>
