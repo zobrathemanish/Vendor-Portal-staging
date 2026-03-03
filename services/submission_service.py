@@ -35,36 +35,93 @@ def move_staging_assets_to_submission(
     )
     container = blob_service.get_container_client(container_name)
 
-    # 🔹 Staging location (no submission id anymore)
-    staging_prefix = (
-        f"raw/vendor={vendor}/staging/assets/"
-    )
+    staging_prefix = f"raw/vendor={vendor}/staging/assets/"
+    final_prefix = f"raw/vendor={vendor}/submission={final_submission_id}/assets/"
 
-    # 🔹 Final submission location
-    final_prefix = (
-        f"raw/vendor={vendor}/submission={final_submission_id}/assets/"
-    )
+    # -------------------------------------------------
+    # 1️⃣ Check staging first
+    # -------------------------------------------------
+    staging_blobs = list(container.list_blobs(name_starts_with=staging_prefix))
 
-    blobs = list(container.list_blobs(name_starts_with=staging_prefix))
+    if staging_blobs:
+        logger.info("📦 Found staging assets — copying to submission")
 
-    if not blobs:
-        logger.info("📦 No staging assets to move")
+        for blob in staging_blobs:
+            source_blob = container.get_blob_client(blob.name)
+
+            target_name = blob.name.replace(staging_prefix, final_prefix)
+            target_blob = container.get_blob_client(target_name)
+
+            # Always overwrite snapshot for this submission
+            try:
+                target_blob.delete_blob()
+            except Exception:
+                pass
+
+            target_blob.start_copy_from_url(source_blob.url)
+
+            logger.info(f"📦 Copied → {target_name}")
+
+        logger.info("✅ Staging assets copied successfully")
         return
 
-    for blob in blobs:
-        source_blob = container.get_blob_client(blob.name)
+    # -------------------------------------------------
+    # 2️⃣ Fallback: reuse latest submission assets
+    # -------------------------------------------------
+    logger.info("📦 No staging assets found — checking latest submission")
 
-        # Replace staging path with submission path
-        target_name = blob.name.replace(staging_prefix, final_prefix)
-        target_blob = container.get_blob_client(target_name)
+    # List all submission folders
+    submission_prefix = f"raw/vendor={vendor}/submission="
+    all_blobs = list(container.list_blobs(name_starts_with=submission_prefix))
 
-        # Copy → then delete original
-        target_blob.start_copy_from_url(source_blob.url)
-        source_blob.delete_blob()
+    submission_ids = sorted(
+        list({
+            b.name.split("/")[2].replace("submission=", "")
+            for b in all_blobs
+            if "assets/" in b.name
+        }),
+        reverse=True
+    )
 
-        logger.info(f"📦 Asset moved → {target_name}")
+    for previous_id in submission_ids:
+        if previous_id == final_submission_id:
+            continue
 
-    logger.info("✅ All staging assets moved successfully")
+        previous_assets_prefix = (
+            f"raw/vendor={vendor}/submission={previous_id}/assets/"
+        )
+
+        previous_blobs = list(
+            container.list_blobs(name_starts_with=previous_assets_prefix)
+        )
+
+        if not previous_blobs:
+            continue
+
+        logger.info(f"♻ Reusing assets from submission={previous_id}")
+
+        for blob in previous_blobs:
+            source_blob = container.get_blob_client(blob.name)
+
+            target_name = blob.name.replace(
+                previous_assets_prefix,
+                final_prefix
+            )
+            target_blob = container.get_blob_client(target_name)
+
+            try:
+                target_blob.delete_blob()
+            except Exception:
+                pass
+
+            target_blob.start_copy_from_url(source_blob.url)
+
+            logger.info(f"📦 Copied → {target_name}")
+
+        logger.info("✅ Fallback asset copy completed")
+        return
+
+    logger.info("⚠ No previous submission assets found to reuse")
 
 def get_latest_submission_files(vendor, connection_string, container_name="bronze"):
     """
