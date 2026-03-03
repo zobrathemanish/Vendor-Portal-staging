@@ -1,3 +1,4 @@
+#auth_routes.py
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
 from extensions import login_manager
@@ -24,7 +25,6 @@ def login():
 
         if user and user.is_active and user.check_password(password):
             login_user(user)
-            flash("Logged in successfully", "success")
 
             # 🔥 ROLE BASED REDIRECT
             return _role_redirect(user)

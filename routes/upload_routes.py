@@ -15,7 +15,8 @@ from services.azure_service import (
 )
 from services.submission_service import (
     move_staging_assets_to_submission,
-    trigger_etl
+    trigger_etl,
+    get_latest_submission_files
 )
 
 from services.azure_service import *
@@ -208,9 +209,14 @@ def upload_files():
         product_file = request.files.get('product_file')
         pricing_file = request.files.get('pricing_file')
 
-        if not product_file or not pricing_file:
-            flash('XML and Pricing XLSX are required for OptiCat vendors.', 'danger')
+        if not product_file and not pricing_file:
+            flash('At least one file (XML or Pricing) must be uploaded.', 'danger')
             return redirect(url_for('upload.upload_page'))
+
+        latest_files = get_latest_submission_files(
+            vendor_name,
+            current_app.config["AZURE_CONNECTION_STRING"]
+        )
 
         # Save locally first
         product_path = save_file(product_file, vendor_name, "opticat", current_app.config['UPLOAD_FOLDER'])
