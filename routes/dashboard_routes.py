@@ -169,7 +169,7 @@ def build_pipeline_state_fast(vendor, submission_id, stage, blob_names):
         pipeline["category"] = "approved"
 
     analytics_prefix = (
-    f"analytics/vendor_scorecard/vendor={vendor}/submission={submission_id}/"
+    f"post_pricing_review/vendor={vendor}/submission={submission_id}/analytics/vendor_scorecard/"
 )
 
     analytics_files = list(container.list_blobs(name_starts_with=analytics_prefix))
