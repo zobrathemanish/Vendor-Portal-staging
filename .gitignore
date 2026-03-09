@@ -9,3 +9,5 @@ users.db
 
 create_users.py
 
+#virtual environment files
+asset-etl/venv

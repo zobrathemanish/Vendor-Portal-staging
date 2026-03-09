@@ -1,0 +1,25 @@
+# Environment file
+.env
+
+# =========================
+# ETL generated outputs
+# =========================
+
+# Media canonical outputs
+*_media_canonical.parquet
+*_media_canonical.xlsx
+media_canonical_*.parquet
+media_canonical_*.xlsx
+
+# Vendor-specific canonical outputs
+Grote_Lighting_media_canonical.parquet
+Grote_Lighting_media_canonical.xlsx
+
+# Asset transforms / logs
+asset_transform-*.json
+
+# Jupyter junk
+.ipynb_checkpoints/
+
+
+

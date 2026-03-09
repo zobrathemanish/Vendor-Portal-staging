@@ -1,0 +1,174 @@
+{
+  "vendor": "Grote Lighting",
+  "timestamp": "20260106T165946",
+  "images_written": 8,
+  "documents_written": 2,
+  "skipped": [
+    {
+      "file": "Brite_Zone_Data_Sheet_Rectangular_work_lamps.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Rectangular_work_lamp_FR.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Rectangular_work_lamp_SP.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Round_work_lamps.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Round_work_lamps_FR.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Round_work_lamps_SP.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Square_work_lamps.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Handheld_Data_Sheet_-_FR.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Handheld_Data_Sheet_-_GLB2021-097.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Brite_Zone_Handheld_Data_Sheet_-_SP.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Grote-BriteZoneBrochure_FRENCH_GLB-2022-009.pdf",
+      "reason": "missing_source_asset"
+    },
+    {
+      "file": "Grote-BriteZoneBrochure_GLB2022-004.pdf",
+      "reason": "missing_source_asset"
+    }
+  ],
+  "errors": [],
+  "missing_assets": [
+    {
+      "file": "Brite_Zone_Data_Sheet_Rectangular_work_lamps.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Rectangular_work_lamp_FR.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Rectangular_work_lamp_SP.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Round_work_lamps.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Round_work_lamps_FR.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Round_work_lamps_SP.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Data_Sheet_Square_work_lamps.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Handheld_Data_Sheet_-_FR.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Handheld_Data_Sheet_-_GLB2021-097.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Brite_Zone_Handheld_Data_Sheet_-_SP.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Grote-BriteZoneBrochure_FRENCH_GLB-2022-009.pdf",
+      "reason": "blob_not_found"
+    },
+    {
+      "file": "Grote-BriteZoneBrochure_GLB2022-004.pdf",
+      "reason": "blob_not_found"
+    }
+  ],
+  "cache": {
+    "strategy": "temp",
+    "base": null,
+    "dir": "C:\\Users\\mdangi\\AppData\\Local\\Temp\\asset_cache_Grote Lighting_29nt_eki"
+  },
+  "source_candidates": [
+    "assets_staging",
+    "assets"
+  ],
+  "image_transforms": [
+    {
+      "file": "00210.jpg",
+      "original_resolution": "1500x1500",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x1000",
+      "padding": "white"
+    },
+    {
+      "file": "00211.jpg",
+      "original_resolution": "1500x1500",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x1000",
+      "padding": "white"
+    },
+    {
+      "file": "43850-Back.jpg",
+      "original_resolution": "1500x1500",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x1000",
+      "padding": "white"
+    },
+    {
+      "file": "43850-line-art.gif",
+      "original_resolution": "600x364",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x606",
+      "padding": "white"
+    },
+    {
+      "file": "43850.jpg",
+      "original_resolution": "1500x1500",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x1000",
+      "padding": "white"
+    },
+    {
+      "file": "61141-Back.jpg",
+      "original_resolution": "1500x1500",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x1000",
+      "padding": "white"
+    },
+    {
+      "file": "61141-line-art.gif",
+      "original_resolution": "600x576",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x960",
+      "padding": "white"
+    },
+    {
+      "file": "61141.jpg",
+      "original_resolution": "1500x1500",
+      "final_resolution": "1000x1000",
+      "scaled_to": "1000x1000",
+      "padding": "white"
+    }
+  ]
+}

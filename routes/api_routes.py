@@ -38,26 +38,24 @@ def stream_logs():
 
 @api_bp.route("/api/get-asset-upload-sas", methods=["POST"])
 def get_asset_upload_sas():
+
     data = request.json
 
     vendor = data.get("vendor")
-    submission_id = data.get("submission_id")
-    if not submission_id:
-        return {"error": "Missing submission_id"}, 400
-
-    sku = data.get("sku")
     filename = data.get("filename")
 
     if not vendor or not filename:
         return {"error": "Missing vendor or filename"}, 400
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    # sanitize vendor name
+    # vendor_clean = vendor.lower().replace(" ", "-")
 
     blob_path = (
-        f"raw/vendor={vendor}/"
-        f"staging/assets/{timestamp}_{filename}"
+        f"raw/domain-based/"
+        f"vendor={vendor}/"
+        f"assets/{filename}"
     )
-    
+
     sas_url = generate_upload_sas(
         container=current_app.config["AZURE_CONTAINER_NAME"],
         blob_path=blob_path
