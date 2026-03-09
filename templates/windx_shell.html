@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ page_title }}</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#FFFFFF">
+
+  <style>
+
+  html, body {
+    margin:0;
+    padding:0;
+    height:100%;
+  }
+
+  body{
+    font-family:"Segoe UI",Tahoma,Arial,sans-serif;
+    background:#E5E5E5;
+  }
+
+  .system-shell{
+    display:flex;
+    height:calc(100vh - 50px);
+  }
+
+  .system-rail{
+    width:17px;
+    background:#000;
+  }
+
+  .system-rail-line{
+    width:2px;
+    background:#fff;
+    margin:auto;
+    height:100%;
+  }
+
+  .system-center{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+  }
+
+  .app-workspace{
+    flex:1;
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    padding-top:40px;
+  }
+
+  .workspace-frame{
+    width:900px;
+    background:#F2F2F2;
+    padding:20px;
+  }
+
+  .card{
+    border:1px solid #ddd;
+  }
+
+  </style>
+
+</head>
+
+<body>
+
+<div id="app-shell">
+
+  <!-- TITLE BAR -->
+  <div class="windx-titlebar">
+    <div class="title-left" id="sys-date"></div>
+    <div class="title-center">Fort Garry Industries</div>
+    <div class="title-right" id="sys-time"></div>
+  </div>
+
+  <div class="system-shell">
+
+    <div class="system-rail left">
+      <div class="system-rail-line"></div>
+    </div>
+
+    <div class="system-center">
+
+      <div class="system-top-bar">
+        <div class="system-top-line"></div>
+      </div>
+
+      <!-- WORKSPACE -->
+      <div class="app-workspace">
+        <div class="container">
+          <div class="workspace-frame">
+
+            {% block content %}{% endblock %}
+
+          </div>
+        </div>
+      </div>
+
+      {% include "windx_footer.html" %}
+
+      <div class="system-bottom-bar">
+        <div class="system-bottom-line"></div>
+      </div>
+
+    </div>
+
+    <div class="system-rail right">
+      <div class="system-rail-line"></div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

@@ -13,6 +13,7 @@ from routes.single_product_routes import single_product_bp
 from routes.utility_routes import utility_bp
 from routes.category_review_routes import category_review_bp
 from routes.dashboard_routes import admin_bp
+from routes.ingestion_routes import ingestion_bp
 
 
 load_dotenv()
@@ -61,6 +62,7 @@ app.register_blueprint(single_product_bp)
 app.register_blueprint(utility_bp)
 app.register_blueprint(category_review_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(ingestion_bp)
 
 # ---------------------------------------
 # MAIN

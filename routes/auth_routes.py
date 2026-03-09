@@ -54,23 +54,39 @@ def index():
 # 🔐 ROLE REDIRECT LOGIC (Enterprise Clean)
 # ======================================================
 
+# ======================================================
+# 🔐 ROLE REDIRECT LOGIC (Enterprise Clean)
+# ======================================================
+
 def _role_redirect(user):
     """
     Centralized role-based routing logic.
     Keeps login clean and future-proof.
     """
 
+    # Bulk upload setup
+    if user.username =="bulk_upload":
+        return redirect(url_for("upload.upload_page"))
+
+    # Category Review Team
     if user.role == "category":
         return redirect(url_for("category_review.category_review_page"))
 
-    elif user.role == "pricing":
-        return redirect(url_for("upload.upload_page"))
+    # Pricing Team → Pricing Ingestion
+    elif user.role == "pricing_team":
+        return redirect(url_for("ingestion.ingest_pricing"))
 
-    elif user.role == "vendor":
-        return redirect(url_for("upload.upload_page"))
+    # Asset Team → Asset Ingestion
+    elif user.role == "asset_team":
+        return redirect(url_for("ingestion.ingest_assets"))
 
+    # Product Team → Product Ingestion
+    elif user.role == "product_team":
+        return redirect(url_for("ingestion.ingest_product"))
+
+    # Admin
     elif user.role == "admin":
         return redirect(url_for("admin.admin_home"))
 
-    # Default fallback
-    return redirect(url_for("upload.upload_page"))
+    # Fallback
+    return redirect(url_for("auth.login"))
