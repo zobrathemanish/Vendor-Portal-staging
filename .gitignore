@@ -11,3 +11,6 @@ create_users.py
 
 #virtual environment files
 asset-etl/venv
+
+#local-files
+asset-etl/_local_asset_test_output
