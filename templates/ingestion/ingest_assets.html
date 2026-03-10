@@ -251,11 +251,23 @@ height:12px;
 background:#333;
 }
 
-.battery-fill{
+.battery-segments{
+display:flex;
+gap:3px;
+padding:3px;
 height:100%;
-width:0%;
-background:#8c8c8c;
-transition:width 0.4s ease;
+align-items:center;
+}
+
+.battery-cell{
+flex:1;
+height:70%;
+background:#cfcfcf;
+border:1px solid #777;
+}
+
+.battery-cell.active{
+background:#555;
 }
 
 .battery-text{
@@ -434,13 +446,24 @@ Submit Assets
 
 <div class="battery-progress mt-3 d-none" id="batteryContainer">
 
-  <div class="battery-shell">
+<div class="battery-shell">
 
-    <div id="pipelineProgress" class="battery-fill"></div>
+  <div id="batterySegments" class="battery-segments">
 
-    <div class="battery-text" id="batteryText">0%</div>
+    <div class="battery-cell"></div>
+    <div class="battery-cell"></div>
+    <div class="battery-cell"></div>
+    <div class="battery-cell"></div>
+    <div class="battery-cell"></div>
+    <div class="battery-cell"></div>
+    <div class="battery-cell"></div>
+    <div class="battery-cell"></div>
 
   </div>
+
+  <div class="battery-text" id="batteryText">0%</div>
+
+</div>
 
   <div class="battery-tip"></div>
 
@@ -578,7 +601,6 @@ const blobPathInput = document.getElementById("assetBlobPaths");
 
 const statusText = document.getElementById("statusText");
 const statusMeta = document.getElementById("statusMeta");
-const pipelineProgress = document.getElementById("pipelineProgress");
 const currentFile = document.getElementById("currentFile");
 
 function resetSubmissionStatus(){
@@ -587,8 +609,6 @@ statusText.innerHTML = "<strong>Status:</strong> Waiting for submission";
 statusMeta.textContent = "";
 currentFile.textContent = "";
 
-pipelineProgress.style.width = "0%";
-
 const batteryText = document.getElementById("batteryText");
 if(batteryText){
 batteryText.innerText = "0%";
@@ -596,44 +616,39 @@ batteryText.innerText = "0%";
 
 document.getElementById("batteryContainer").classList.add("d-none");
 
-pipelineProgress.classList.remove(
-"status-started",
-"status-processing",
-"status-completed",
-"status-failed"
-);
+document.querySelectorAll(".battery-cell").forEach(c=>{
+c.classList.remove("active");
+});
 
 }
 
 function updateStage(stage, percent, message){
 
-pipelineProgress.style.width = percent + "%";
+const cells = document.querySelectorAll(".battery-cell");
+
+const activeCount = Math.round((percent / 100) * cells.length);
+
+cells.forEach((cell, i) => {
+  cell.classList.toggle("active", i < activeCount);
+});
 
 const batteryText = document.getElementById("batteryText");
 if(batteryText){
 batteryText.innerText = percent + "%";
 }
 
-pipelineProgress.dataset.progress = percent;
-
 statusText.innerHTML = "<strong>Status:</strong> " + stage;
 statusMeta.textContent = message;
-
-pipelineProgress.classList.add("status-processing");
 
 }
 
 function setCompleted(message){
 
-pipelineProgress.style.width = "100%";
 
 const batteryText = document.getElementById("batteryText");
 if(batteryText){
 batteryText.innerText = "100%";
 }
-
-pipelineProgress.classList.remove("status-processing");
-pipelineProgress.classList.add("status-completed");
 
 statusText.innerHTML = "<strong>Status:</strong> Completed";
 statusMeta.textContent = message;
@@ -643,9 +658,6 @@ currentFile.textContent = "";
 }
 
 function setFailed(message){
-
-pipelineProgress.classList.remove("status-processing");
-pipelineProgress.classList.add("status-failed");
 
 statusText.innerHTML = "<strong>Status:</strong> Failed";
 statusMeta.textContent = message;
