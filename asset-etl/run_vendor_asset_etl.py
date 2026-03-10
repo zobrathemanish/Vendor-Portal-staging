@@ -27,11 +27,30 @@ from common.terminal_logger import TerminalLogger
 # CONFIG
 # =========================================================
 
+STEP_PROGRESS = {
+    "Asset Extraction & Validation": {
+        "stage": "checking",
+        "progress": 30,
+        "message": "Checking uploaded files"
+    },
+    "Asset Canonicalization": {
+        "stage": "validating",
+        "progress": 60,
+        "message": "Validating assets"
+    },
+    "Asset Transformations": {
+        "stage": "transforming",
+        "progress": 90,
+        "message": "Transforming images"
+    }
+}
+
 STEPS = [
     ("Asset Extraction & Validation", "asset_extraction_validation.py"),
     ("Asset Canonicalization", "asset_canonicalize.py"),
     ("Asset Transformations", "asset_transformations.py"),
 ]
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -156,20 +175,26 @@ def main():
 
     for name, script in STEPS:
 
+        # update stage for UI
+        stage_info = STEP_PROGRESS.get(name)
+
+        if stage_info:
+            status["stage"] = stage_info["stage"]
+            status["progress"] = stage_info["progress"]
+            status["message"] = stage_info["message"]
+            save_status(vendor, status, submission_id)
+
         if name in completed:
             print(f"⏭ Skipping already completed step: {name}")
             continue
-
-        run_step(name, script, vendor, submission_type, submission_id)
-
-        completed.append(name)
-        save_status(vendor, status, submission_id)
-
-    # -----------------------------------------------------
+        # -----------------------------------------------------
     # Mark completion
     # -----------------------------------------------------
 
     status["status"] = "completed"
+    status["stage"] = "complete"
+    status["progress"] = 100
+    status["message"] = "Processing complete"
     status["finished_at"] = datetime.utcnow().isoformat()
 
     save_status(vendor, status, submission_id)
