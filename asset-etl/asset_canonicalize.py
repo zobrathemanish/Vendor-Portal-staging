@@ -1,17 +1,32 @@
 # asset_canonicalize.py
 
 import os
+import json
+import argparse
+import hashlib
 from datetime import datetime
 from io import BytesIO
+from typing import Dict, List
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from azure.storage.blob import BlobServiceClient
-import hashlib
-import argparse
+from azure.core.exceptions import ResourceNotFoundError
 from dotenv import load_dotenv
 
-## Purpose: “What SHOULD exist?” (Truth definition)
+"""
+Purpose:
+Define the canonical asset plan.
+
+Input sources:
+- mapped.xlsx (vendor asset mapping)
+- _asset_manifest.json (actual extracted assets)
+
+Output:
+- media_canonical.parquet
+- media_canonical.xlsx
+"""
 
 # =========================================================
 # CONFIG
@@ -43,10 +58,16 @@ container = blob_service.get_container_client(SILVER_CONTAINER)
 # =========================================================
 
 def generate_entity_id(vendor: str, part_number: str) -> str:
-    return hashlib.sha256(
-        f"{vendor}|{part_number}".encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(f"{vendor}|{part_number}".encode("utf-8")).hexdigest()
 
+
+def normalize_filename(name: str) -> str:
+    return os.path.basename(str(name).strip())
+
+
+# =========================================================
+# LOADERS
+# =========================================================
 
 def load_mapped_excel(vendor: str) -> pd.DataFrame:
 
@@ -60,7 +81,6 @@ def load_mapped_excel(vendor: str) -> pd.DataFrame:
             sheet_name=ASSET_SHEET_NAME,
             dtype={"Part Number": str}
         )
-
     except ValueError:
         return pd.DataFrame()
 
@@ -75,7 +95,6 @@ def load_mapped_excel(vendor: str) -> pd.DataFrame:
     media_cols = {"mediatype"}
 
     if not required_cols.issubset(df.columns) or not media_cols.issubset(df.columns):
-
         raise RuntimeError(
             f"Wrong sheet loaded for vendor={vendor}. "
             f"Columns found: {list(df.columns)}"
@@ -83,6 +102,21 @@ def load_mapped_excel(vendor: str) -> pd.DataFrame:
 
     return df
 
+
+def load_asset_manifest(vendor: str) -> Dict:
+
+    path = f"in_review/vendor={vendor}/assets_staging/_asset_manifest.json"
+
+    try:
+        raw = container.get_blob_client(path).download_blob().readall()
+        return json.loads(raw)
+    except Exception:
+        return {"assets": []}
+
+
+# =========================================================
+# DATA NORMALIZATION
+# =========================================================
 
 def normalize_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 
@@ -96,54 +130,56 @@ def normalize_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================================================
-# CORE
+# CANONICAL BUILD
 # =========================================================
-
-def run_for_vendor(vendor: str, submission_type: str):
-
-    print(f"▶ Running Asset Canonicalization for vendor: {vendor}")
-    print(f"Submission type: {submission_type}")
-
-    # Build canonical rows from mapped data
-    df = build_media_canonical(vendor)
-
-    if df.empty:
-        print("No asset rows found in mapped.xlsx")
-        return
-
-    write_media_canonical(vendor, df)
-
 
 def build_media_canonical(vendor: str) -> pd.DataFrame:
 
     df = load_mapped_excel(vendor)
 
+    if df.empty:
+        return pd.DataFrame()
+
     df = normalize_missing_values(df)
 
-    if "part_number" in df.columns:
-        df["part_number"] = df["part_number"].astype(str).str.strip()
+    df["part_number"] = df["part_number"].astype(str).str.strip()
+    df["filename"] = df["filename"].apply(normalize_filename)
+
+    manifest = load_asset_manifest(vendor)
+
+    asset_map = {
+        a["filename"]: a
+        for a in manifest.get("assets", [])
+        if "filename" in a
+    }
 
     records = []
     sequence_tracker = {}
 
+    missing_assets = []
+
     for _, row in df.iterrows():
 
-        part = row["part_number"]
-        media = row["mediatype"]
-        filename = row["filename"]
+        part = str(row["part_number"]).strip()
+        media = str(row["mediatype"]).strip()
+        filename = normalize_filename(row["filename"])
         filetype = str(row["filetype"]).upper()
-
-        if pd.isna(part) or pd.isna(media) or pd.isna(filename) or pd.isna(filetype):
-            continue
-
-        part = str(part).strip()
 
         if part.isdigit():
             part = part.zfill(5)
 
-        media = str(media).strip()
-        filename = str(filename).strip()
+        # Ensure asset exists in staging
+        asset_info = asset_map.get(filename)
 
+        if not asset_info:
+            missing_assets.append(filename)
+            continue
+
+        source_blob_path = asset_info["source_blob_path"]
+        content_hash = asset_info.get("content_hash")
+        size_bytes = asset_info.get("size_bytes")
+
+        # media category
         if filetype in IMAGE_TYPES:
             media_category = "image"
         elif filetype in DOCUMENT_TYPES:
@@ -180,30 +216,36 @@ def build_media_canonical(vendor: str) -> pd.DataFrame:
 
         entity_id = generate_entity_id(vendor, part)
 
-        records.append(
-            {
-                "_entity_id": entity_id,
-                "vendor": vendor,
-                "part_number": part,
-                "media_type": media,
-                "media_category": media_category,
-                "original_filename": filename,
-                "original_filetype": filetype,
-                "canonical_filename": canonical_filename,
-                "canonical_filetype": canonical_filetype,
-                "sequence": seq,
-                "orientation": row.get("orientation"),
-                "representation": row.get("representation"),
-                "transformations_required": transformations,
-                "status": "active",
-                "created_at": datetime.utcnow().isoformat(),
-            }
-        )
+        records.append({
+            "_entity_id": entity_id,
+            "vendor": vendor,
+            "part_number": part,
+            "media_type": media,
+            "media_category": media_category,
+            "original_filename": filename,
+            "original_filetype": filetype,
+            "canonical_filename": canonical_filename,
+            "canonical_filetype": canonical_filetype,
+            "sequence": seq,
+            "orientation": row.get("orientation"),
+            "representation": row.get("representation"),
+            "transformations_required": transformations,
+            "source_blob_path": source_blob_path,
+            "content_hash": content_hash,
+            "size_bytes": size_bytes,
+            "status": "active",
+            "created_at": datetime.utcnow().isoformat(),
+        })
+
+    if missing_assets:
+        print(f"⚠ {len(missing_assets)} mapped assets missing in staging")
 
     return pd.DataFrame(records)
 
 
-from azure.core.exceptions import ResourceNotFoundError
+# =========================================================
+# WRITE CANONICAL TABLE
+# =========================================================
 
 def write_media_canonical(vendor: str, df: pd.DataFrame):
 
@@ -212,9 +254,6 @@ def write_media_canonical(vendor: str, df: pd.DataFrame):
     parquet_path = f"{base_path}.parquet"
     excel_path = f"{base_path}.xlsx"
 
-    # -----------------------------------------------------
-    # Try loading existing canonical
-    # -----------------------------------------------------
     try:
 
         existing_bytes = container.get_blob_client(parquet_path).download_blob().readall()
@@ -222,51 +261,34 @@ def write_media_canonical(vendor: str, df: pd.DataFrame):
         existing_table = pq.read_table(BytesIO(existing_bytes))
         existing_df = existing_table.to_pandas()
 
-        print(f"Found existing canonical rows: {len(existing_df)}")
-
-        # merge new + existing
         df = pd.concat([existing_df, df], ignore_index=True)
 
-        # deduplicate
         df = df.drop_duplicates(
             subset=["vendor", "part_number", "media_type", "canonical_filename"],
             keep="last"
         )
 
-        print(f"After merge rows: {len(df)}")
+        print(f"Canonical rows after merge: {len(df)}")
 
     except ResourceNotFoundError:
 
-        print("No existing canonical table found — creating new.")
-
-    # -----------------------------------------------------
-    # Write PARQUET (machine)
-    # -----------------------------------------------------
+        print("No existing canonical found — creating new.")
 
     table = pa.Table.from_pandas(df)
 
-    parquet_buf = BytesIO()
-    pq.write_table(table, parquet_buf)
+    buf = BytesIO()
+    pq.write_table(table, buf)
 
     container.upload_blob(
         parquet_path,
-        parquet_buf.getvalue(),
+        buf.getvalue(),
         overwrite=True
     )
-
-    # -----------------------------------------------------
-    # Write EXCEL (human readable)
-    # -----------------------------------------------------
 
     excel_buf = BytesIO()
 
     with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
-
-        df.to_excel(
-            writer,
-            sheet_name="media_canonical",
-            index=False
-        )
+        df.to_excel(writer, sheet_name="media_canonical", index=False)
 
     container.upload_blob(
         excel_path,
@@ -274,7 +296,26 @@ def write_media_canonical(vendor: str, df: pd.DataFrame):
         overwrite=True
     )
 
-    print(f"✅ Media canonical updated: {parquet_path} + {excel_path}")
+    print(f"✅ Canonical table written ({len(df)} rows)")
+
+
+# =========================================================
+# ORCHESTRATOR
+# =========================================================
+
+def run_for_vendor(vendor: str, submission_type: str):
+
+    print(f"▶ Running Asset Canonicalization for vendor: {vendor}")
+    print(f"Submission type: {submission_type}")
+
+    df = build_media_canonical(vendor)
+
+    if df.empty:
+        print("No canonical rows generated.")
+        return
+
+    write_media_canonical(vendor, df)
+
 
 # =========================================================
 # ENTRY POINT
@@ -283,6 +324,7 @@ def write_media_canonical(vendor: str, df: pd.DataFrame):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
+
     parser.add_argument("--vendor", required=True)
     parser.add_argument("--submission-type", required=True)
 

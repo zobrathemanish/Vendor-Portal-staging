@@ -1,6 +1,8 @@
 {
   "vendor": "Grote Lighting",
   "completed_steps": [
-    "Asset Extraction & Validation"
+    "Asset Extraction & Validation",
+    "Asset Canonicalization",
+    "Asset Transformations"
   ]
 }
