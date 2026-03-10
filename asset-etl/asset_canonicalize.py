@@ -69,7 +69,7 @@ def normalize_filename(name: str) -> str:
 # LOADERS
 # =========================================================
 
-def load_mapped_excel(vendor: str) -> pd.DataFrame:
+def load_mapped_excel(vendor: str, submission_id: str) -> pd.DataFrame:
 
     path = f"in_review/vendor={vendor}/mapped/mapped.xlsx"
 
@@ -103,9 +103,9 @@ def load_mapped_excel(vendor: str) -> pd.DataFrame:
     return df
 
 
-def load_asset_manifest(vendor: str) -> Dict:
+def load_asset_manifest(vendor: str, submission_id: str) -> Dict:
 
-    path = f"in_review/vendor={vendor}/assets_staging/_asset_manifest.json"
+    path = f"in_review/vendor={vendor}/assets_staging/submission={submission_id}/_asset_manifest.json"
 
     try:
         raw = container.get_blob_client(path).download_blob().readall()
@@ -133,9 +133,9 @@ def normalize_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 # CANONICAL BUILD
 # =========================================================
 
-def build_media_canonical(vendor: str) -> pd.DataFrame:
+def build_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
 
-    df = load_mapped_excel(vendor)
+    df = load_mapped_excel(vendor, submission_id)
 
     if df.empty:
         return pd.DataFrame()
@@ -145,10 +145,10 @@ def build_media_canonical(vendor: str) -> pd.DataFrame:
     df["part_number"] = df["part_number"].astype(str).str.strip()
     df["filename"] = df["filename"].apply(normalize_filename)
 
-    manifest = load_asset_manifest(vendor)
+    manifest = load_asset_manifest(vendor, submission_id)
 
     asset_map = {
-        a["filename"]: a
+        a["filename"].lower(): a
         for a in manifest.get("assets", [])
         if "filename" in a
     }
@@ -161,7 +161,7 @@ def build_media_canonical(vendor: str) -> pd.DataFrame:
     for _, row in df.iterrows():
 
         part = str(row["part_number"]).strip()
-        media = str(row["mediatype"]).strip()
+        media = str(row["mediatype"]).strip().upper()
         filename = normalize_filename(row["filename"])
         filetype = str(row["filetype"]).upper()
 
@@ -169,10 +169,13 @@ def build_media_canonical(vendor: str) -> pd.DataFrame:
             part = part.zfill(5)
 
         # Ensure asset exists in staging
-        asset_info = asset_map.get(filename)
+        asset_info = asset_map.get(filename.lower())
 
         if not asset_info:
-            missing_assets.append(filename)
+            missing_assets.append({
+                "part_number": part,
+                "filename": filename
+            })
             continue
 
         source_blob_path = asset_info["source_blob_path"]
@@ -247,9 +250,9 @@ def build_media_canonical(vendor: str) -> pd.DataFrame:
 # WRITE CANONICAL TABLE
 # =========================================================
 
-def write_media_canonical(vendor: str, df: pd.DataFrame):
+def write_media_canonical(vendor: str, df: pd.DataFrame, submission_id: str):
 
-    base_path = f"in_review/vendor={vendor}/canonical/media_canonical"
+    base_path = f"in_review/vendor={vendor}/canonical/submission={submission_id}/media_canonical"
 
     parquet_path = f"{base_path}.parquet"
     excel_path = f"{base_path}.xlsx"
@@ -303,18 +306,19 @@ def write_media_canonical(vendor: str, df: pd.DataFrame):
 # ORCHESTRATOR
 # =========================================================
 
-def run_for_vendor(vendor: str, submission_type: str):
+def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
 
     print(f"▶ Running Asset Canonicalization for vendor: {vendor}")
     print(f"Submission type: {submission_type}")
+    print(f"Submission ID: {submission_id}")
 
-    df = build_media_canonical(vendor)
+    df = build_media_canonical(vendor, submission_id)
 
     if df.empty:
         print("No canonical rows generated.")
         return
 
-    write_media_canonical(vendor, df)
+    write_media_canonical(vendor, df, submission_id)
 
 
 # =========================================================
@@ -327,7 +331,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--vendor", required=True)
     parser.add_argument("--submission-type", required=True)
+    parser.add_argument("--submission-id", required=True)
 
     args = parser.parse_args()
 
-    run_for_vendor(args.vendor, args.submission_type)
+    run_for_vendor(args.vendor, args.submission_type, args.submission_id)

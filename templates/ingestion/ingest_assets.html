@@ -209,6 +209,22 @@ height:2px;
 background:#fff;
 }
 
+.progress-bar.status-started{
+background:#6c757d;
+}
+
+.progress-bar.status-processing{
+background:#0d6efd;
+}
+
+.progress-bar.status-completed{
+background:#198754;
+}
+
+.progress-bar.status-failed{
+background:#dc3545;
+}
+
 </style>
 </head>
 
@@ -364,10 +380,25 @@ Submit Assets
 
 <div class="card">
 
-<h5>Output status</h5>
+<h5>Submission Status</h5>
 
-<div id="output-files" class="output-report">
-No outputs available.
+<div id="submission-status" class="output-report">
+
+<div id="statusText"><strong>Status:</strong> Waiting for submission</div>
+
+<div id="statusMeta" class="mt-2 text-muted"></div>
+
+<div class="progress mt-3" style="height:22px;">
+  <div id="pipelineProgress"
+       class="progress-bar"
+       role="progressbar"
+       style="width:0%">
+    0%
+  </div>
+</div>
+
+<div id="currentFile" class="mt-3 text-muted"></div>
+
 </div>
 
 </div>
@@ -471,6 +502,9 @@ break
 
 <script type="module">
 
+let submissionId = null;
+let statusInterval = null;
+
 import { BlockBlobClient } from "https://cdn.jsdelivr.net/npm/@azure/storage-blob/+esm";
 
 const zipInput = document.getElementById("assetZip");
@@ -484,11 +518,85 @@ const blobPathInput = document.getElementById("assetBlobPaths");
 
 let assetsReady = false;
 
+const statusText = document.getElementById("statusText");
+const statusMeta = document.getElementById("statusMeta");
+const pipelineProgress = document.getElementById("pipelineProgress");
+const currentFile = document.getElementById("currentFile");
+
+function resetSubmissionStatus(){
+  statusText.innerHTML = "<strong>Status:</strong> Waiting for submission";
+  statusMeta.textContent = "";
+  currentFile.textContent = "";
+  pipelineProgress.style.width = "0%";
+  pipelineProgress.textContent = "0%";
+  pipelineProgress.classList.remove(
+    "status-started",
+    "status-processing",
+    "status-completed",
+    "status-failed"
+  );
+}
+
+function setSubmissionStarted(){
+  statusText.innerHTML = "<strong>Status:</strong> Submission started";
+  statusMeta.textContent = "Preparing asset processing...";
+  currentFile.textContent = "";
+  pipelineProgress.style.width = "0%";
+  pipelineProgress.textContent = "0%";
+  pipelineProgress.classList.remove(
+    "status-processing",
+    "status-completed",
+    "status-failed"
+  );
+  pipelineProgress.classList.add("status-started");
+}
+
+function setSubmissionProcessing(filename = "", percent = 0){
+  statusText.innerHTML = "<strong>Status:</strong> Processing assets";
+  statusMeta.textContent = "Submission is being processed";
+  currentFile.textContent = filename ? `Processing: ${filename}` : "";
+  pipelineProgress.style.width = percent + "%";
+  pipelineProgress.textContent = percent + "%";
+  pipelineProgress.classList.remove(
+    "status-started",
+    "status-completed",
+    "status-failed"
+  );
+  pipelineProgress.classList.add("status-processing");
+}
+
+function setSubmissionCompleted(message = "Submission completed successfully"){
+  statusText.innerHTML = "<strong>Status:</strong> Completed";
+  statusMeta.textContent = message;
+  currentFile.textContent = "";
+  pipelineProgress.style.width = "100%";
+  pipelineProgress.textContent = "100%";
+  pipelineProgress.classList.remove(
+    "status-started",
+    "status-processing",
+    "status-failed"
+  );
+  pipelineProgress.classList.add("status-completed");
+}
+
+function setSubmissionFailed(message = "Submission failed"){
+  statusText.innerHTML = "<strong>Status:</strong> Failed";
+  statusMeta.textContent = message;
+  pipelineProgress.classList.remove(
+    "status-started",
+    "status-processing",
+    "status-completed"
+  );
+  pipelineProgress.classList.add("status-failed");
+}
+
 submitBtn.addEventListener("click", async (e)=>{
 
 if(assetsReady) return;
 
 e.preventDefault();
+resetSubmissionStatus();
+setSubmissionStarted();
 
 const files = Array.from(zipInput.files);
 const vendor = vendorSelect.value;
@@ -535,6 +643,8 @@ const percent=Math.round((p.loadedBytes/file.size)*100);
 progressBar.style.width=percent+"%";
 progressBar.textContent=file.name+" "+percent+"%";
 
+setSubmissionProcessing(file.name, percent);
+
 }
 });
 
@@ -547,6 +657,8 @@ blobPathInput.value = JSON.stringify(blobPaths);
 progressBar.classList.remove("progress-bar-animated");
 progressBar.classList.add("bg-success");
 progressBar.textContent="Assets uploaded";
+
+setSubmissionCompleted("Assets uploaded. Processing will continue.");
 
 assetsReady = true;
 
@@ -562,11 +674,15 @@ console.error(err);
 progressBar.classList.add("bg-danger");
 progressBar.textContent="Upload failed";
 
+setSubmissionFailed("Asset upload failed. Please try again.");
+
 submitBtn.disabled=false;
 
 }
 
 });
+
+resetSubmissionStatus();
 
 </script>
 

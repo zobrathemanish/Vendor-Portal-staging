@@ -1,3 +1,4 @@
+#asset_transformations.py
 import os
 import sys
 
@@ -167,9 +168,9 @@ def get_existing_blob_hash(path):
 # LOAD CANONICAL
 # =========================================================
 
-def load_media_canonical(vendor: str) -> pd.DataFrame:
+def load_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
 
-    path = f"in_review/vendor={vendor}/{CANONICAL_TABLE}"
+    path = f"in_review/vendor={vendor}/canonical/submission={submission_id}/media_canonical.parquet"
 
     raw = download_blob(path)
 
@@ -385,15 +386,17 @@ def process_asset(row, vendor, output_root, file_map):
 # MAIN TRANSFORMATION
 # =========================================================
 
-def apply_asset_transformations(vendor: str, submission_type: str):
+def apply_asset_transformations(vendor: str, submission_type: str, submission_id: str):
 
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
 
-    log(f"Starting asset transformations for {vendor}")
+    log(f"▶ Starting asset transformations")
+    log(f"Vendor: {vendor}", 2)
+    log(f"Submission: {submission_id}", 2)
 
     if submission_type in ["asset_review", "delta_asset_review"]:
 
-        write_status(vendor, "ASSET TRANSFORMATION", "SKIPPED_REVIEW_MODE")
+        write_status(vendor, "ASSET TRANSFORMATION", "SKIPPED_REVIEW_MODE", submission_id)
 
         return
 
@@ -401,6 +404,7 @@ def apply_asset_transformations(vendor: str, submission_type: str):
 
     log_data = {
         "vendor": vendor,
+        "submission_id": submission_id,
         "timestamp": timestamp,
         "images_written": 0,
         "documents_written": 0,
@@ -413,7 +417,7 @@ def apply_asset_transformations(vendor: str, submission_type: str):
 
     try:
 
-        df = load_media_canonical(vendor)
+        df = load_media_canonical(vendor, submission_id)
 
         cache_dir, file_map, miss_map = build_local_asset_cache(vendor, df)
 
@@ -458,8 +462,12 @@ def apply_asset_transformations(vendor: str, submission_type: str):
                 elif status == "error":
                     log_data["errors"].append(result)
 
-        log_path = f"in_review/vendor={vendor}/logs/asset-transform-{timestamp}.json"
-
+        log_path = (
+            f"logs/vendor={vendor}/assets/submission={submission_id}/"
+            f"asset_transform_log.json"
+        )
+                
+        log_data["finished_at"] = datetime.utcnow().isoformat()
         write_output(log_path, json.dumps(log_data, indent=2).encode())
 
         if log_data["errors"]:
@@ -468,7 +476,8 @@ def apply_asset_transformations(vendor: str, submission_type: str):
                 vendor,
                 "ASSET TRANSFORMATION",
                 "COMPLETED_WITH_ERRORS",
-                f"{len(log_data['errors'])} failures"
+                f"{len(log_data['errors'])} failures",
+                submission_id
             )
 
         else:
@@ -476,7 +485,9 @@ def apply_asset_transformations(vendor: str, submission_type: str):
             write_status(
                 vendor,
                 "ASSET TRANSFORMATION",
-                "COMPLETED"
+                "COMPLETED",
+                "",
+                submission_id
             )
 
         log(
@@ -503,9 +514,10 @@ if __name__ == "__main__":
 
     parser.add_argument("--vendor", required=True)
     parser.add_argument("--submission-type", required=True)
+    parser.add_argument("--submission-id", required=True)
 
     args = parser.parse_args()
 
-    write_status(args.vendor, "ASSET TRANSFORMATION", "RUNNING")
+    write_status(args.vendor, "ASSET TRANSFORMATION", "RUNNING", args.submission_id)
 
-    apply_asset_transformations(args.vendor, args.submission_type)
+    apply_asset_transformations(args.vendor, args.submission_type, args.submission_id)
