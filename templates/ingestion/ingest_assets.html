@@ -432,7 +432,7 @@ Submit Assets
 
 <div id="statusMeta" class="mt-2 text-muted"></div>
 
-<div class="battery-progress mt-3">
+<div class="battery-progress mt-3 d-none" id="batteryContainer">
 
   <div class="battery-shell">
 
@@ -588,7 +588,13 @@ statusMeta.textContent = "";
 currentFile.textContent = "";
 
 pipelineProgress.style.width = "0%";
-pipelineProgress.textContent = "0%";
+
+const batteryText = document.getElementById("batteryText");
+if(batteryText){
+batteryText.innerText = "0%";
+}
+
+document.getElementById("batteryContainer").classList.add("d-none");
 
 pipelineProgress.classList.remove(
 "status-started",
@@ -607,6 +613,8 @@ const batteryText = document.getElementById("batteryText");
 if(batteryText){
 batteryText.innerText = percent + "%";
 }
+
+pipelineProgress.dataset.progress = percent;
 
 statusText.innerHTML = "<strong>Status:</strong> " + stage;
 statusMeta.textContent = message;
@@ -800,6 +808,7 @@ progressBar.classList.add("bg-success");
 progressBar.textContent="Assets uploaded";
 
 updateStage("Upload complete",10,"Starting asset pipeline");
+document.getElementById("batteryContainer").classList.remove("d-none");
 
 const start = await fetch("/ingestion/start-asset-etl",{
 method:"POST",
