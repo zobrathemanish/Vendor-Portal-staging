@@ -126,6 +126,7 @@ def get_asset_status(vendor, submission_id):
 
     status_path = os.path.join(
         current_app.root_path,
+        "asset-etl",
         "logs",
         f"vendor={vendor}",
         "assets",
@@ -136,55 +137,40 @@ def get_asset_status(vendor, submission_id):
     if not os.path.exists(status_path):
 
         return jsonify({
-            "stage": "Starting",
+            "stage": "starting",
             "progress": 5,
             "message": "Initializing pipeline"
         })
 
-    with open(status_path) as f:
-        data = json.load(f)
+    try:
 
-    events = data.get("events", [])
+        with open(status_path, "r") as f:
+            data = json.load(f)
 
-    if not events:
+        stage = data.get("stage", "processing")
+        progress = data.get("progress", 5)
+        message = data.get("message", "Processing")
+
+        if data.get("status") == "completed":
+
+            return jsonify({
+                "stage": "complete",
+                "progress": 100,
+                "message": message or "Processing complete"
+            })
 
         return jsonify({
-            "stage": "Starting",
+            "stage": stage,
+            "progress": progress,
+            "message": message
+        })
+
+    except Exception as e:
+
+        print("STATUS READ ERROR:", e)
+
+        return jsonify({
+            "stage": "processing",
             "progress": 5,
-            "message": "Pipeline starting"
+            "message": "Reading pipeline status"
         })
-
-    last = events[-1]
-
-    stage = last.get("stage", "Processing")
-    status = last.get("status", "RUNNING")
-    message = last.get("message", "")
-
-    # ----------------------------------------------------
-    # Map stages to UI progress
-    # ----------------------------------------------------
-
-    stage_progress_map = {
-        "ASSET VALIDATION": ("Checking files", 25),
-        "ASSET CANONICALIZATION": ("Validating assets", 50),
-        "ASSET TRANSFORMATION": ("Transforming assets", 90)
-    }
-
-    if status == "COMPLETED":
-
-        return jsonify({
-            "stage": "complete",
-            "progress": 100,
-            "message": message or "Asset ETL completed"
-        })
-
-    ui_stage, progress = stage_progress_map.get(
-        stage,
-        ("Processing", 60)
-    )
-
-    return jsonify({
-        "stage": ui_stage,
-        "progress": progress,
-        "message": message or "Processing"
-    })
