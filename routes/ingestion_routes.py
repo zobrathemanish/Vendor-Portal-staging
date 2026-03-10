@@ -174,3 +174,43 @@ def get_asset_status(vendor, submission_id):
             "progress": 5,
             "message": "Reading pipeline status"
         })
+    
+@ingestion_bp.route("/api/asset-outputs/<vendor>/<submission_id>")
+@login_required
+def get_asset_outputs(vendor, submission_id):
+
+    import os
+    from azure.storage.blob import BlobServiceClient
+
+    conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    blob_service = BlobServiceClient.from_connection_string(conn)
+
+    container = blob_service.get_container_client("silver")
+
+    prefix = f"logs/vendor={vendor}/assets/submission={submission_id}/"
+
+    files = []
+
+    try:
+
+        blobs = container.list_blobs(name_starts_with=prefix)
+
+        for blob in blobs:
+
+            name = blob.name.split("/")[-1]
+
+            # skip status file
+            if name == "asset_etl_status.json":
+                continue
+
+            url = container.get_blob_client(blob.name).url
+
+            files.append({
+                "name": name,
+                "url": url
+            })
+
+    except Exception as e:
+        print("OUTPUT LIST ERROR:", e)
+
+    return jsonify({"files": files})

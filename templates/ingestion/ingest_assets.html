@@ -225,6 +225,50 @@ background:#198754;
 background:#dc3545;
 }
 
+/* ============================= */
+/* BATTERY PROGRESS */
+/* ============================= */
+
+.battery-progress{
+display:flex;
+align-items:center;
+gap:3px;
+margin-top:10px;
+}
+
+.battery-shell{
+position:relative;
+width:260px;
+height:24px;
+border:2px solid #333;
+background:#d9d9d9;
+overflow:hidden;
+}
+
+.battery-tip{
+width:6px;
+height:12px;
+background:#333;
+}
+
+.battery-fill{
+height:100%;
+width:0%;
+background:#8c8c8c;
+transition:width 0.4s ease;
+}
+
+.battery-text{
+position:absolute;
+width:100%;
+text-align:center;
+font-size:12px;
+line-height:22px;
+color:#000;
+font-weight:600;
+pointer-events:none;
+}
+
 </style>
 </head>
 
@@ -388,13 +432,18 @@ Submit Assets
 
 <div id="statusMeta" class="mt-2 text-muted"></div>
 
-<div class="progress mt-3" style="height:22px;">
-  <div id="pipelineProgress"
-       class="progress-bar"
-       role="progressbar"
-       style="width:0%">
-    0%
+<div class="battery-progress mt-3">
+
+  <div class="battery-shell">
+
+    <div id="pipelineProgress" class="battery-fill"></div>
+
+    <div class="battery-text" id="batteryText">0%</div>
+
   </div>
+
+  <div class="battery-tip"></div>
+
 </div>
 
 <div id="currentFile" class="mt-3 text-muted"></div>
@@ -553,7 +602,11 @@ pipelineProgress.classList.remove(
 function updateStage(stage, percent, message){
 
 pipelineProgress.style.width = percent + "%";
-pipelineProgress.textContent = percent + "%";
+
+const batteryText = document.getElementById("batteryText");
+if(batteryText){
+batteryText.innerText = percent + "%";
+}
 
 statusText.innerHTML = "<strong>Status:</strong> " + stage;
 statusMeta.textContent = message;
@@ -565,7 +618,11 @@ pipelineProgress.classList.add("status-processing");
 function setCompleted(message){
 
 pipelineProgress.style.width = "100%";
-pipelineProgress.textContent = "100%";
+
+const batteryText = document.getElementById("batteryText");
+if(batteryText){
+batteryText.innerText = "100%";
+}
 
 pipelineProgress.classList.remove("status-processing");
 pipelineProgress.classList.add("status-completed");
