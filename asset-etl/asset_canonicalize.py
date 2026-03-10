@@ -133,7 +133,7 @@ def normalize_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 # CANONICAL BUILD
 # =========================================================
 
-def build_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
+def build_media_canonical(vendor: str, submission_id: str):
 
     df = load_mapped_excel(vendor, submission_id)
 
@@ -157,6 +157,7 @@ def build_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
     sequence_tracker = {}
 
     missing_assets = []
+    autofix_rows = []
 
     for _, row in df.iterrows():
 
@@ -206,6 +207,15 @@ def build_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
 
             transformations.append("rename")
 
+            if transformations:
+                autofix_rows.append({
+                    "vendor": vendor,
+                    "part_number": part,
+                    "original_filename": filename,
+                    "canonical_filename": canonical_filename,
+                    "actions": ",".join(transformations)
+                })
+
         elif media_category == "document":
 
             canonical_filetype = filetype
@@ -243,7 +253,7 @@ def build_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
     if missing_assets:
         print(f"⚠ {len(missing_assets)} mapped assets missing in staging")
 
-    return pd.DataFrame(records)
+    return pd.DataFrame(records), pd.DataFrame(autofix_rows)
 
 
 # =========================================================
@@ -312,13 +322,37 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
     print(f"Submission type: {submission_type}")
     print(f"Submission ID: {submission_id}")
 
-    df = build_media_canonical(vendor, submission_id)
+    df, autofix_df = build_media_canonical(vendor, submission_id)
 
     if df.empty:
         print("No canonical rows generated.")
         return
 
     write_media_canonical(vendor, df, submission_id)
+
+    buf = BytesIO()
+
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
+
+    container.upload_blob(
+        f"logs/vendor={vendor}/assets/submission={submission_id}/mapped_autofixed.xlsx",
+        buf.getvalue(),
+        overwrite=True
+    )
+
+    if not autofix_df.empty:
+
+        buf = BytesIO()
+
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            autofix_df.to_excel(writer, index=False)
+
+        container.upload_blob(
+            f"logs/vendor={vendor}/assets/submission={submission_id}/autofix_report.xlsx",
+            buf.getvalue(),
+            overwrite=True
+        )
 
 
 # =========================================================

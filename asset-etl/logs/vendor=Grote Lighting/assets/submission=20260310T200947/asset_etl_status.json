@@ -1,0 +1,16 @@
+{
+  "vendor": "Grote Lighting",
+  "submission_id": "20260310T200947",
+  "submission_type": "asset_submission",
+  "started_at": "2026-03-10T20:09:47.315722",
+  "completed_steps": [
+    "Asset Extraction & Validation",
+    "Asset Canonicalization",
+    "Asset Transformations"
+  ],
+  "status": "completed",
+  "stage": "complete",
+  "progress": 100,
+  "message": "Processing complete",
+  "finished_at": "2026-03-10T20:09:56.829269"
+}

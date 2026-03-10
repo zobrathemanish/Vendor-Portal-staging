@@ -28,21 +28,9 @@ from common.terminal_logger import TerminalLogger
 # =========================================================
 
 STEP_PROGRESS = {
-    "Asset Extraction & Validation": {
-        "stage": "checking",
-        "progress": 30,
-        "message": "Checking uploaded files"
-    },
-    "Asset Canonicalization": {
-        "stage": "validating",
-        "progress": 60,
-        "message": "Validating assets"
-    },
-    "Asset Transformations": {
-        "stage": "transforming",
-        "progress": 90,
-        "message": "Transforming images"
-    }
+    "Asset Extraction & Validation": {"stage":"checking","progress":25,"message":"Checking uploaded files"},
+    "Asset Canonicalization": {"stage":"validating","progress":50,"message":"Validating assets"},
+    "Asset Transformations": {"stage":"transforming","progress":90,"message":"Transforming images"}
 }
 
 STEPS = [
@@ -175,7 +163,6 @@ def main():
 
     for name, script in STEPS:
 
-        # update stage for UI
         stage_info = STEP_PROGRESS.get(name)
 
         if stage_info:
@@ -187,7 +174,15 @@ def main():
         if name in completed:
             print(f"⏭ Skipping already completed step: {name}")
             continue
-        # -----------------------------------------------------
+
+        # RUN THE STEP
+        run_step(name, script, vendor, submission_type, submission_id)
+
+        # RECORD COMPLETION
+        completed.append(name)
+        status["completed_steps"] = completed
+        save_status(vendor, status, submission_id)
+    # -----------------------------------------------------
     # Mark completion
     # -----------------------------------------------------
 

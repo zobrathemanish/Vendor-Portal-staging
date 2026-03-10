@@ -36,7 +36,8 @@ from azure.core.exceptions import ResourceNotFoundError, ServiceRequestError
 
 from common.status_writer import write_status
 
-
+import zipfile
+from io import BytesIO
 # =========================================================
 # PATH SETUP
 # =========================================================
@@ -78,7 +79,6 @@ DOWNLOAD_RETRIES = 3
 DOWNLOAD_RETRY_BACKOFF_SEC = 1.5
 
 ASSET_CACHE_BASE = os.getenv("ASSET_CACHE_BASE", "").strip() or None
-
 
 # =========================================================
 # AZURE INIT
@@ -352,6 +352,7 @@ def process_asset(row, vendor, output_root, file_map):
             return {
                 "status": "image_written",
                 "file": canonical_filename,
+                "data": out_data,
                 "hash": content_hash,
                 "size": len(out_data),
                 "meta": meta,
@@ -371,7 +372,11 @@ def process_asset(row, vendor, output_root, file_map):
 
             write_output(out_path, data, {"content_hash": content_hash})
 
-            return {"status": "document_written", "file": canonical_filename}
+            return {
+                "status": "document_written",
+                "file": canonical_filename,
+                "data": data
+            }
 
         else:
 
@@ -410,9 +415,10 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         "documents_written": 0,
         "skipped": [],
         "errors": [],
-        "missing_assets": []
+        "missing_assets": [],
     }
 
+    assets_for_zip = []
     cache_dir = None
 
     try:
@@ -425,6 +431,9 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
             log_data["missing_assets"].append(k)
 
         rows = list(df.iterrows())
+
+        total_assets = len(rows)
+        processed_assets = 0
 
         workers = min(8, os.cpu_count() * 2)
 
@@ -447,11 +456,27 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 
                 status = result["status"]
 
+                processed_assets += 1
+
+                write_status(
+                    vendor,
+                    "ASSET TRANSFORMATION",
+                    "PROCESSING",
+                    f"{processed_assets}/{total_assets} assets processed",
+                    submission_id
+                )
+
                 if status == "image_written":
                     log_data["images_written"] += 1
+                    assets_for_zip.append(
+                        (result["file"], result["data"])
+                    )
 
                 elif status == "document_written":
                     log_data["documents_written"] += 1
+                    assets_for_zip.append(
+                        (result["file"], result["data"])
+                    )
 
                 elif status == "missing":
                     log_data["missing_assets"].append(result["file"])
@@ -469,6 +494,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                 
         log_data["finished_at"] = datetime.utcnow().isoformat()
         write_output(log_path, json.dumps(log_data, indent=2).encode())
+        create_assets_zip(vendor, submission_id, assets_for_zip)
 
         if log_data["errors"]:
 
@@ -502,6 +528,25 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
             cleanup_cache_dir(cache_dir)
 
 
+import zipfile
+from io import BytesIO
+
+def create_assets_zip(vendor, submission_id, asset_paths):
+
+    zip_buffer = BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
+
+        for path, data in asset_paths:
+            z.writestr(path, data)
+
+    zip_path = (
+        f"logs/vendor={vendor}/assets/"
+        f"submission={submission_id}/"
+        f"transformed_assets.zip"
+    )
+
+    container.upload_blob(zip_path, zip_buffer.getvalue(), overwrite=True)
 # =========================================================
 # ENTRY POINT
 # =========================================================
@@ -518,6 +563,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    write_status(args.vendor, "ASSET TRANSFORMATION", "RUNNING", args.submission_id)
+    write_status(args.vendor, "ASSET TRANSFORMATION", "PROCESSING", args.submission_id)
 
     apply_asset_transformations(args.vendor, args.submission_type, args.submission_id)

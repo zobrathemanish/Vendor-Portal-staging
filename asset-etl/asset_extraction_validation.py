@@ -12,6 +12,7 @@ from PIL import Image
 from dotenv import load_dotenv
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
+import pandas as pd
 
 """
 Purpose:
@@ -375,9 +376,11 @@ def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
             "blob_path": blob_path,
             "source_blob_path": blob_path,
             "status": "pass",
-            "warnings": []
+            "issue_type": None,
+            "severity": None,
+            "autofixable": None,
+            "details": None
         }
-
         try:
             blob = silver_container.get_blob_client(blob_path)
             data = blob.download_blob().readall()
@@ -395,11 +398,15 @@ def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
         # FORMAT VALIDATION
         if ext not in SUPPORTED_FORMATS:
             record["status"] = "fail"
-            record["reason"] = "unsupported_format"
+            record["issue_type"] = "unsupported_format"
+            record["severity"] = "blocking"
+            record["autofixable"] = False
 
         elif size_mb > MAX_MB:
             record["status"] = "fail"
-            record["reason"] = "file_too_large"
+            record["issue_type"] = "file_too_large"
+            record["severity"] = "blocking"
+            record["autofixable"] = False
 
         # IMAGE VALIDATION
         elif ext in SUPPORTED_IMAGE_FORMATS:
@@ -410,7 +417,10 @@ def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
                     record["height"] = h
 
                     if w < MIN_WIDTH or h < MIN_HEIGHT:
-                        record["warnings"].append("low resolution")
+                        record["issue_type"] = "low_resolution"
+                        record["severity"] = "warning"
+                        record["autofixable"] = False
+                        record["details"] = f"{w}x{h}"
 
             except Exception:
                 record["status"] = "fail"
@@ -512,6 +522,59 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
         f"passed={len(validation['passed'])}, "
         f"failed={len(validation['failed'])}"
     )
+
+    health_rows = validation["passed"] + validation["failed"]
+
+    df_health = pd.DataFrame(health_rows)
+
+    buf = BytesIO()
+
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df_health.to_excel(writer, index=False)
+
+    silver_container.upload_blob(
+        f"{paths['log_prefix']}health_report.xlsx",
+        buf.getvalue(),
+        overwrite=True
+    )
+
+    blocking = [
+        r for r in health_rows
+        if r.get("severity") == "blocking"
+    ]
+
+    if blocking:
+
+        df_block = pd.DataFrame(blocking)
+
+        buf = BytesIO()
+
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df_block.to_excel(writer, index=False)
+
+        silver_container.upload_blob(
+            f"{paths['log_prefix']}validation_report.xlsx",
+            buf.getvalue(),
+            overwrite=True
+        )
+
+        log("❌ Blocking validation issues detected. Pipeline will stop.")
+
+        return {
+            "status": "failed_validation",
+            "blocking_issues": len(blocking),
+            "passed": len(validation["passed"]),
+            "failed": len(validation["failed"])
+        }
+    
+    return {
+            "status": "failed_validation",
+            "blocking_issues": len(blocking),
+            "passed": len(validation["passed"]),
+            "failed": len(validation["failed"])
+            }
+
+        
 
 
 # =========================================================
