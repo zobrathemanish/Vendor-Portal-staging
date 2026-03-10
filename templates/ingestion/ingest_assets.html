@@ -226,59 +226,50 @@ background:#dc3545;
 }
 
 /* ============================= */
-/* BATTERY PROGRESS */
+/* PIPELINE VISUAL */
 /* ============================= */
 
-.battery-progress{
+.pipeline-visual{
 display:flex;
 align-items:center;
-gap:3px;
+gap:8px;
 margin-top:10px;
 }
 
-.battery-shell{
-position:relative;
-width:260px;
-height:24px;
-border:2px solid #333;
-background:#d9d9d9;
-overflow:hidden;
-}
-
-.battery-tip{
-width:6px;
-height:12px;
-background:#333;
-}
-
-.battery-segments{
+.pipeline-stage{
 display:flex;
-gap:3px;
-padding:3px;
-height:100%;
+flex-direction:column;
 align-items:center;
+font-size:11px;
 }
 
-.battery-cell{
-flex:1;
-height:70%;
+.stage-dot{
+width:14px;
+height:14px;
+border-radius:50%;
 background:#cfcfcf;
-border:1px solid #777;
+border:2px solid #777;
 }
 
-.battery-cell.active{
-background:#555;
+.pipeline-line{
+flex:1;
+height:3px;
+background:#cfcfcf;
 }
 
-.battery-text{
-position:absolute;
-width:100%;
-text-align:center;
-font-size:12px;
-line-height:22px;
-color:#000;
-font-weight:600;
-pointer-events:none;
+.stage-label{
+margin-top:4px;
+font-size:11px;
+color:#333;
+}
+
+.pipeline-stage.active .stage-dot{
+background:#444;
+border-color:#444;
+}
+
+.pipeline-stage.active .stage-label{
+font-weight:bold;
 }
 
 </style>
@@ -440,49 +431,54 @@ Submit Assets
 
 <div id="submission-status" class="output-report">
 
-<div id="statusText"><strong>Status:</strong> Waiting for submission</div>
+  <div id="statusText"><strong>Status:</strong> Waiting for submission</div>
 
-<div id="statusMeta" class="mt-2 text-muted"></div>
+  <div id="statusMeta" class="mt-2 text-muted"></div>
 
-<div class="battery-progress mt-3 d-none" id="batteryContainer">
+  <div class="pipeline-visual mt-3 d-none" id="pipelineContainer">
 
-<div class="battery-shell">
+    <div class="pipeline-stage" id="stage-upload">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Upload</div>
+    </div>
 
-  <div id="batterySegments" class="battery-segments">
+    <div class="pipeline-line"></div>
 
-    <div class="battery-cell"></div>
-    <div class="battery-cell"></div>
-    <div class="battery-cell"></div>
-    <div class="battery-cell"></div>
-    <div class="battery-cell"></div>
-    <div class="battery-cell"></div>
-    <div class="battery-cell"></div>
-    <div class="battery-cell"></div>
+    <div class="pipeline-stage" id="stage-validate">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Validate</div>
+    </div>
+
+    <div class="pipeline-line"></div>
+
+    <div class="pipeline-stage" id="stage-transform">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Transform</div>
+    </div>
+
+    <div class="pipeline-line"></div>
+
+    <div class="pipeline-stage" id="stage-ready">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Ready</div>
+    </div>
 
   </div>
 
-  <div class="battery-text" id="batteryText">0%</div>
+  <div id="currentFile" class="mt-3 text-muted"></div>
 
-</div>
+  <div id="submissionOutputs" class="mt-3" style="display:none;">
 
-  <div class="battery-tip"></div>
+  <hr>
 
-</div>
+  <strong>Output Files</strong>
 
-<div id="currentFile" class="mt-3 text-muted"></div>
+  <ul id="outputList" style="padding-left:18px;margin-top:8px;">
+  </ul>
 
-<div id="submissionOutputs" class="mt-3" style="display:none;">
+  </div>
 
-<hr>
-
-<strong>Output Files</strong>
-
-<ul id="outputList" style="padding-left:18px;margin-top:8px;">
-</ul>
-
-</div>
-
-</div>
+  </div>
 
 </div>
 
@@ -614,31 +610,36 @@ if(batteryText){
 batteryText.innerText = "0%";
 }
 
-document.getElementById("batteryContainer").classList.add("d-none");
+document.getElementById("pipelineContainer").classList.add("d-none");
 
-document.querySelectorAll(".battery-cell").forEach(c=>{
-c.classList.remove("active");
+document.querySelectorAll(".pipeline-stage").forEach(s=>{
+s.classList.remove("active");
 });
-
 }
 
 function updateStage(stage, percent, message){
 
-const cells = document.querySelectorAll(".battery-cell");
-
-const activeCount = Math.round((percent / 100) * cells.length);
-
-cells.forEach((cell, i) => {
-  cell.classList.toggle("active", i < activeCount);
-});
-
-const batteryText = document.getElementById("batteryText");
-if(batteryText){
-batteryText.innerText = percent + "%";
-}
-
 statusText.innerHTML = "<strong>Status:</strong> " + stage;
 statusMeta.textContent = message;
+
+const upload = document.getElementById("stage-upload");
+const validate = document.getElementById("stage-validate");
+const transform = document.getElementById("stage-transform");
+const ready = document.getElementById("stage-ready");
+
+upload.classList.add("active");
+
+if(percent >= 25){
+validate.classList.add("active");
+}
+
+if(percent >= 50){
+transform.classList.add("active");
+}
+
+if(percent >= 90){
+ready.classList.add("active");
+}
 
 }
 
@@ -820,7 +821,7 @@ progressBar.classList.add("bg-success");
 progressBar.textContent="Assets uploaded";
 
 updateStage("Upload complete",10,"Starting asset pipeline");
-document.getElementById("batteryContainer").classList.remove("d-none");
+document.getElementById("pipelineContainer").classList.remove("d-none");
 
 const start = await fetch("/ingestion/start-asset-etl",{
 method:"POST",
