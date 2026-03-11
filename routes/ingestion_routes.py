@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from services.azure_service import create_submission_manifest
+from urllib.parse import unquote
 
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -162,30 +163,66 @@ def get_asset_outputs(vendor, submission_id):
 
     container = blob_service.get_container_client("silver")
 
-    prefix = f"logs/vendor={vendor}/assets/submission={submission_id}/"
+    prefixes = [
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/",
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/canonical/",
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+    ]
 
     files = []
 
     try:
 
-        blobs = container.list_blobs(name_starts_with=prefix)
+        for prefix in prefixes:
 
-        for blob in blobs:
+            blobs = container.list_blobs(name_starts_with=prefix)
 
-            name = blob.name.split("/")[-1]
+            for blob in blobs:
 
-            # skip status file
-            if name == "asset_etl_status.json":
-                continue
+                name = blob.name.split("/")[-1]
 
-            url = container.get_blob_client(blob.name).url
+                if name.endswith((".xlsx",".json",".zip",".parquet")):
 
-            files.append({
-                "name": name,
-                "url": url
-            })
+                    files.append({
+                        "name": name,
+                        "path": blob.name
+                    })
 
     except Exception as e:
         print("OUTPUT LIST ERROR:", e)
 
     return jsonify({"files": files})
+
+
+from flask import Response
+from azure.storage.blob import BlobServiceClient
+
+@ingestion_bp.route("/api/asset-report")
+@login_required
+def get_asset_report():
+
+    blob_path = unquote(request.args.get("path"))
+
+    if not blob_path:
+        return {"error": "Missing file path"}, 400
+
+    blob_path = unquote(blob_path)
+    
+    conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    blob_service = BlobServiceClient.from_connection_string(conn)
+
+    container = blob_service.get_container_client("silver")
+
+    blob = container.get_blob_client(blob_path)
+
+    stream = blob.download_blob().readall()
+
+    filename = blob_path.split("/")[-1]
+
+    return Response(
+        stream,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        },
+        mimetype="application/octet-stream"
+    )

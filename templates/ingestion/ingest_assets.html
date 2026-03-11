@@ -810,8 +810,18 @@ async function loadSubmissionOutputs(vendor, submissionId){
   const li = document.createElement("li");
 
   const link = document.createElement("a");
-  link.href = f.url;
-  link.textContent = f.name;
+  link.href = "/ingestion/api/asset-report?path=" + encodeURIComponent(f.path);
+  const labels = {
+  "health_report.xlsx":"Health Report",
+  "autofix_report.xlsx":"Autofix Report",
+  "mapped_autofixed.xlsx":"Mapped Autofix",
+  "media_canonical.xlsx":"Canonical Asset Plan",
+  "asset_transform_log.json":"Transformation Log",
+  "transformed_assets.zip":"Download Transformed Assets"
+  };
+
+  link.textContent = labels[f.name] || f.name;
+
   link.target = "_blank";
 
   li.appendChild(link);

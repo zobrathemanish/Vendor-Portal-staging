@@ -492,7 +492,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                     log_data["errors"].append(result)
 
         log_path = (
-            f"logs/vendor={vendor}/assets/submission={submission_id}/"
+            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
             f"asset_transform_log.json"
         )
                 
@@ -545,8 +545,7 @@ def create_assets_zip(vendor, submission_id, asset_paths):
             z.writestr(path, data)
 
     zip_path = (
-        f"logs/vendor={vendor}/assets/"
-        f"submission={submission_id}/"
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
         f"transformed_assets.zip"
     )
 
