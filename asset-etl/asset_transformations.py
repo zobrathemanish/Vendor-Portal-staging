@@ -319,7 +319,7 @@ def normalize_image_to_square(data: bytes):
 # PROCESS SINGLE ASSET
 # =========================================================
 
-def process_asset(row, vendor, output_root, file_map):
+def process_asset(row, vendor, output_root, file_map, submission_id):
 
     part = str(row["part_number"]).strip()
     media_category = row["media_category"]
@@ -334,7 +334,7 @@ def process_asset(row, vendor, output_root, file_map):
     with open(local_path, "rb") as f:
         data = f.read()
 
-    base_out = f"{output_root}/vendor={vendor}/assets/part_number={part}"
+    base_out = f"{output_root}/vendor={vendor}/submission={submission_id}/assets/part_number={part}"
 
     try:
 
@@ -458,7 +458,8 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                     row,
                     vendor,
                     output_root,
-                    file_map
+                    file_map,
+                    submission_id
                 )
                 for _, row in rows
             ]
@@ -517,10 +518,8 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         write_output(log_path, json.dumps(log_data, indent=2).encode())
         log(f"Assets added to ZIP: {len(assets_for_zip)}", 2)
 
-        if assets_for_zip:
-            create_assets_zip(vendor, submission_id, assets_for_zip)
-        else:
-            log("No assets generated for ZIP", 2)
+        create_assets_zip(vendor, submission_id)
+
 
         if log_data["errors"]:
 
@@ -557,14 +556,44 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 import zipfile
 from io import BytesIO
 
-def create_assets_zip(vendor, submission_id, asset_paths):
+def create_assets_zip(vendor, submission_id):
+
+    prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
 
     zip_buffer = BytesIO()
 
+    asset_count = 0
+
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
 
-        for path, data in asset_paths:
-            z.writestr(path, data)
+        blobs = container.list_blobs(name_starts_with=prefix)
+
+        for blob in blobs:
+
+            blob_path = blob.name
+
+            data = container.get_blob_client(blob_path).download_blob().readall()
+
+            zip_name = blob_path.replace(prefix, "")
+
+            z.writestr(zip_name, data)
+
+            asset_count += 1
+
+        # add transform log into zip
+        try:
+
+            log_blob = (
+                f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+                f"asset_transform_log.json"
+            )
+
+            log_data = container.get_blob_client(log_blob).download_blob().readall()
+
+            z.writestr("asset_transform_log.json", log_data)
+
+        except:
+            pass
 
     zip_path = (
         f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
@@ -572,6 +601,9 @@ def create_assets_zip(vendor, submission_id, asset_paths):
     )
 
     container.upload_blob(zip_path, zip_buffer.getvalue(), overwrite=True)
+
+    log(f"Review ZIP created | assets={asset_count}", 2)
+
 # =========================================================
 # ENTRY POINT
 # =========================================================
