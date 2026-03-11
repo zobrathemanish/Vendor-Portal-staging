@@ -181,9 +181,19 @@ def get_asset_outputs(vendor, submission_id):
 
                 name = blob.name.split("/")[-1]
 
-                if name.endswith((".xlsx",".json",".zip",".parquet")):
+                allowed = {
+                    "health_report.xlsx",
+                    "autofix_report.xlsx",
+                    "mapped_autofixed.xlsx",
+                    "media_canonical.xlsx",
+                    "asset_transform_log.json",
+                    "transformed_assets.zip"
+                }
 
-                    files.append({
+                if name not in allowed:
+                    continue
+            
+                files.append({
                         "name": name,
                         "path": blob.name
                     })
@@ -207,7 +217,7 @@ def get_asset_report():
         return {"error": "Missing file path"}, 400
 
     blob_path = unquote(blob_path)
-    
+
     conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     blob_service = BlobServiceClient.from_connection_string(conn)
 

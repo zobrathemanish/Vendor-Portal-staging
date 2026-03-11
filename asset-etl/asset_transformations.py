@@ -349,7 +349,12 @@ def process_asset(row, vendor, output_root, file_map):
             existing = get_existing_blob_hash(out_path)
 
             if existing == content_hash:
-                return {"status": "skipped", "file": canonical_filename}
+                return {
+                    "status": "skipped",
+                    "file": canonical_filename,
+                    "original_filename": original_filename
+                }
+
 
             write_output(out_path, out_data, {"content_hash": content_hash})
 
@@ -372,7 +377,11 @@ def process_asset(row, vendor, output_root, file_map):
             existing = get_existing_blob_hash(out_path)
 
             if existing == content_hash:
-                return {"status": "skipped", "file": canonical_filename}
+                return {
+                    "status": "skipped",
+                    "file": canonical_filename,
+                    "original_filename": original_filename
+                }
 
             write_output(out_path, data, {"content_hash": content_hash})
 
@@ -399,7 +408,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
 
-    log(f"▶ Starting asset transformations")
+    log(f"[STEP] Starting asset transformations")
     log(f"Vendor: {vendor}", 2)
     log(f"Submission: {submission_id}", 2)
 
@@ -488,6 +497,14 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                 elif status == "skipped":
                     log_data["skipped"].append(result["file"])
 
+                    original_file = result.get("original_filename")
+                    local_path = file_map.get(original_file)
+
+                    if local_path:
+                        with open(local_path, "rb") as fh:
+                            assets_for_zip.append((result["file"], fh.read()))
+
+
                 elif status == "error":
                     log_data["errors"].append(result)
 
@@ -498,7 +515,12 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                 
         log_data["finished_at"] = datetime.utcnow().isoformat()
         write_output(log_path, json.dumps(log_data, indent=2).encode())
-        create_assets_zip(vendor, submission_id, assets_for_zip)
+        log(f"Assets added to ZIP: {len(assets_for_zip)}", 2)
+
+        if assets_for_zip:
+            create_assets_zip(vendor, submission_id, assets_for_zip)
+        else:
+            log("No assets generated for ZIP", 2)
 
         if log_data["errors"]:
 
