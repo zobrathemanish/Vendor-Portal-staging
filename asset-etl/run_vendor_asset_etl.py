@@ -1,3 +1,4 @@
+#run_vendor_asset_etl
 import os
 import sys
 import time
@@ -99,10 +100,22 @@ def run_step(name, script, vendor, submission_type, submission_id):
         "--submission-id", submission_id
     ]
 
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
-        raise RuntimeError(f"Step '{name}' failed.")
+
+        error_output = result.stderr.strip() or result.stdout.strip()
+
+        # Extract clean RuntimeError message if present
+        if "RuntimeError:" in error_output:
+            error_message = error_output.split("RuntimeError:")[-1].strip()
+        else:
+            error_message = error_output.splitlines()[-1]
+
+        raise RuntimeError(error_message)
+
+
+
     
 def update_manifest_step(vendor, submission_id, step, started_at, finished_at):
 
@@ -133,6 +146,27 @@ def update_manifest_step(vendor, submission_id, step, started_at, finished_at):
         os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
         container
     )
+
+def canonical_exists(vendor, submission_id):
+
+    from azure.storage.blob import BlobServiceClient
+
+    conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+
+    blob_service = BlobServiceClient.from_connection_string(conn)
+    container = blob_service.get_container_client("silver")
+
+    path = (
+        f"in_review/vendor={vendor}/asset_workflow/"
+        f"submission={submission_id}/canonical/media_canonical.parquet"
+    )
+
+    try:
+        container.get_blob_client(path).get_blob_properties()
+        return True
+    except Exception:
+        return False
+
 # =========================================================
 # MAIN
 # =========================================================
@@ -206,9 +240,33 @@ def main():
                 continue
 
             start_time = datetime.utcnow()
+
             run_step(name, script, vendor, submission_type, submission_id)
+
             end_time = datetime.utcnow()
+
             update_manifest_step(vendor, submission_id, name, start_time, end_time)
+
+            # -----------------------------------------------------
+            # STOP PIPELINE IF NO CANONICAL GENERATED
+            # -----------------------------------------------------
+
+            if name == "Asset Canonicalization":
+
+                if not canonical_exists(vendor, submission_id):
+
+                    print("\n⚠ No assets matched mapped.xlsx — stopping pipeline.")
+
+                    status["status"] = "completed_with_warnings"
+                    status["stage"] = "canonicalization"
+                    status["progress"] = 100
+                    status["message"] = "No uploaded assets matched mapped.xlsx"
+                    status["finished_at"] = datetime.utcnow().isoformat()
+
+                    save_status(vendor, status, submission_id)
+
+                    return
+
 
             completed.append(name)
             status["completed_steps"] = completed

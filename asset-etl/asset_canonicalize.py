@@ -251,7 +251,7 @@ def build_media_canonical(vendor: str, submission_id: str):
         })
 
     if missing_assets:
-        print(f"⚠ {len(missing_assets)} mapped assets missing in staging")
+        print(f" : {len(missing_assets)} mapped assets missing in staging")
 
     return pd.DataFrame(records), pd.DataFrame(autofix_rows)
 
@@ -318,15 +318,33 @@ def write_media_canonical(vendor: str, df: pd.DataFrame, submission_id: str):
 
 def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
 
-    print(f"▶ Running Asset Canonicalization for vendor: {vendor}")
+    print(f"[STEP] Running Asset Canonicalization for vendor: {vendor}")
     print(f"Submission type: {submission_type}")
     print(f"Submission ID: {submission_id}")
 
     df, autofix_df = build_media_canonical(vendor, submission_id)
 
     if df.empty:
-        print("No canonical rows generated.")
-        return
+
+        print(" No assets matched mapped.xlsx")
+
+        error_log = {
+            "vendor": vendor,
+            "submission_id": submission_id,
+            "error": "NO_ASSETS_MATCHED_MAPPING",
+            "message": "Uploaded assets do not match mapped.xlsx",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        container.upload_blob(
+            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/canonical_error.json",
+            json.dumps(error_log, indent=2),
+            overwrite=True
+        )
+
+        raise RuntimeError("No assets matched mapped.xlsx")
+
+
 
     write_media_canonical(vendor, df, submission_id)
 

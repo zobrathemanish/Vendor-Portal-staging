@@ -1,0 +1,31 @@
+[2026-03-11 19:38:51] 
+====================================
+
+[2026-03-11 19:38:51] 🚀 RUNNING ASSET ETL
+
+[2026-03-11 19:38:51] Vendor: Grote Lighting
+
+[2026-03-11 19:38:51] Submission: 20260311T193850
+
+[2026-03-11 19:38:51] ====================================
+
+[2026-03-11 19:38:51] 
+▶️ Asset Extraction & Validation
+
+[2026-03-11 19:38:55] 
+▶️ Asset Canonicalization
+
+[2026-03-11 19:38:57] 
+❌ Pipeline failed: Traceback (most recent call last):
+  File "c:\Users\mdangi\Downloads\ETL Pipeline Project - Phase 1\Vendor Portal Setup\asset-etl\asset_canonicalize.py", line 390, in <module>
+    run_for_vendor(args.vendor, args.submission_type, args.submission_id)
+  File "c:\Users\mdangi\Downloads\ETL Pipeline Project - Phase 1\Vendor Portal Setup\asset-etl\asset_canonicalize.py", line 325, in run_for_vendor
+    df, autofix_df = build_media_canonical(vendor, submission_id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\mdangi\Downloads\ETL Pipeline Project - Phase 1\Vendor Portal Setup\asset-etl\asset_canonicalize.py", line 254, in build_media_canonical
+    print(f"\u26a0 {len(missing_assets)} mapped assets missing in staging")
+  File "C:\Users\mdangi\AppData\Local\anaconda3\envs\vendorportal\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u26a0' in position 0: character maps to <undefined>
+

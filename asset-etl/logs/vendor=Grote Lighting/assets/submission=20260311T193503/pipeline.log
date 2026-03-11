@@ -1,0 +1,20 @@
+[2026-03-11 19:35:04] 
+====================================
+
+[2026-03-11 19:35:04] 🚀 RUNNING ASSET ETL
+
+[2026-03-11 19:35:04] Vendor: Grote Lighting
+
+[2026-03-11 19:35:04] Submission: 20260311T193503
+
+[2026-03-11 19:35:04] ====================================
+
+[2026-03-11 19:35:04] 
+▶️ Asset Extraction & Validation
+
+[2026-03-11 19:35:08] 
+▶️ Asset Canonicalization
+
+[2026-03-11 19:35:10] 
+❌ Pipeline failed: Step 'Asset Canonicalization' failed.
+

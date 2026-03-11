@@ -1,0 +1,15 @@
+{
+  "vendor": "Grote Lighting",
+  "submission_id": "20260311T193850",
+  "submission_type": "asset_submission",
+  "started_at": "2026-03-11T19:38:51.631894",
+  "completed_steps": [
+    "Asset Extraction & Validation"
+  ],
+  "status": "failed",
+  "stage": "failed",
+  "progress": 100,
+  "message": "Traceback (most recent call last):\n  File \"c:\\Users\\mdangi\\Downloads\\ETL Pipeline Project - Phase 1\\Vendor Portal Setup\\asset-etl\\asset_canonicalize.py\", line 390, in <module>\n    run_for_vendor(args.vendor, args.submission_type, args.submission_id)\n  File \"c:\\Users\\mdangi\\Downloads\\ETL Pipeline Project - Phase 1\\Vendor Portal Setup\\asset-etl\\asset_canonicalize.py\", line 325, in run_for_vendor\n    df, autofix_df = build_media_canonical(vendor, submission_id)\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"c:\\Users\\mdangi\\Downloads\\ETL Pipeline Project - Phase 1\\Vendor Portal Setup\\asset-etl\\asset_canonicalize.py\", line 254, in build_media_canonical\n    print(f\"\\u26a0 {len(missing_assets)} mapped assets missing in staging\")\n  File \"C:\\Users\\mdangi\\AppData\\Local\\anaconda3\\envs\\vendorportal\\Lib\\encodings\\cp1252.py\", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: 'charmap' codec can't encode character '\\u26a0' in position 0: character maps to <undefined>",
+  "failed_at": "Asset Canonicalization",
+  "finished_at": "2026-03-11T19:38:57.718963"
+}
