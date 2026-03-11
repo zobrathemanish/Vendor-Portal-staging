@@ -14,7 +14,6 @@ from services.azure_service import (
     write_status_to_azure,
 )
 from services.submission_service import (
-    move_staging_assets_to_submission,
     trigger_etl,
     get_latest_submission_files
 )
@@ -222,13 +221,6 @@ def upload_files():
         product_path = save_file(product_file, vendor_name, "opticat", current_app.config['UPLOAD_FOLDER'])
         pricing_path = save_file(pricing_file, vendor_name, "opticat", current_app.config['UPLOAD_FOLDER'])
 
-         # 🚚 MOVE ASSETS
-        move_staging_assets_to_submission(
-            vendor=vendor_name,
-            final_submission_id=submission_id
-        )
-
-
         try:
             upload_to_azure_bronze_opticat(
                 vendor=vendor_name,
@@ -330,12 +322,6 @@ def upload_files():
 
         # Save unified vendor file
         unified_path = save_file(unified_file, vendor_name, "non_opticat", current_app.config['UPLOAD_FOLDER'])
-
-            # 🚚 MOVE ASSETS
-        move_staging_assets_to_submission(
-            vendor=vendor_name,
-            final_submission_id=submission_id
-        )
 
         try:
             upload_to_azure_bronze_non_opticat(

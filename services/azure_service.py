@@ -451,3 +451,36 @@ def get_latest_vendor_submission_id(
         return None
 
     return sorted(submissions, reverse=True)[0]
+
+def create_submission_manifest(vendor, submission_id, submission_type, files):
+
+    conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+
+    blob_service = BlobServiceClient.from_connection_string(conn_str)
+
+    container_client = blob_service.get_container_client("bronze")
+
+    manifest = {
+        "vendor": vendor,
+        "submission_id": submission_id,
+        "submission_type": submission_type,
+        "status": "uploaded",
+        "files_uploaded": files,
+        "created_at": datetime.utcnow().isoformat(),
+        "etl_steps": [],
+        "warnings": [],
+        "errors": []
+    }
+
+    blob_path = (
+        f"raw/vendor={vendor}/assets/"
+        f"submission={submission_id}/manifest.json"
+    )
+
+    container_client.upload_blob(
+        blob_path,
+        json.dumps(manifest, indent=2),
+        overwrite=True
+    )
+
+    print(f"📄 Submission manifest created: {blob_path}")

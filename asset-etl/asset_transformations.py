@@ -92,8 +92,12 @@ container = blob_service.get_container_client(SILVER_CONTAINER)
 # HELPERS
 # =========================================================
 
-def log(msg: str, indent: int = 0):
-    print(" " * indent + msg, flush=True)
+def log(msg, indent=0):
+    try:
+        print(" " * indent + msg, flush=True)
+    except UnicodeEncodeError:
+        safe = msg.encode("ascii", "replace").decode()
+        print(" " * indent + safe, flush=True)
 
 
 def compute_sha256(data: bytes) -> str:

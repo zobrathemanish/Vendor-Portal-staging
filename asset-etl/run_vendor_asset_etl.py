@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 # =========================================================
 # PATH SETUP (must run BEFORE other imports)
@@ -10,7 +11,6 @@ PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
 
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-
 # =========================================================
 # IMPORTS
 # =========================================================
@@ -102,9 +102,37 @@ def run_step(name, script, vendor, submission_type, submission_id):
     result = subprocess.run(cmd)
 
     if result.returncode != 0:
-        print(f"\n❌ Failed at step: {name}")
-        sys.exit(1)
+        raise RuntimeError(f"Step '{name}' failed.")
+    
+def update_manifest_step(vendor, submission_id, step, started_at, finished_at):
 
+    import os
+    from services.azure_service import read_json_blob_from_azure, upload_json_blob
+
+    container = "bronze"
+
+    blob_path = (
+        f"raw/vendor={vendor}/assets/"
+        f"submission={submission_id}/manifest.json"
+    )
+
+    manifest = read_json_blob_from_azure(blob_path, container)
+
+    duration = (finished_at - started_at).total_seconds()
+
+    manifest["etl_steps"].append({
+        "step": step,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "duration_seconds": round(duration, 2)
+    })
+
+    upload_json_blob(
+        manifest,
+        blob_path,
+        os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+        container
+    )
 # =========================================================
 # MAIN
 # =========================================================
@@ -161,27 +189,44 @@ def main():
     # Run pipeline steps
     # -----------------------------------------------------
 
-    for name, script in STEPS:
+    try:
 
-        stage_info = STEP_PROGRESS.get(name)
+        for name, script in STEPS:
 
-        if stage_info:
-            status["stage"] = stage_info["stage"]
-            status["progress"] = stage_info["progress"]
-            status["message"] = stage_info["message"]
+            stage_info = STEP_PROGRESS.get(name)
+
+            if stage_info:
+                status["stage"] = stage_info["stage"]
+                status["progress"] = stage_info["progress"]
+                status["message"] = stage_info["message"]
+                save_status(vendor, status, submission_id)
+
+            if name in completed:
+                print(f"⏭ Skipping already completed step: {name}")
+                continue
+
+            start_time = datetime.utcnow()
+            run_step(name, script, vendor, submission_type, submission_id)
+            end_time = datetime.utcnow()
+            update_manifest_step(vendor, submission_id, name, start_time, end_time)
+
+            completed.append(name)
+            status["completed_steps"] = completed
             save_status(vendor, status, submission_id)
 
-        if name in completed:
-            print(f"⏭ Skipping already completed step: {name}")
-            continue
+    except Exception as e:
 
-        # RUN THE STEP
-        run_step(name, script, vendor, submission_type, submission_id)
+        print(f"\n❌ Pipeline failed: {e}")
 
-        # RECORD COMPLETION
-        completed.append(name)
-        status["completed_steps"] = completed
+        status["status"] = "failed"
+        status["stage"] = "failed"
+        status["progress"] = 100
+        status["message"] = str(e)
+        status["failed_at"] = name
+        status["finished_at"] = datetime.utcnow().isoformat()
+
         save_status(vendor, status, submission_id)
+        sys.exit(1)
     # -----------------------------------------------------
     # Mark completion
     # -----------------------------------------------------
@@ -198,6 +243,8 @@ def main():
     print("✅ Asset ETL completed successfully")
     print(f"Vendor: {vendor}")
     print("====================================")
+
+    
 
 
 # =========================================================

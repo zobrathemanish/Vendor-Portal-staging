@@ -251,10 +251,58 @@ background:#cfcfcf;
 border:2px solid #777;
 }
 
+.pipeline-stage.active + .pipeline-line{
+background:#0078ff33;
+}
+
 .pipeline-line{
 flex:1;
-height:3px;
+height:6px;
 background:#cfcfcf;
+border-radius:4px;
+position:relative;
+overflow:hidden;
+}
+
+.pipeline-line.flowing::after{
+content:"";
+position:absolute;
+top:0;
+left:-40%;
+width:40%;
+height:100%;
+background:linear-gradient(
+90deg,
+rgba(0,120,255,0) 0%,
+rgba(0,120,255,0.5) 40%,
+rgba(0,120,255,1) 50%,
+rgba(0,120,255,0.5) 60%,
+rgba(0,120,255,0) 100%
+);
+animation:waterFlow 1.8s linear infinite;
+}
+
+.pipeline-fill{
+position:absolute;
+top:0;
+left:0;
+height:100%;
+width:0%;
+background:linear-gradient(
+90deg,
+#4da6ff,
+#0078ff
+);
+transition:width 0.6s ease;
+}
+
+.pipeline-line.filled{
+background:#0078ff;
+}
+
+@keyframes waterFlow{
+0%{ left:-40%; }
+100%{ left:100%; }
 }
 
 .stage-label{
@@ -264,12 +312,36 @@ color:#333;
 }
 
 .pipeline-stage.active .stage-dot{
-background:#444;
-border-color:#444;
+background:#0078ff;
+border-color:#0078ff;
+box-shadow:0 0 6px rgba(0,120,255,0.6);
 }
 
 .pipeline-stage.active .stage-label{
 font-weight:bold;
+}
+
+/* ============================= */
+/* PIPELINE FAILURE STYLE */
+/* ============================= */
+
+.pipeline-stage.failed .stage-dot{
+background:#dc3545;
+border-color:#dc3545;
+box-shadow:0 0 6px rgba(220,53,69,0.6);
+}
+
+.pipeline-stage.failed .stage-label{
+color:#dc3545;
+font-weight:bold;
+}
+
+.pipeline-line.failed{
+background:#dc3545;
+}
+
+.pipeline-line.failed .pipeline-fill{
+background:#dc3545;
 }
 
 </style>
@@ -442,22 +514,27 @@ Submit Assets
       <div class="stage-label">Upload</div>
     </div>
 
-    <div class="pipeline-line"></div>
+    <div class="pipeline-line">
+        <div class="pipeline-fill"></div>
+    </div>
+
 
     <div class="pipeline-stage" id="stage-validate">
       <div class="stage-dot"></div>
       <div class="stage-label">Validate</div>
     </div>
 
-    <div class="pipeline-line"></div>
-
+<div class="pipeline-line">
+    <div class="pipeline-fill"></div>
+</div>
     <div class="pipeline-stage" id="stage-transform">
       <div class="stage-dot"></div>
       <div class="stage-label">Transform</div>
     </div>
 
-    <div class="pipeline-line"></div>
-
+<div class="pipeline-line">
+    <div class="pipeline-fill"></div>
+</div>
     <div class="pipeline-stage" id="stage-ready">
       <div class="stage-dot"></div>
       <div class="stage-label">Ready</div>
@@ -614,6 +691,10 @@ document.getElementById("pipelineContainer").classList.add("d-none");
 
 document.querySelectorAll(".pipeline-stage").forEach(s=>{
 s.classList.remove("active");
+
+document.querySelectorAll(".pipeline-line").forEach(l=>{
+l.classList.remove("filled","flowing");
+});
 });
 }
 
@@ -627,17 +708,37 @@ const validate = document.getElementById("stage-validate");
 const transform = document.getElementById("stage-transform");
 const ready = document.getElementById("stage-ready");
 
+const fills = document.querySelectorAll(".pipeline-fill");
+
 upload.classList.add("active");
 
-if(percent >= 25){
+/* PIPE 1 : Upload -> Validate */
+
+if(percent < 25){
+fills[0].style.width = (percent/25)*100 + "%";
+}
+else{
+fills[0].style.width = "100%";
 validate.classList.add("active");
 }
 
-if(percent >= 50){
+/* PIPE 2 : Validate -> Transform */
+
+if(percent >= 25 && percent < 50){
+fills[1].style.width = ((percent-25)/25)*100 + "%";
+}
+else if(percent >= 50){
+fills[1].style.width = "100%";
 transform.classList.add("active");
 }
 
-if(percent >= 90){
+/* PIPE 3 : Transform -> Ready */
+
+if(percent >= 50 && percent < 90){
+fills[2].style.width = ((percent-50)/40)*100 + "%";
+}
+else if(percent >= 90){
+fills[2].style.width = "100%";
 ready.classList.add("active");
 }
 
@@ -663,8 +764,23 @@ function setFailed(message){
 statusText.innerHTML = "<strong>Status:</strong> Failed";
 statusMeta.textContent = message;
 
-}
+currentFile.textContent = "";
 
+/* turn stages red */
+
+document.querySelectorAll(".pipeline-stage").forEach(stage=>{
+stage.classList.remove("active");
+stage.classList.add("failed");
+});
+
+/* turn pipes red */
+
+document.querySelectorAll(".pipeline-line").forEach(pipe=>{
+pipe.classList.remove("flowing");
+pipe.classList.add("failed");
+});
+
+}
 async function loadSubmissionOutputs(vendor, submissionId){
 
   try{
@@ -722,6 +838,11 @@ try{
 const res = await fetch(`/ingestion/api/asset-status/${vendor}/${submissionId}`);
 const status = await res.json();
 
+if(!status){
+console.error("Empty status response");
+return;
+}
+
 updateStage(
 status.stage,
 status.progress || 0,
@@ -738,13 +859,15 @@ loadSubmissionOutputs(vendor, submissionId);
 
 }
 
-if(status.stage === "failed"){
+if(status.stage === "failed" || status.status === "failed"){
 
-clearInterval(statusInterval);
+  clearInterval(statusInterval);
 
-setFailed(status.message || "Processing failed");
+  setFailed(status.message || "Processing failed");
 
-}
+  return;
+
+  }
 
 }catch(err){
 
@@ -761,6 +884,10 @@ submitBtn.addEventListener("click", async (e)=>{
 e.preventDefault();
 
 resetSubmissionStatus();
+
+submissionId = new Date().toISOString()
+    .replace(/[-:]/g,"")
+    .split(".")[0];
 
 const files = Array.from(zipInput.files);
 const vendor = vendorSelect.value;
@@ -789,7 +916,8 @@ method:"POST",
 headers:{ "Content-Type":"application/json"},
 body:JSON.stringify({
 vendor,
-filename:file.name
+filename:file.name,
+submission_id: submissionId
 })
 });
 
@@ -798,6 +926,7 @@ const data = await res.json();
 const blobClient = new BlockBlobClient(data.sas_url);
 
 await blobClient.uploadBrowserData(file,{
+overwrite:true,
 blobHTTPHeaders:{ blobContentType:"application/zip" },
 onProgress:(p)=>{
 
@@ -829,7 +958,8 @@ headers:{ "Content-Type":"application/json"},
 body:JSON.stringify({
 vendor,
 blob_paths: blobPaths,
-submission_type: document.getElementById("submissionType").value
+submission_type: document.getElementById("submissionType").value,
+submission_id: submissionId
 })
 });
 
