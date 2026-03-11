@@ -1,0 +1,22 @@
+[2026-03-11 19:46:28] 
+====================================
+
+[2026-03-11 19:46:28] 🚀 RUNNING ASSET ETL
+
+[2026-03-11 19:46:28] Vendor: Grote Lighting
+
+[2026-03-11 19:46:28] Submission: 20260311T194627
+
+[2026-03-11 19:46:28] ====================================
+
+[2026-03-11 19:46:28] 
+▶️ Asset Extraction & Validation
+
+[2026-03-11 19:46:32] 
+▶️ Asset Canonicalization
+
+[2026-03-11 19:46:34] 
+❌ Pipeline failed: UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 0: character maps to <undefined>
+
+[2026-03-11 19:46:34] UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 0: character maps to <undefined>
+

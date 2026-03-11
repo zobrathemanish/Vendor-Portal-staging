@@ -1,0 +1,20 @@
+[2026-03-11 19:47:44] 
+====================================
+
+[2026-03-11 19:47:44] 🚀 RUNNING ASSET ETL
+
+[2026-03-11 19:47:44] Vendor: Grote Lighting
+
+[2026-03-11 19:47:44] Submission: 20260311T194743
+
+[2026-03-11 19:47:44] ====================================
+
+[2026-03-11 19:47:44] 
+▶️ Asset Extraction & Validation
+
+[2026-03-11 19:47:48] 
+▶️ Asset Canonicalization
+
+[2026-03-11 19:47:51] 
+⚠ No assets matched mapped.xlsx — stopping pipeline.
+

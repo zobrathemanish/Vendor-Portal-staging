@@ -309,7 +309,7 @@ def write_media_canonical(vendor: str, df: pd.DataFrame, submission_id: str):
         overwrite=True
     )
 
-    print(f"✅ Canonical table written ({len(df)} rows)")
+    print(f"Canonical table written ({len(df)} rows)")
 
 
 # =========================================================

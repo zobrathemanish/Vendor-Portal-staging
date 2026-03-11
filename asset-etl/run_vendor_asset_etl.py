@@ -157,7 +157,7 @@ def canonical_exists(vendor, submission_id):
     container = blob_service.get_container_client("silver")
 
     path = (
-        f"in_review/vendor={vendor}/asset_workflow/"
+        f"in_review/vendor={vendor}/assets_workflow/"
         f"submission={submission_id}/canonical/media_canonical.parquet"
     )
 
@@ -279,7 +279,15 @@ def main():
         status["status"] = "failed"
         status["stage"] = "failed"
         status["progress"] = 100
-        status["message"] = str(e)
+        full_error = str(e)
+
+        # keep full traceback in terminal
+        print(full_error)
+
+        # extract user-friendly message
+        clean_message = full_error.splitlines()[-1]
+
+        status["message"] = clean_message
         status["failed_at"] = name
         status["finished_at"] = datetime.utcnow().isoformat()
 
