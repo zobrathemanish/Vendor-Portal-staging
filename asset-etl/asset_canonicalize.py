@@ -105,7 +105,7 @@ def load_mapped_excel(vendor: str, submission_id: str) -> pd.DataFrame:
 
 def load_asset_manifest(vendor: str, submission_id: str) -> Dict:
 
-    path = f"in_review/vendor={vendor}/assets_staging/submission={submission_id}/_asset_manifest.json"
+    path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/assets_staging/_asset_manifest.json"
 
     try:
         raw = container.get_blob_client(path).download_blob().readall()
@@ -262,7 +262,7 @@ def build_media_canonical(vendor: str, submission_id: str):
 
 def write_media_canonical(vendor: str, df: pd.DataFrame, submission_id: str):
 
-    base_path = f"in_review/vendor={vendor}/canonical/submission={submission_id}/media_canonical"
+    base_path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/canonical/media_canonical"
 
     parquet_path = f"{base_path}.parquet"
     excel_path = f"{base_path}.xlsx"
@@ -336,7 +336,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
         df.to_excel(writer, index=False)
 
     container.upload_blob(
-        f"logs/vendor={vendor}/assets/submission={submission_id}/mapped_autofixed.xlsx",
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/mapped_autofixed.xlsx",
         buf.getvalue(),
         overwrite=True
     )
@@ -349,7 +349,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
             autofix_df.to_excel(writer, index=False)
 
         container.upload_blob(
-            f"logs/vendor={vendor}/assets/submission={submission_id}/autofix_report.xlsx",
+            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/autofix_report.xlsx",
             buf.getvalue(),
             overwrite=True
         )

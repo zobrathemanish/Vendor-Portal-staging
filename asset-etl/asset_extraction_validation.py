@@ -1,4 +1,4 @@
-# asset_extraction_validation.py
+# asset-etl/asset_extraction_validation.py
 
 import os
 import json
@@ -94,11 +94,11 @@ def upload_json(payload: dict, blob_path: str):
 
 
 def vendor_paths(vendor: str, submission_id: str) -> Dict[str, str]:
-    staging_prefix = f"in_review/vendor={vendor}/assets_staging/submission={submission_id}/"
+    staging_prefix = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/assets_staging/"
     return {
         "asset_prefix":   f"raw/vendor={vendor}/assets/submission={submission_id}/original_zip/",
-        "log_prefix": f"logs/vendor={vendor}/assets/submission={submission_id}/",
-        "zip_hash_log": f"logs/vendor={vendor}/assets/zip_hashes.json",
+        "log_prefix": f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/",
+        "zip_hash_log": f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/",
         "staging_prefix": staging_prefix,
         "staging_manifest": f"{staging_prefix}_asset_manifest.json",
     }
@@ -113,7 +113,7 @@ def normalize_filename(filename: str) -> str:
 
 
 def build_staging_path(vendor: str, submission_id: str, filename: str) -> str:
-    return f"in_review/vendor={vendor}/assets_staging/submission={submission_id}/{filename}"
+    return f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/assets_staging/{filename}"
 
 # =========================================================
 # ZIP HASH LOGS

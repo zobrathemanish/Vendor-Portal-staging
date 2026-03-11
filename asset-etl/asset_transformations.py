@@ -174,7 +174,7 @@ def get_existing_blob_hash(path):
 
 def load_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
 
-    path = f"in_review/vendor={vendor}/canonical/submission={submission_id}/media_canonical.parquet"
+    path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/canonical/media_canonical.parquet"
 
     raw = download_blob(path)
 
