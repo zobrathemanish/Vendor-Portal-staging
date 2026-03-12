@@ -541,6 +541,10 @@ Submit Assets
     </div>
 
   </div>
+  
+  <strong>-------------</strong>
+
+  <div id="assetSummary" class="asset-summary-panel"></div>
 
   <div id="currentFile" class="mt-3 text-muted"></div>
 
@@ -788,6 +792,18 @@ async function loadSubmissionOutputs(vendor, submissionId){
   const res = await fetch(`/ingestion/api/asset-outputs/${vendor}/${submissionId}`);
   const data = await res.json();
 
+  if (data.summary) {
+    const s = data.summary;
+    const summaryBox = document.getElementById("assetSummary");
+
+    summaryBox.innerHTML = `
+      Assets Processed: ${s.assets_processed}<br>
+      Total Issues: ${s.total_issues}<br>
+      Autofixed Issues: ${s.autofixed_issues}<br>
+      Remaining Issues: ${s.remaining_issues}
+    `;
+  }
+
   const list = document.getElementById("outputList");
   const panel = document.getElementById("submissionOutputs");
 
@@ -815,7 +831,7 @@ async function loadSubmissionOutputs(vendor, submissionId){
     "asset_submission_summary.xlsx":"Asset Processing Summary",
     "transformed_assets.zip":"Download Transformed Assets"
   };
-  
+
   link.textContent = labels[f.name] || f.name;
 
   link.target = "_blank";

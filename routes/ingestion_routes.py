@@ -9,7 +9,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from services.azure_service import create_submission_manifest
 from urllib.parse import unquote
-
+import json
+import pandas as pd
+from io import BytesIO
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
@@ -195,7 +197,61 @@ def get_asset_outputs(vendor, submission_id):
     except Exception as e:
         print("OUTPUT LIST ERROR:", e)
 
-    return jsonify({"files": files})
+    summary = {
+        "assets_processed": 0,
+        "total_issues": 0,
+        "autofixed_issues": 0,
+        "remaining_issues": 0
+    }
+
+    # ---------------------------
+    # ASSETS PROCESSED
+    # ---------------------------
+    try:
+
+        health_blob = (
+            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/"
+            f"health_report.xlsx"
+        )
+
+        raw = container.get_blob_client(health_blob).download_blob().readall()
+        df_health = pd.read_excel(BytesIO(raw))
+
+        summary["assets_processed"] = len(df_health)
+
+    except Exception as e:
+        print("Health summary error:", e)
+
+    # ---------------------------
+    # ISSUE SUMMARY
+    # ---------------------------
+    try:
+
+        report_blob = (
+            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+            f"asset_submission_summary.xlsx"
+        )
+
+        raw = container.get_blob_client(report_blob).download_blob().readall()
+        df_summary = pd.read_excel(BytesIO(raw))
+
+        summary["total_issues"] = int(df_summary["issue"].notna().sum())
+
+        summary["autofixed_issues"] = int(
+            (df_summary["action_taken"] == "fixed_automatically").sum()
+        )
+
+        summary["remaining_issues"] = int(
+            (df_summary["vendor_action_required"] != "none").sum()
+        )
+
+    except Exception as e:
+        print("Issue summary error:", e)
+
+    return jsonify({
+        "files": files,
+        "summary": summary
+    })
 
 
 from flask import Response
