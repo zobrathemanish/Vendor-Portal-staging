@@ -94,7 +94,6 @@ def start_asset_etl():
         "submission_id": submission_id
     })
 
-
 @ingestion_bp.route("/api/asset-status/<vendor>/<submission_id>")
 @login_required
 def get_asset_status(vendor, submission_id):
@@ -153,10 +152,10 @@ def get_asset_status(vendor, submission_id):
             "message": "Reading pipeline status"
         })
     
-@ingestion_bp.route("/api/asset-outputs/<vendor>/<submission_id>")
-@login_required
-def get_asset_outputs(vendor, submission_id):
 
+@ingestion_bp.route("/api/asset-outputs/<vendor>/<submission_type>/<submission_id>")
+@login_required
+def get_asset_outputs(vendor, submission_type, submission_id):
     import os
     from azure.storage.blob import BlobServiceClient
 
@@ -166,7 +165,7 @@ def get_asset_outputs(vendor, submission_id):
     container = blob_service.get_container_client("silver")
 
     prefixes = [
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+        f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/reports/"
     ]
 
     files = []
@@ -210,7 +209,7 @@ def get_asset_outputs(vendor, submission_id):
     try:
 
         health_blob = (
-            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/"
+            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
             f"health_report.xlsx"
         )
 
@@ -220,7 +219,7 @@ def get_asset_outputs(vendor, submission_id):
         summary["assets_processed"] = len(df_health)
 
     except Exception as e:
-        print("Health summary error:", e)
+            print("Health summary error:", e)
 
     # ---------------------------
     # ISSUE SUMMARY
@@ -228,7 +227,7 @@ def get_asset_outputs(vendor, submission_id):
     try:
 
         report_blob = (
-            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/reports/"
             f"asset_submission_summary.xlsx"
         )
 

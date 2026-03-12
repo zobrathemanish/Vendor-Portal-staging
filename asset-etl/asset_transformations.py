@@ -172,9 +172,13 @@ def get_existing_blob_hash(path):
 # LOAD CANONICAL
 # =========================================================
 
-def load_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
+def load_media_canonical(vendor: str, submission_type: str, submission_id: str) -> pd.DataFrame:
 
-    path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/canonical/media_canonical.parquet"
+    path = (
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/"
+        f"canonical/media_canonical.parquet"
+    )
 
     raw = download_blob(path)
 
@@ -203,7 +207,7 @@ def load_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
 # VENDOR ACTION REPORT
 # =========================================================
 
-def create_vendor_action_report(vendor: str, submission_id: str):
+def create_vendor_action_report(vendor: str, submission_type:str, submission_id: str):
 
     log("Generating vendor action report", 2)
 
@@ -214,8 +218,8 @@ def create_vendor_action_report(vendor: str, submission_id: str):
     # =====================================================
 
     health_path = (
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/"
-        f"health_report.xlsx"
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/logs/health_report.xlsx"
     )
 
     try:
@@ -233,8 +237,8 @@ def create_vendor_action_report(vendor: str, submission_id: str):
     # =====================================================
 
     autofix_path = (
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/"
-        f"autofix_report.xlsx"
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/logs/autofix_report.xlsx"
     )
 
     try:
@@ -262,10 +266,9 @@ def create_vendor_action_report(vendor: str, submission_id: str):
     # =====================================================
 
     integrity_path = (
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
-        f"asset_integrity_issues.json"
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/reports/asset_integrity_issues.json"
     )
-
     try:
 
         raw = container.get_blob_client(integrity_path).download_blob().readall()
@@ -281,8 +284,8 @@ def create_vendor_action_report(vendor: str, submission_id: str):
     # =====================================================
 
     transform_log_path = (
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
-        f"asset_transform_log.json"
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/reports/asset_transform_log.json"
     )
 
     try:
@@ -381,8 +384,8 @@ def create_vendor_action_report(vendor: str, submission_id: str):
 
 
     report_path = (
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
-        f"asset_submission_summary.xlsx"
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/reports/asset_submission_summary.xlsx"
     )
 
     container.upload_blob(report_path, buf.getvalue(), overwrite=True)
@@ -625,7 +628,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 
     try:
 
-        df = load_media_canonical(vendor, submission_id)
+        df = load_media_canonical(vendor, submission_type, submission_id)
 
         cache_dir, file_map, miss_map = build_local_asset_cache(vendor, df)
 
@@ -699,17 +702,17 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                     log_data["errors"].append(result)
 
         log_path = (
-            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
-            f"asset_transform_log.json"
+            f"in_review/assets_workflow/"
+            f"{vendor}/{submission_type}/{submission_id}/reports/asset_transform_log.json"
         )
                 
         log_data["finished_at"] = datetime.utcnow().isoformat()
         write_output(log_path, json.dumps(log_data, indent=2).encode())
         log(f"Assets added to ZIP: {len(assets_for_zip)}", 2)
 
-        create_assets_zip(vendor, submission_id)
+        create_assets_zip(vendor, submission_type, submission_id)
 
-        create_vendor_action_report(vendor, submission_id)
+        create_vendor_action_report(vendor,submission_type, submission_id)
 
 
         if log_data["errors"]:
@@ -747,7 +750,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 import zipfile
 from io import BytesIO
 
-def create_assets_zip(vendor, submission_id):
+def create_assets_zip(vendor, submission_type, submission_id):
 
     prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
 
@@ -775,8 +778,8 @@ def create_assets_zip(vendor, submission_id):
         try:
 
             log_blob = (
-                f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
-                f"asset_transform_log.json"
+                f"in_review/assets_workflow/"
+                f"{vendor}/{submission_type}/{submission_id}/reports/asset_transform_log.json"
             )
 
             log_data = container.get_blob_client(log_blob).download_blob().readall()
@@ -787,8 +790,8 @@ def create_assets_zip(vendor, submission_id):
             pass
 
     zip_path = (
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
-        f"transformed_assets.zip"
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/reports/transformed_assets.zip"
     )
 
     container.upload_blob(zip_path, zip_buffer.getvalue(), overwrite=True)

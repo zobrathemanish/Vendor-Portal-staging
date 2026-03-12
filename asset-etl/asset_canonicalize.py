@@ -110,9 +110,13 @@ def load_mapped_excel(vendor: str, submission_id: str) -> pd.DataFrame:
     return df
 
 
-def load_asset_manifest(vendor: str, submission_id: str) -> Dict:
+def load_asset_manifest(vendor: str, submission_type: str, submission_id: str) -> Dict:
 
-    path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/assets_staging/_asset_manifest.json"
+    path = (
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/"
+        f"assets_staging/_asset_manifest.json"
+    )
 
     try:
         raw = container.get_blob_client(path).download_blob().readall()
@@ -120,13 +124,13 @@ def load_asset_manifest(vendor: str, submission_id: str) -> Dict:
     except Exception:
         return {"assets": []}
     
-def load_failed_assets(vendor: str, submission_id: str):
+def load_failed_assets(vendor: str, submission_type: str, submission_id: str):
 
-    path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/asset_validation_{vendor.lower()}*.json"
+    prefix = f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
 
     try:
 
-        blobs = container.list_blobs(name_starts_with=f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/")
+        blobs = container.list_blobs(name_starts_with=prefix)
 
         for b in blobs:
             if "asset_validation" in b.name:
@@ -203,7 +207,7 @@ def detect_asset_integrity_issues(mapped_df: pd.DataFrame, manifest: Dict):
 # CANONICAL BUILD
 # =========================================================
 
-def build_media_canonical(vendor: str, submission_id: str):
+def build_media_canonical(vendor: str, submission_type: str, submission_id: str):
 
     df = load_mapped_excel(vendor, submission_id)
 
@@ -215,8 +219,8 @@ def build_media_canonical(vendor: str, submission_id: str):
     df["part_number"] = df["part_number"].astype(str).str.strip()
     df["filename"] = df["filename"].apply(normalize_filename)
 
-    manifest = load_asset_manifest(vendor, submission_id)
-    failed_assets = load_failed_assets(vendor, submission_id)
+    manifest = load_asset_manifest(vendor, submission_type, submission_id)
+    failed_assets = load_failed_assets(vendor, submission_type, submission_id)
 
     # -------------------------------------------------
     # Asset integrity check
@@ -402,8 +406,9 @@ def build_media_canonical(vendor: str, submission_id: str):
     if integrity_issues:
 
         path = (
-            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
-            f"asset_integrity_issues.json"
+            f"in_review/assets_workflow/"
+            f"{vendor}/{submission_type}/{submission_id}/"
+            f"reports/asset_integrity_issues.json"
         )
 
         container.upload_blob(
@@ -418,9 +423,13 @@ def build_media_canonical(vendor: str, submission_id: str):
 # WRITE CANONICAL TABLE
 # =========================================================
 
-def write_media_canonical(vendor: str, df: pd.DataFrame, submission_id: str):
+def write_media_canonical(vendor: str, df: pd.DataFrame, submission_type:str, submission_id: str):
 
-    base_path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/canonical/media_canonical"
+    base_path = (
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/"
+        f"canonical/media_canonical"
+    )
 
     parquet_path = f"{base_path}.parquet"
     excel_path = f"{base_path}.xlsx"
@@ -480,7 +489,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
     print(f"Submission type: {submission_type}")
     print(f"Submission ID: {submission_id}")
 
-    df, autofix_df = build_media_canonical(vendor, submission_id)
+    df, autofix_df = build_media_canonical(vendor, submission_type, submission_id)
 
     if df.empty:
 
@@ -495,7 +504,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
         }
 
         container.upload_blob(
-            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/canonical_error.json",
+            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/canonical_error.json",
             json.dumps(error_log, indent=2),
             overwrite=True
         )
@@ -504,18 +513,13 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
 
 
 
-    write_media_canonical(vendor, df, submission_id)
+    write_media_canonical(vendor, df, submission_type, submission_id)
 
     buf = BytesIO()
 
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
 
-    container.upload_blob(
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/mapped_autofixed.xlsx",
-        buf.getvalue(),
-        overwrite=True
-    )
 
     if not autofix_df.empty:
 
@@ -525,7 +529,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
             autofix_df.to_excel(writer, index=False)
 
         container.upload_blob(
-            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/autofix_report.xlsx",
+            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/autofix_report.xlsx",
             buf.getvalue(),
             overwrite=True
         )

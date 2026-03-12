@@ -93,13 +93,18 @@ def upload_json(payload: dict, blob_path: str):
     )
 
 
-def vendor_paths(vendor: str, submission_id: str) -> Dict[str, str]:
-    staging_prefix = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/assets_staging/"
+def vendor_paths(vendor: str, submission_type: str, submission_id: str) -> Dict[str, str]:
+
+    base = f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}"
+
+    staging_prefix = f"{base}/assets_staging/"
+    log_prefix = f"{base}/logs/"
+
     return {
-        "asset_prefix":   f"raw/vendor={vendor}/assets/submission={submission_id}/original_zip/",
-        "log_prefix": f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/",
-        "zip_hash_log": f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/",
+        "asset_prefix": f"raw/vendor={vendor}/assets/submission={submission_id}/original_zip/",
         "staging_prefix": staging_prefix,
+        "log_prefix": log_prefix,
+        "zip_hash_log": f"{log_prefix}zip_hashes.json",
         "staging_manifest": f"{staging_prefix}_asset_manifest.json",
     }
 
@@ -112,8 +117,13 @@ def normalize_filename(filename: str) -> str:
     return filename
 
 
-def build_staging_path(vendor: str, submission_id: str, filename: str) -> str:
-    return f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/assets_staging/{filename}"
+def build_staging_path(vendor: str, submission_type: str, submission_id: str, filename: str) -> str:
+
+    return (
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/"
+        f"assets_staging/{filename}"
+    )
 
 # =========================================================
 # ZIP HASH LOGS
@@ -140,8 +150,8 @@ def save_zip_hashes(blob_path: str, payload: Dict[str, Any]):
 # STAGING MANIFEST
 # =========================================================
 
-def load_asset_manifest(vendor: str, submission_id: str) -> Dict[str, Any]:
-    paths = vendor_paths(vendor, submission_id)
+def load_asset_manifest(vendor: str, submission_type:str, submission_id: str) -> Dict[str, Any]:
+    paths = vendor_paths(vendor, submission_type, submission_id)
     try:
         data = silver_container.get_blob_client(paths["staging_manifest"]).download_blob().readall()
         manifest = json.loads(data)
@@ -170,8 +180,8 @@ def load_asset_manifest(vendor: str, submission_id: str) -> Dict[str, Any]:
         }
 
 
-def save_asset_manifest(vendor: str, manifest: Dict[str, Any], submission_id: str):
-    paths = vendor_paths(vendor, submission_id)
+def save_asset_manifest(vendor: str, submission_type: str, submission_id: str, manifest: Dict[str, Any]):
+    paths = vendor_paths(vendor, submission_type, submission_id)
 
     dedup: Dict[str, Dict[str, Any]] = {}
     for asset in manifest.get("assets", []):
@@ -189,8 +199,8 @@ def save_asset_manifest(vendor: str, manifest: Dict[str, Any], submission_id: st
     upload_json(payload, paths["staging_manifest"])
 
 
-def clear_staging(vendor: str, submission_id: str):
-    paths = vendor_paths(vendor, submission_id)
+def clear_staging(vendor: str, submission_type:str, submission_id: str):
+    paths = vendor_paths(vendor, submission_type, submission_id)
     prefix = paths["staging_prefix"]
 
     blobs = silver_container.list_blobs(name_starts_with=prefix)
@@ -198,12 +208,12 @@ def clear_staging(vendor: str, submission_id: str):
         silver_container.delete_blob(blob.name)
 
 
-def list_staged_assets(vendor: str, submission_id: str) -> List[str]:
+def list_staged_assets(vendor: str, submission_type:str, submission_id: str) -> List[str]:
     """
     Prefer manifest over Azure list_blobs for scale.
     Falls back to listing only if manifest is missing or empty.
     """
-    manifest = load_asset_manifest(vendor, submission_id)
+    manifest = load_asset_manifest(vendor, submission_type, submission_id)
     assets = manifest.get("assets", [])
 
     if assets:
@@ -213,7 +223,7 @@ def list_staged_assets(vendor: str, submission_id: str) -> List[str]:
             if item.get("source_blob_path")
         ]
 
-    paths = vendor_paths(vendor, submission_id)
+    paths = vendor_paths(vendor, submission_type, submission_id)
     blobs = silver_container.list_blobs(name_starts_with=paths["staging_prefix"])
     return [
         b.name
@@ -254,10 +264,10 @@ def _build_unique_filename(filename: str, existing_names: set) -> str:
         counter += 1
 
 
-def extract_zip_assets(vendor: str,submission_id: str, zip_blob_path: str):
+def extract_zip_assets(vendor: str, submission_type, submission_id: str, zip_blob_path: str):
     log(f"  Extracting ZIP: {zip_blob_path}")
 
-    paths = vendor_paths(vendor, submission_id)
+    paths = vendor_paths(vendor, submission_type, submission_id)
 
     # download zip from bronze
     zip_bytes = download_blob(bronze_container, zip_blob_path)
@@ -276,7 +286,7 @@ def extract_zip_assets(vendor: str,submission_id: str, zip_blob_path: str):
     # ----------------------------
     # LOAD CURRENT STAGING MANIFEST
     # ----------------------------
-    manifest = load_asset_manifest(vendor, submission_id)
+    manifest = load_asset_manifest(vendor, submission_type, submission_id)
 
     existing_assets = {
         asset["filename"]: asset
@@ -319,7 +329,7 @@ def extract_zip_assets(vendor: str,submission_id: str, zip_blob_path: str):
                 # same basename but different content: create deterministic unique name
                 filename = _build_unique_filename(filename, existing_names)
 
-            staging_path = build_staging_path(vendor, submission_id, filename)
+            staging_path = build_staging_path(vendor, submission_type, submission_id, filename)
 
             silver_container.upload_blob(
                 name=staging_path,
@@ -346,8 +356,8 @@ def extract_zip_assets(vendor: str,submission_id: str, zip_blob_path: str):
             log(f"    → extracted {filename}", 4)
 
     # persist manifest and zip hash only after successful ZIP processing
-    save_asset_manifest(vendor, manifest, submission_id)
-
+    save_asset_manifest(vendor, submission_type, submission_id, manifest)
+    
     hash_log["hashes"].append(zip_hash)
     save_zip_hashes(paths["zip_hash_log"], hash_log)
 
@@ -524,12 +534,12 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     log("Starting asset extraction step")
 
     if submission_type in ["asset_submission", "delta_asset_submission"]:
-        clear_staging(vendor, submission_id)
+        clear_staging(vendor, submission_type, submission_id)
 
     log(f"▶ Running Asset Validation for vendor: {vendor}")
     log(f"  Submission type: {submission_type}")
 
-    paths = vendor_paths(vendor, submission_id)
+    paths = vendor_paths(vendor, submission_type, submission_id)
 
     log("  Discovering assets in Azure...")
     asset_blobs = list_asset_blobs(paths["asset_prefix"])
@@ -547,9 +557,9 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
 
     log("  Extracting ZIP assets...")
     for blob in zip_blobs:
-        extract_zip_assets(vendor, submission_id, blob)
+        extract_zip_assets(vendor, submission_type, submission_id, blob)
 
-    staged_assets = list_staged_assets(vendor, submission_id)
+    staged_assets = list_staged_assets(vendor, submission_type, submission_id)
 
     log(f"  Found {len(staged_assets)} staged assets")
     log("  Validating assets (this may take a moment)...")

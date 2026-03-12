@@ -789,7 +789,9 @@ async function loadSubmissionOutputs(vendor, submissionId){
 
   try{
 
-  const res = await fetch(`/ingestion/api/asset-outputs/${vendor}/${submissionId}`);
+  const submissionType = document.getElementById("submissionType").value;
+
+  const res = await fetch(`/ingestion/api/asset-outputs/${vendor}/${submissionType}/${submissionId}`);
   const data = await res.json();
 
   if (data.summary) {
@@ -819,21 +821,19 @@ async function loadSubmissionOutputs(vendor, submissionId){
 
   }
 
-  panel.style.display = "block";
-
   data.files.forEach(f=>{
 
   const li = document.createElement("li");
 
   const link = document.createElement("a");
   link.href = "/ingestion/api/asset-report?path=" + encodeURIComponent(f.path);
+
   const labels = {
     "asset_submission_summary.xlsx":"Asset Processing Summary",
     "transformed_assets.zip":"Download Transformed Assets"
   };
 
   link.textContent = labels[f.name] || f.name;
-
   link.target = "_blank";
 
   li.appendChild(link);
@@ -847,7 +847,7 @@ async function loadSubmissionOutputs(vendor, submissionId){
 
   }
 
-  }
+}
 
 async function pollSubmissionStatus(vendor, submissionId){
 

@@ -147,7 +147,7 @@ def update_manifest_step(vendor, submission_id, step, started_at, finished_at):
         container
     )
 
-def canonical_exists(vendor, submission_id):
+def canonical_exists(vendor, submission_type, submission_id):
 
     from azure.storage.blob import BlobServiceClient
 
@@ -157,8 +157,8 @@ def canonical_exists(vendor, submission_id):
     container = blob_service.get_container_client("silver")
 
     path = (
-        f"in_review/vendor={vendor}/assets_workflow/"
-        f"submission={submission_id}/canonical/media_canonical.parquet"
+        f"in_review/assets_workflow/"
+        f"{vendor}/{submission_type}/{submission_id}/canonical/media_canonical.parquet"
     )
 
     try:
@@ -253,7 +253,7 @@ def main():
 
             if name == "Asset Canonicalization":
 
-                if not canonical_exists(vendor, submission_id):
+                if not canonical_exists(vendor, submission_type, submission_id):
 
                     print("\n⚠ No assets matched mapped.xlsx — stopping pipeline.")
 
