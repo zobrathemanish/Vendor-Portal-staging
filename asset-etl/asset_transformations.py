@@ -85,7 +85,13 @@ ASSET_CACHE_BASE = os.getenv("ASSET_CACHE_BASE", "").strip() or None
 # =========================================================
 
 blob_service = BlobServiceClient.from_connection_string(AZURE_CONN_STR)
+
+# Silver container (processing layer)
 container = blob_service.get_container_client(SILVER_CONTAINER)
+
+# Gold container (final assets for ERP / PIM)
+GOLD_CONTAINER = "gold"
+gold_container = blob_service.get_container_client(GOLD_CONTAINER)
 
 
 # =========================================================
@@ -391,6 +397,54 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
     container.upload_blob(report_path, buf.getvalue(), overwrite=True)
 
     log("Vendor action report created", 2)
+
+
+#Promote to gold
+def promote_assets_to_gold(vendor, submission_type, submission_id):
+
+    if submission_type not in ["asset_submission", "asset_review"]:
+        log("Skipping GOLD promotion (submission type)", 2)
+        return
+
+    prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
+
+    log(f"PROMOTION PREFIX: {prefix}", 2)
+
+    blobs = list(container.list_blobs(name_starts_with=prefix))
+
+    log(f"BLOBS FOUND: {len(blobs)}", 2)
+
+    promoted = 0
+
+    for blob in blobs:
+        log(f"FOUND BLOB: {blob.name}", 4)
+
+        src_path = blob.name
+
+        # skip folder markers
+        if src_path.endswith("/"):
+            continue
+
+        filename = os.path.basename(src_path)
+        if "." not in filename:
+            continue
+
+        relative = src_path.replace(prefix, "")
+
+        gold_path = f"selected/asset_workflow/{vendor}/{relative}"
+
+        data = container.get_blob_client(src_path).download_blob().readall()
+
+        gold_container.upload_blob(
+            gold_path,
+            data,
+            overwrite=True
+        )
+        promoted += 1
+
+        log(f"PROMOTED → {gold_path}", 4)
+
+    log(f"Promoted {promoted} assets to GOLD", 2)
 
 # =========================================================
 # CACHE
@@ -713,6 +767,8 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         create_assets_zip(vendor, submission_type, submission_id)
 
         create_vendor_action_report(vendor,submission_type, submission_id)
+
+        promote_assets_to_gold(vendor, submission_type, submission_id)
 
 
         if log_data["errors"]:

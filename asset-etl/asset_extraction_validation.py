@@ -357,7 +357,7 @@ def extract_zip_assets(vendor: str, submission_type, submission_id: str, zip_blo
 
     # persist manifest and zip hash only after successful ZIP processing
     save_asset_manifest(vendor, submission_type, submission_id, manifest)
-    
+
     hash_log["hashes"].append(zip_hash)
     save_zip_hashes(paths["zip_hash_log"], hash_log)
 
@@ -464,28 +464,43 @@ def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
 
 def reconcile_declared_vs_actual(vendor: str, submission_id: str, validation: Dict[str, List[Dict[str, Any]]]):
 
-    declared_path = f"in_review/vendor={vendor}/mapped/mapped.parquet"
+    parquet_path = f"in_review/vendor={vendor}/mapped/mapped.parquet"
+    excel_path = f"in_review/vendor={vendor}/mapped/mapped.xlsx"
 
     try:
-        blob = silver_container.get_blob_client(declared_path)
+        blob = silver_container.get_blob_client(parquet_path)
         data = blob.download_blob().readall()
-
         df = pd.read_parquet(BytesIO(data))
+        log("  Declared assets loaded from mapped.parquet")
 
     except Exception:
-        log("  ⚠ Unable to load mapped.parquet for reconciliation")
-        return {
-            "missing_assets": [],
-            "extra_assets": [],
-            "present_but_failed": []
-        }
+
+        log("  mapped.parquet not found — falling back to mapped.xlsx")
+
+        try:
+            blob = silver_container.get_blob_client(excel_path)
+            data = blob.download_blob().readall()
+
+            df = pd.read_excel(BytesIO(data), sheet_name="Digital_Assets")
+
+            log("  Declared assets loaded from mapped.xlsx")
+
+        except Exception:
+
+            log("  ⚠ Unable to load mapped.parquet or mapped.xlsx")
+
+            return {
+                "missing_assets": [],
+                "extra_assets": [],
+                "present_but_failed": []
+            }
 
     # ------------------------------------------
     # Normalize declared filenames
     # ------------------------------------------
 
     declared = set(
-        df["filename"]
+        df["FileName"]
         .astype(str)
         .str.lower()
         .str.strip()
