@@ -199,6 +199,195 @@ def load_media_canonical(vendor: str, submission_id: str) -> pd.DataFrame:
 
     return df
 
+# =========================================================
+# VENDOR ACTION REPORT
+# =========================================================
+
+def create_vendor_action_report(vendor: str, submission_id: str):
+
+    log("Generating vendor action report", 2)
+
+    rows = []
+
+    # =====================================================
+    # LOAD HEALTH REPORT (validation issues)
+    # =====================================================
+
+    health_path = (
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/"
+        f"health_report.xlsx"
+    )
+
+    try:
+
+        health_bytes = container.get_blob_client(health_path).download_blob().readall()
+        df_health = pd.read_excel(BytesIO(health_bytes))
+
+    except Exception:
+
+        log("Health report not found — skipping vendor action report", 4)
+        return
+    
+    # =====================================================
+    # LOAD AUTOFIX REPORT
+    # =====================================================
+
+    autofix_path = (
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/"
+        f"autofix_report.xlsx"
+    )
+
+    try:
+
+        autofix_bytes = container.get_blob_client(autofix_path).download_blob().readall()
+        df_autofix = pd.read_excel(BytesIO(autofix_bytes))
+
+        for _, r in df_autofix.iterrows():
+
+            rows.append({
+                "filename": r.get("filename") or r.get("original_filename"),
+                "issue": r.get("issue_type"),
+                "severity": r.get("severity", "info"),
+                "autofixable": True,
+                "action_taken": "fixed_automatically",
+                "vendor_action_required": "none"
+            })
+
+    except Exception:
+
+        df_autofix = pd.DataFrame()
+
+    # =====================================================
+    # LOAD INTEGRITY ISSUES (missing / extra assets)
+    # =====================================================
+
+    integrity_path = (
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+        f"asset_integrity_issues.json"
+    )
+
+    try:
+
+        raw = container.get_blob_client(integrity_path).download_blob().readall()
+        integrity_issues = json.loads(raw)
+
+    except Exception:
+
+        integrity_issues = []
+
+
+    # =====================================================
+    # LOAD TRANSFORMATION LOG
+    # =====================================================
+
+    transform_log_path = (
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+        f"asset_transform_log.json"
+    )
+
+    try:
+
+        raw = container.get_blob_client(transform_log_path).download_blob().readall()
+        transform_log = json.loads(raw)
+
+    except Exception:
+
+        transform_log = {}
+
+
+    # =====================================================
+    # BUILD TRANSFORMATION LOOKUP
+    # =====================================================
+
+    skipped_files = set(transform_log.get("skipped", []))
+
+
+    # =====================================================
+    # PROCESS VALIDATION ISSUES
+    # =====================================================
+
+    for _, r in df_health.iterrows():
+
+        filename = r.get("filename")
+        issue = r.get("issue_type")
+        severity = r.get("severity")
+        autofixable = r.get("autofixable")
+
+        action_taken = "none"
+        vendor_action = "none"
+
+        if pd.isna(issue):
+
+            issue = None
+
+        elif autofixable:
+
+            action_taken = "fixed_automatically"
+            vendor_action = "none"
+
+        else:
+
+            if severity == "blocking":
+                vendor_action = "upload_correct_asset"
+
+            elif severity == "warning":
+                vendor_action = "optional_improvement"
+
+        rows.append({
+
+            "filename": filename,
+            "issue": issue,
+            "severity": severity,
+            "autofixable": autofixable,
+            "action_taken": action_taken,
+            "vendor_action_required": vendor_action
+
+        })
+
+
+    # =====================================================
+    # ADD INTEGRITY ISSUES (missing / extra assets)
+    # =====================================================
+
+    for issue in integrity_issues:
+
+        rows.append({
+
+            "filename": issue.get("filename"),
+            "issue": issue.get("issue_type"),
+            "severity": issue.get("severity"),
+            "autofixable": False,
+            "action_taken": "none",
+            "vendor_action_required": "upload_missing_asset"
+
+        })
+
+
+    df_out = pd.DataFrame(rows)
+
+
+    # =====================================================
+    # SAVE FINAL REPORT
+    # =====================================================
+
+    buf = BytesIO()
+
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+
+        df_out = pd.DataFrame(rows)
+        df_out = df_out.drop_duplicates()
+        df_out = df_out.sort_values(["filename", "severity"])
+        df_out.to_excel(writer, sheet_name="asset_summary", index=False)
+
+
+    report_path = (
+        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+        f"asset_submission_summary.xlsx"
+    )
+
+    container.upload_blob(report_path, buf.getvalue(), overwrite=True)
+
+    log("Vendor action report created", 2)
 
 # =========================================================
 # CACHE
@@ -519,6 +708,8 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         log(f"Assets added to ZIP: {len(assets_for_zip)}", 2)
 
         create_assets_zip(vendor, submission_id)
+
+        create_vendor_action_report(vendor, submission_id)
 
 
         if log_data["errors"]:

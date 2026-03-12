@@ -395,7 +395,9 @@ def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
 
         except Exception:
             record["status"] = "fail"
-            record["reason"] = "blob_read_error"
+            record["issue_type"] = "blob_read_error"
+            record["severity"] = "blocking"
+            record["autofixable"] = False
             failed.append(record)
             continue
 
@@ -428,7 +430,9 @@ def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
 
             except Exception:
                 record["status"] = "fail"
-                record["reason"] = "corrupt_image"
+                record["issue_type"] = "corrupt_image"
+                record["severity"] = "blocking"
+                record["autofixable"] = False
 
         # DOCUMENT VALIDATION
         elif ext in SUPPORTED_DOCUMENT_FORMATS:
@@ -444,6 +448,72 @@ def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
         "failed": failed
     }
 
+# =========================================================
+# STEP 2B — DECLARED VS ACTUAL RECONCILIATION
+# =========================================================
+
+def reconcile_declared_vs_actual(vendor: str, submission_id: str, validation: Dict[str, List[Dict[str, Any]]]):
+
+    declared_path = f"in_review/vendor={vendor}/mapped/mapped.parquet"
+
+    try:
+        blob = silver_container.get_blob_client(declared_path)
+        data = blob.download_blob().readall()
+
+        df = pd.read_parquet(BytesIO(data))
+
+    except Exception:
+        log("  ⚠ Unable to load mapped.parquet for reconciliation")
+        return {
+            "missing_assets": [],
+            "extra_assets": [],
+            "present_but_failed": []
+        }
+
+    # ------------------------------------------
+    # Normalize declared filenames
+    # ------------------------------------------
+
+    declared = set(
+        df["filename"]
+        .astype(str)
+        .str.lower()
+        .str.strip()
+        .str.replace(" ", "", regex=False)
+    )
+
+    # ------------------------------------------
+    # Normalize actual filenames
+    # ------------------------------------------
+
+    passed = validation["passed"]
+    failed = validation["failed"]
+
+    actual_pass = set(
+        os.path.basename(r["filename"]).lower().replace(" ", "")
+        for r in passed
+    )
+
+    actual_fail = set(
+        os.path.basename(r["filename"]).lower().replace(" ", "")
+        for r in failed
+    )
+
+    actual_all = actual_pass | actual_fail
+
+    # ------------------------------------------
+    # Compute reconciliation
+    # ------------------------------------------
+
+    missing_assets = declared - actual_all
+    extra_assets = actual_all - declared
+    present_but_failed = declared & actual_fail
+
+    return {
+        "missing_assets": list(missing_assets),
+        "extra_assets": list(extra_assets),
+        "present_but_failed": list(present_but_failed)
+    }
 
 # =========================================================
 # STEP 3 — MAIN ORCHESTRATION
@@ -485,6 +555,22 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     log("  Validating assets (this may take a moment)...")
 
     validation = validate_assets(staged_assets)
+
+    # =========================================================
+    # DECLARED VS ACTUAL RECONCILIATION
+    # =========================================================
+
+    log("  Running declared vs actual asset reconciliation...")
+
+    recon = reconcile_declared_vs_actual(vendor, submission_id, validation)
+
+    missing_assets = recon["missing_assets"]
+    extra_assets = recon["extra_assets"]
+    present_but_failed = recon["present_but_failed"]
+
+    log(f"    Missing assets: {len(missing_assets)}", 2)
+    log(f"    Extra assets: {len(extra_assets)}", 2)
+    log(f"    Present but failed validation: {len(present_but_failed)}", 2)
 
     safe_vendor = vendor.replace(" ", "_").lower()
 
@@ -531,6 +617,48 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     )
 
     health_rows = validation["passed"] + validation["failed"]
+
+    # ------------------------------------------
+    # Add missing asset records
+    # ------------------------------------------
+
+    for filename in missing_assets:
+        health_rows.append({
+            "filename": filename,
+            "status": "fail",
+            "issue_type": "missing_asset",
+            "severity": "blocking",
+            "autofixable": False,
+            "details": "Declared in mapped.parquet but not found in submission"
+        })
+
+    # ------------------------------------------
+    # Add extra asset records
+    # ------------------------------------------
+
+    for filename in extra_assets:
+        health_rows.append({
+            "filename": filename,
+            "status": "warning",
+            "issue_type": "extra_asset",
+            "severity": "warning",
+            "autofixable": False,
+            "details": "Asset exists but not declared in mapped.parquet"
+        })
+
+    # ------------------------------------------
+    # Add present but failed records
+    # ------------------------------------------
+
+    for filename in present_but_failed:
+        health_rows.append({
+            "filename": filename,
+            "status": "fail",
+            "issue_type": "present_but_failed",
+            "severity": "blocking",
+            "autofixable": False,
+            "details": "Declared asset failed validation"
+        })
 
     df_health = pd.DataFrame(health_rows)
 

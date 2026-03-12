@@ -164,8 +164,6 @@ def get_asset_outputs(vendor, submission_id):
     container = blob_service.get_container_client("silver")
 
     prefixes = [
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/",
-        f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/canonical/",
         f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
     ]
 
@@ -182,12 +180,8 @@ def get_asset_outputs(vendor, submission_id):
                 name = blob.name.split("/")[-1]
 
                 allowed = {
-                    "health_report.xlsx",
-                    "autofix_report.xlsx",
-                    "mapped_autofixed.xlsx",
-                    "media_canonical.xlsx",
-                    "asset_transform_log.json",
-                    "transformed_assets.zip"
+                    "transformed_assets.zip",
+                    "asset_submission_summary.xlsx"
                 }
 
                 if name not in allowed:

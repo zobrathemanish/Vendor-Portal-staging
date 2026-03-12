@@ -62,7 +62,14 @@ def generate_entity_id(vendor: str, part_number: str) -> str:
 
 
 def normalize_filename(name: str) -> str:
-    return os.path.basename(str(name).strip())
+
+    name = os.path.basename(str(name).strip())
+
+    name = name.lower()
+    name = name.replace(" ", "")
+    name = name.strip()
+
+    return name
 
 
 # =========================================================
@@ -112,6 +119,25 @@ def load_asset_manifest(vendor: str, submission_id: str) -> Dict:
         return json.loads(raw)
     except Exception:
         return {"assets": []}
+    
+def load_failed_assets(vendor: str, submission_id: str):
+
+    path = f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/asset_validation_{vendor.lower()}*.json"
+
+    try:
+
+        blobs = container.list_blobs(name_starts_with=f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/logs/")
+
+        for b in blobs:
+            if "asset_validation" in b.name:
+                raw = container.get_blob_client(b.name).download_blob().readall()
+                obj = json.loads(raw)
+                return {x["filename"].lower() for x in obj.get("failed", [])}
+
+    except Exception:
+        pass
+
+    return set()
 
 
 # =========================================================
@@ -128,7 +154,51 @@ def normalize_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+# =========================================================
+# ASSET INTEGRITY CHECK
+# =========================================================
 
+def detect_asset_integrity_issues(mapped_df: pd.DataFrame, manifest: Dict):
+
+    declared = set(
+        mapped_df["filename"]
+        .astype(str)
+        .str.lower()
+        .str.strip()
+    )
+
+    uploaded = set(
+        a["filename"].lower()
+        for a in manifest.get("assets", [])
+        if "filename" in a
+    )
+
+    missing_assets = declared - uploaded
+    extra_assets = uploaded - declared
+
+    issues = []
+
+    for f in missing_assets:
+
+        issues.append({
+            "filename": f,
+            "issue_type": "missing_asset",
+            "severity": "blocking",
+            "autofixable": False,
+            "details": "Declared in mapped.xlsx but not uploaded"
+        })
+
+    for f in extra_assets:
+
+        issues.append({
+            "filename": f,
+            "issue_type": "extra_asset",
+            "severity": "warning",
+            "autofixable": False,
+            "details": "Uploaded asset not declared in mapped.xlsx"
+        })
+
+    return issues
 # =========================================================
 # CANONICAL BUILD
 # =========================================================
@@ -138,7 +208,7 @@ def build_media_canonical(vendor: str, submission_id: str):
     df = load_mapped_excel(vendor, submission_id)
 
     if df.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
     df = normalize_missing_values(df)
 
@@ -146,18 +216,25 @@ def build_media_canonical(vendor: str, submission_id: str):
     df["filename"] = df["filename"].apply(normalize_filename)
 
     manifest = load_asset_manifest(vendor, submission_id)
+    failed_assets = load_failed_assets(vendor, submission_id)
+
+    # -------------------------------------------------
+    # Asset integrity check
+    # -------------------------------------------------
+
+    integrity_issues = detect_asset_integrity_issues(df, manifest)
 
     asset_map = {
         a["filename"].lower(): a
         for a in manifest.get("assets", [])
-        if "filename" in a
+        if "filename" in a and a["filename"].lower() not in failed_assets
     }
 
     records = []
+    autofix_rows = []
     sequence_tracker = {}
 
     missing_assets = []
-    autofix_rows = []
 
     for _, row in df.iterrows():
 
@@ -169,25 +246,35 @@ def build_media_canonical(vendor: str, submission_id: str):
         if part.isdigit():
             part = part.zfill(5)
 
-        # Ensure asset exists in staging
+        # -------------------------------------------------
+        # Asset existence check
+        # -------------------------------------------------
+
         asset_info = asset_map.get(filename.lower())
 
         if not asset_info:
+
             missing_assets.append({
                 "part_number": part,
                 "filename": filename
             })
+
             continue
 
         source_blob_path = asset_info["source_blob_path"]
         content_hash = asset_info.get("content_hash")
         size_bytes = asset_info.get("size_bytes")
 
-        # media category
+        # -------------------------------------------------
+        # Determine media category
+        # -------------------------------------------------
+
         if filetype in IMAGE_TYPES:
             media_category = "image"
+
         elif filetype in DOCUMENT_TYPES:
             media_category = "document"
+
         else:
             media_category = "other"
 
@@ -197,39 +284,85 @@ def build_media_canonical(vendor: str, submission_id: str):
 
         transformations = []
 
+        # -------------------------------------------------
+        # IMAGE RULES
+        # -------------------------------------------------
+
         if media_category == "image":
 
             canonical_filetype = "JPG"
             canonical_filename = f"{part}_{media}_{seq}.jpg"
 
+            # GIF conversion
             if filetype == "GIF":
+
                 transformations.append("gif_to_jpg")
 
-            transformations.append("rename")
-
-            if transformations:
                 autofix_rows.append({
                     "vendor": vendor,
                     "part_number": part,
-                    "original_filename": filename,
-                    "canonical_filename": canonical_filename,
-                    "actions": ",".join(transformations)
+                    "filename": filename,
+                    "issue_type": "gif_format",
+                    "severity": "info",
+                    "autofixable": True,
+                    "details": "GIF converted to JPG automatically"
                 })
+
+            # Rename detection
+            if filename.lower() != canonical_filename.lower():
+
+                transformations.append("rename")
+
+                autofix_rows.append({
+                    "vendor": vendor,
+                    "part_number": part,
+                    "filename": filename,
+                    "issue_type": "filename_normalized",
+                    "severity": "info",
+                    "autofixable": True,
+                    "details": f"Renamed to canonical format {canonical_filename}"
+                })
+
+        # -------------------------------------------------
+        # DOCUMENT RULES
+        # -------------------------------------------------
 
         elif media_category == "document":
 
             canonical_filetype = filetype
-            canonical_filename = f"{part}_{media}_{filename}"
-            transformations.append("rename")
+            canonical_filename = f"{part}_{media}.{filetype.lower()}"
+
+            if filename.lower() != canonical_filename.lower():
+
+                transformations.append("rename")
+
+                autofix_rows.append({
+                    "vendor": vendor,
+                    "part_number": part,
+                    "filename": filename,
+                    "issue_type": "filename_normalized",
+                    "severity": "info",
+                    "autofixable": True,
+                    "details": f"Renamed to canonical format {canonical_filename}"
+                })
+
+        # -------------------------------------------------
+        # OTHER TYPES
+        # -------------------------------------------------
 
         else:
 
             canonical_filetype = filetype
             canonical_filename = filename
 
+        # -------------------------------------------------
+        # Build canonical record
+        # -------------------------------------------------
+
         entity_id = generate_entity_id(vendor, part)
 
         records.append({
+
             "_entity_id": entity_id,
             "vendor": vendor,
             "part_number": part,
@@ -247,14 +380,39 @@ def build_media_canonical(vendor: str, submission_id: str):
             "content_hash": content_hash,
             "size_bytes": size_bytes,
             "status": "active",
+
+            "canonical_id": hashlib.sha256(
+                f"{vendor}|{part}|{canonical_filename}".encode()
+            ).hexdigest(),
+
             "created_at": datetime.utcnow().isoformat(),
         })
 
+    # -------------------------------------------------
+    # Logging missing assets
+    # -------------------------------------------------
+
     if missing_assets:
-        print(f" : {len(missing_assets)} mapped assets missing in staging")
+        print(f"Missing mapped assets not found in staging: {len(missing_assets)}")
+
+    # -------------------------------------------------
+    # Write integrity issues
+    # -------------------------------------------------
+
+    if integrity_issues:
+
+        path = (
+            f"in_review/vendor={vendor}/assets_workflow/submission={submission_id}/reports/"
+            f"asset_integrity_issues.json"
+        )
+
+        container.upload_blob(
+            path,
+            json.dumps(integrity_issues, indent=2),
+            overwrite=True
+        )
 
     return pd.DataFrame(records), pd.DataFrame(autofix_rows)
-
 
 # =========================================================
 # WRITE CANONICAL TABLE
