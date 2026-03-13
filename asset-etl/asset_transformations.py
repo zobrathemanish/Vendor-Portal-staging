@@ -352,28 +352,6 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 
         })
 
-
-    # =====================================================
-    # ADD INTEGRITY ISSUES (missing / extra assets)
-    # =====================================================
-
-    # for issue in integrity_issues:
-
-    #     if submission_type in ["delta_asset_submission", "delta_asset_review"]:
-    #         continue
-
-    #     rows.append({
-
-    #         "filename": issue.get("filename"),
-    #         "issue": issue.get("issue_type"),
-    #         "severity": issue.get("severity"),
-    #         "autofixable": False,
-    #         "action_taken": "none",
-    #         "vendor_action_required": "upload_missing_asset"
-
-    #     })
-
-
     df_out = pd.DataFrame(rows)
 
 
@@ -659,12 +637,6 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
     log(f"[STEP] Starting asset transformations")
     log(f"Vendor: {vendor}", 2)
     log(f"Submission: {submission_id}", 2)
-
-    if submission_type in ["asset_review", "delta_asset_review"]:
-
-        write_status(vendor, "ASSET TRANSFORMATION", "SKIPPED_REVIEW_MODE", submission_id)
-
-        return
 
     output_root = APPROVED_ROOT
 
