@@ -165,10 +165,8 @@ def normalize_missing_values(df: pd.DataFrame) -> pd.DataFrame:
 def detect_asset_integrity_issues(mapped_df: pd.DataFrame, manifest: Dict):
 
     declared = set(
-        mapped_df["filename"]
+        mapped_df["normalized_filename"]
         .astype(str)
-        .str.lower()
-        .str.strip()
     )
 
     uploaded = set(
@@ -217,7 +215,8 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
     df = normalize_missing_values(df)
 
     df["part_number"] = df["part_number"].astype(str).str.strip()
-    df["filename"] = df["filename"].apply(normalize_filename)
+    df["original_filename"] = df["filename"].astype(str).str.strip()
+    df["normalized_filename"] = df["original_filename"].apply(normalize_filename)
 
     manifest = load_asset_manifest(vendor, submission_type, submission_id)
     failed_assets = load_failed_assets(vendor, submission_type, submission_id)
@@ -229,9 +228,9 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
     integrity_issues = detect_asset_integrity_issues(df, manifest)
 
     asset_map = {
-        a["filename"].lower(): a
+        normalize_filename(a["filename"]): a
         for a in manifest.get("assets", [])
-        if "filename" in a and a["filename"].lower() not in failed_assets
+        if "filename" in a and normalize_filename(a["filename"]) not in failed_assets
     }
 
     records = []
@@ -244,7 +243,8 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
 
         part = str(row["part_number"]).strip()
         media = str(row["mediatype"]).strip().upper()
-        filename = normalize_filename(row["filename"])
+        original_filename = row["original_filename"]
+        filename = row["normalized_filename"]
         filetype = str(row["filetype"]).upper()
 
         if part.isdigit():
@@ -305,7 +305,7 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
                 autofix_rows.append({
                     "vendor": vendor,
                     "part_number": part,
-                    "filename": filename,
+                    "filename": original_filename,
                     "issue_type": "gif_format",
                     "severity": "info",
                     "autofixable": True,
@@ -320,7 +320,7 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
                 autofix_rows.append({
                     "vendor": vendor,
                     "part_number": part,
-                    "filename": filename,
+                    "filename": original_filename,
                     "issue_type": "filename_normalized",
                     "severity": "info",
                     "autofixable": True,
@@ -343,7 +343,7 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
                 autofix_rows.append({
                     "vendor": vendor,
                     "part_number": part,
-                    "filename": filename,
+                    "filename": original_filename,
                     "issue_type": "filename_normalized",
                     "severity": "info",
                     "autofixable": True,
@@ -372,8 +372,9 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
             "part_number": part,
             "media_type": media,
             "media_category": media_category,
-            "original_filename": filename,
+            "original_filename": original_filename,
             "original_filetype": filetype,
+            "normalized_filename": filename,
             "canonical_filename": canonical_filename,
             "canonical_filetype": canonical_filetype,
             "sequence": seq,

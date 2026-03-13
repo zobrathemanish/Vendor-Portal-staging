@@ -299,6 +299,23 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
         raw = container.get_blob_client(transform_log_path).download_blob().readall()
         transform_log = json.loads(raw)
 
+        # =====================================================
+        # ADD FORMAT CONVERSIONS
+        # =====================================================
+
+        for item in transform_log.get("format_conversions", []):
+
+            rows.append({
+
+                "filename": item.get("filename"),
+                "issue": "format_normalized",
+                "severity": "info",
+                "autofixable": True,
+                "action_taken": "converted_to_jpg",
+                "vendor_action_required": "none"
+
+            })
+
     except Exception:
 
         transform_log = {}
@@ -317,7 +334,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 
     for _, r in df_health.iterrows():
 
-        filename = r.get("filename")
+        filename = r.get("original_filename") or r.get("filename")        
         issue = r.get("issue_type")
         severity = r.get("severity")
         autofixable = r.get("autofixable")
@@ -552,6 +569,10 @@ def process_asset(row, vendor, output_root, file_map, submission_id):
     original_filename = row["original_filename"]
     canonical_filename = row["canonical_filename"]
 
+    ext = os.path.splitext(original_filename)[1].lower()
+    image_formats = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".tif", ".tiff"]
+    converted_to_jpg = ext in image_formats and ext not in [".jpg", ".jpeg"]
+
     local_path = file_map.get(original_filename)
 
     if not local_path:
@@ -587,11 +608,13 @@ def process_asset(row, vendor, output_root, file_map, submission_id):
             return {
                 "status": "image_written",
                 "file": canonical_filename,
+                "original_filename": original_filename,
                 "data": out_data,
                 "hash": content_hash,
                 "size": len(out_data),
                 "meta": meta,
-                "part": part
+                "part": part,
+                "converted_to_jpg": converted_to_jpg
             }
 
         elif media_category == "document":
@@ -606,7 +629,8 @@ def process_asset(row, vendor, output_root, file_map, submission_id):
                 return {
                     "status": "skipped",
                     "file": canonical_filename,
-                    "original_filename": original_filename
+                    "original_filename": original_filename,
+                    "converted_to_jpg": converted_to_jpg
                 }
 
             write_output(out_path, data, {"content_hash": content_hash})
@@ -649,6 +673,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         "skipped": [],
         "errors": [],
         "missing_assets": [],
+        "format_conversions": []
     }
 
     assets_for_zip = []
@@ -702,6 +727,11 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 
                 if status == "image_written":
                     log_data["images_written"] += 1
+                    if result.get("converted_to_jpg"):
+                        log_data["format_conversions"].append({
+                            "filename": result["original_filename"],
+                            "action": "converted_to_jpg"
+                        })
                     assets_for_zip.append(
                         (result["file"], result["data"])
                     )
