@@ -638,6 +638,30 @@ F3=Log off
   </div>
 </div>
 
+<div class="modal fade" id="assetGalleryModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Transformed Asset Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+        <div id="assetGallery"
+             style="display:grid;
+                    grid-template-columns:repeat(auto-fill, minmax(160px,1fr));
+                    gap:10px;
+                    max-height:500px;
+                    overflow:auto;">
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
 
 <script>
 
@@ -907,7 +931,7 @@ async function loadSubmissionOutputs(vendor, submissionId){
 
   const labels = {
     "asset_submission_summary.xlsx": "Asset Processing Summary",
-    "transformed_assets.zip": "Download Transformed Assets",
+    "transformed_assets.zip": "Transformed Assets",
     "validation_report.xlsx": "Validation Errors Report"
   };
 
@@ -917,10 +941,22 @@ async function loadSubmissionOutputs(vendor, submissionId){
   viewLink.href = "#";
   viewLink.textContent = labels[f.name] || f.name;
 
-  viewLink.onclick = (e) => {
-    e.preventDefault();
-    previewExcel(f.path);
-  };
+  if(f.name === "transformed_assets.zip"){
+
+    viewLink.onclick = (e)=>{
+      e.preventDefault();
+      previewTransformedAssets(vendor, submissionId);
+    };
+
+  }
+  else{
+
+    viewLink.onclick = (e)=>{
+      e.preventDefault();
+      previewExcel(f.path);
+    };
+
+  }
 
   /* dotted spacer */
 
@@ -953,6 +989,45 @@ async function loadSubmissionOutputs(vendor, submissionId){
   console.error("Failed to load outputs", err);
 
   }
+
+}
+
+async function previewTransformedAssets(vendor, submissionId){
+
+  const submissionType = document.getElementById("submissionType").value;
+
+  const res = await fetch(`/ingestion/api/transformed-assets/${vendor}/${submissionType}/${submissionId}`);
+  const images = await res.json();
+
+  const gallery = document.getElementById("assetGallery");
+
+  gallery.innerHTML = "";
+
+  images.forEach(img=>{
+
+    const box = document.createElement("div");
+
+    box.style.textAlign = "center";
+
+    const image = document.createElement("img");
+
+    image.src = "/ingestion/api/asset-image?path=" + encodeURIComponent(img.path);
+    image.style.width = "100%";
+    image.style.border = "1px solid #ccc";
+
+    const label = document.createElement("div");
+    label.style.fontSize = "11px";
+    label.textContent = img.name;
+
+    box.appendChild(image);
+    box.appendChild(label);
+
+    gallery.appendChild(box);
+
+  });
+
+  const modal = new bootstrap.Modal(document.getElementById("assetGalleryModal"));
+  modal.show();
 
 }
 

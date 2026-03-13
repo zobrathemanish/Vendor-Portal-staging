@@ -326,11 +326,10 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
         vendor_action = "none"
 
         if pd.isna(issue):
+            continue
 
-            issue = None
-
-        elif autofixable:
-
+        # autofix handled automatically
+        elif autofixable in [True, 1, "TRUE", "true"]:
             action_taken = "fixed_automatically"
             vendor_action = "none"
 

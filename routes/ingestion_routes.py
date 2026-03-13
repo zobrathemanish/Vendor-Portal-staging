@@ -330,3 +330,44 @@ def preview_asset_report():
         "columns": list(df.columns),
         "rows": df.fillna("").to_dict(orient="records")
     })
+
+@ingestion_bp.route("/api/transformed-assets/<vendor>/<submission_type>/<submission_id>")
+@login_required
+def list_transformed_assets(vendor, submission_type, submission_id):
+
+    conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    blob_service = BlobServiceClient.from_connection_string(conn)
+
+    container = blob_service.get_container_client("silver")
+
+    prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
+
+    images = []
+
+    for blob in container.list_blobs(name_starts_with=prefix):
+
+        name = blob.name.lower()
+
+        if name.endswith(".jpg") or name.endswith(".jpeg") or name.endswith(".png"):
+
+            images.append({
+                "name": blob.name.split("/")[-1],
+                "path": blob.name
+            })
+
+    return jsonify(images)
+
+@ingestion_bp.route("/api/asset-image")
+@login_required
+def get_asset_image():
+
+    blob_path = unquote(request.args.get("path"))
+
+    conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    blob_service = BlobServiceClient.from_connection_string(conn)
+
+    container = blob_service.get_container_client("silver")
+
+    data = container.get_blob_client(blob_path).download_blob().readall()
+
+    return Response(data, mimetype="image/jpeg")
