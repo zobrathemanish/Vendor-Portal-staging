@@ -56,6 +56,9 @@ blob_service = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
 bronze_container = blob_service.get_container_client(BRONZE_CONTAINER)
 silver_container = blob_service.get_container_client(SILVER_CONTAINER)
 
+FULL_SUBMISSIONS = {"asset_submission", "asset_review"}
+DELTA_SUBMISSIONS = {"delta_asset_submission", "delta_asset_review"}
+
 # =========================================================
 # HELPERS
 # =========================================================
@@ -647,16 +650,26 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     # Add missing asset records
     # ------------------------------------------
 
-    for filename in missing_assets:
-        health_rows.append({
-            "filename": filename,
-            "status": "fail",
-            "issue_type": "missing_asset",
-            "severity": "blocking",
-            "autofixable": False,
-            "details": "Declared in mapped.parquet but not found in submission"
-        })
+    is_full_submission = submission_type in FULL_SUBMISSIONS
 
+    missing_severity = "blocking" if is_full_submission else "warning"
+    missing_status = "fail" if is_full_submission else "warning"
+
+    # ------------------------------------------
+    # Add missing asset records (only for FULL submissions)
+    # ------------------------------------------
+
+    if is_full_submission:
+
+        for filename in missing_assets:
+            health_rows.append({
+                "filename": filename,
+                "status": "fail",
+                "issue_type": "missing_asset",
+                "severity": "blocking",
+                "autofixable": False,
+                "details": "Declared in Product File but not found in your submission"
+            })
     # ------------------------------------------
     # Add extra asset records
     # ------------------------------------------
@@ -705,6 +718,10 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
 
     if blocking:
 
+        log(f"DEBUG submission_type normalized = [{submission_type}]")
+        log(f"DEBUG missing_assets count = {len(missing_assets)}")
+        log(f"DEBUG blocking count = {len(blocking)}")
+
         df_block = pd.DataFrame(blocking)
 
         buf = BytesIO()
@@ -719,13 +736,14 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
         )
 
         log("❌ Blocking validation issues detected. Pipeline will stop.")
+        raise SystemExit(1)
 
-        return {
-            "status": "failed_validation",
-            "blocking_issues": len(blocking),
-            "passed": len(validation["passed"]),
-            "failed": len(validation["failed"])
-        }
+        # return {
+        #     "status": "failed_validation",
+        #     "blocking_issues": len(blocking),
+        #     "passed": len(validation["passed"]),
+        #     "failed": len(validation["failed"])
+        # }
     
     return {
             "status": "success",

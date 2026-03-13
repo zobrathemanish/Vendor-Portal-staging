@@ -357,18 +357,21 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
     # ADD INTEGRITY ISSUES (missing / extra assets)
     # =====================================================
 
-    for issue in integrity_issues:
+    # for issue in integrity_issues:
 
-        rows.append({
+    #     if submission_type in ["delta_asset_submission", "delta_asset_review"]:
+    #         continue
 
-            "filename": issue.get("filename"),
-            "issue": issue.get("issue_type"),
-            "severity": issue.get("severity"),
-            "autofixable": False,
-            "action_taken": "none",
-            "vendor_action_required": "upload_missing_asset"
+    #     rows.append({
 
-        })
+    #         "filename": issue.get("filename"),
+    #         "issue": issue.get("issue_type"),
+    #         "severity": issue.get("severity"),
+    #         "autofixable": False,
+    #         "action_taken": "none",
+    #         "vendor_action_required": "upload_missing_asset"
+
+    #     })
 
 
     df_out = pd.DataFrame(rows)
@@ -401,10 +404,6 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 #Promote to gold
 def promote_assets_to_gold(vendor, submission_type, submission_id):
 
-    if submission_type not in ["asset_submission", "asset_review"]:
-        log("Skipping GOLD promotion (submission type)", 2)
-        return
-
     prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
 
     log(f"PROMOTION PREFIX: {prefix}", 2)
@@ -433,6 +432,7 @@ def promote_assets_to_gold(vendor, submission_type, submission_id):
         gold_path = f"selected/asset_workflow/{vendor}/{relative}"
 
         data = container.get_blob_client(src_path).download_blob().readall()
+        
 
         gold_container.upload_blob(
             gold_path,
@@ -442,6 +442,9 @@ def promote_assets_to_gold(vendor, submission_type, submission_id):
         promoted += 1
 
         log(f"PROMOTED → {gold_path}", 4)
+
+    if promoted == 0:
+        log("No assets found for promotion", 2)
 
     log(f"Promoted {promoted} assets to GOLD", 2)
 
