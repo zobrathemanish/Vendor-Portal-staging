@@ -896,31 +896,57 @@ async function loadSubmissionOutputs(vendor, submissionId){
 
   }
 
-  data.files.forEach(f=>{
+  data.files.forEach(f => {
 
   const li = document.createElement("li");
+  li.style.display = "flex";
+  li.style.alignItems = "center";
+  li.style.marginBottom = "4px";
+  li.style.listStyle = "disc";
+  li.style.marginLeft = "16px";
 
-  const link = document.createElement("a");
-  link.href = "#";
-  link.onclick = (e) => {
+  const labels = {
+    "asset_submission_summary.xlsx": "Asset Processing Summary",
+    "transformed_assets.zip": "Download Transformed Assets",
+    "validation_report.xlsx": "Validation Errors Report"
+  };
+
+  /* report link (popup preview) */
+
+  const viewLink = document.createElement("a");
+  viewLink.href = "#";
+  viewLink.textContent = labels[f.name] || f.name;
+
+  viewLink.onclick = (e) => {
     e.preventDefault();
     previewExcel(f.path);
   };
 
-  const labels = {
-    "asset_submission_summary.xlsx":"Asset Processing Summary",
-    "transformed_assets.zip":"Download Transformed Assets",
-    "validation_report.xlsx":"Validation Errors Report"
+  /* dotted spacer */
 
-  };
+  const spacer = document.createElement("span");
 
-  link.textContent = labels[f.name] || f.name;
-  link.target = "_blank";
+  spacer.style.flex = "1";
+  spacer.style.margin = "0 8px";
+  spacer.style.borderBottom = "1px dotted #999";
+  spacer.style.transform = "translateY(6px)";
 
-  li.appendChild(link);
+  /* download button */
+
+  const downloadLink = document.createElement("a");
+  downloadLink.href = "/ingestion/api/asset-report?path=" + encodeURIComponent(f.path);
+  downloadLink.textContent = "[Download]";
+  downloadLink.style.fontSize = "12px";
+  downloadLink.style.textDecoration = "none";
+  downloadLink.target = "_blank";
+
+  li.appendChild(viewLink);
+  li.appendChild(spacer);
+  li.appendChild(downloadLink);
+
   list.appendChild(li);
 
-  });
+});
 
   }catch(err){
 
