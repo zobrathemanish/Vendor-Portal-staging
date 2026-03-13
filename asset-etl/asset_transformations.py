@@ -173,6 +173,12 @@ def get_existing_blob_hash(path):
     except ResourceNotFoundError:
         return None
 
+#HELPER
+
+def yes_no(value):
+    if value in [True, 1, "TRUE", "true", "yes", "YES"]:
+        return "Yes"
+    return "No"
 
 # =========================================================
 # LOAD CANONICAL
@@ -258,7 +264,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
                 "filename": r.get("filename") or r.get("original_filename"),
                 "issue": r.get("issue_type"),
                 "severity": r.get("severity", "info"),
-                "autofixable": True,
+                "autofixable": "Yes",
                 "action_taken": "fixed_automatically",
                 "vendor_action_required": "none"
             })
@@ -310,7 +316,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
                 "filename": item.get("filename"),
                 "issue": "format_normalized",
                 "severity": "info",
-                "autofixable": True,
+                "autofixable": "Yes",
                 "action_taken": "converted_to_jpg",
                 "vendor_action_required": "none"
 
@@ -337,7 +343,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
         filename = r.get("original_filename") or r.get("filename")        
         issue = r.get("issue_type")
         severity = r.get("severity")
-        autofixable = r.get("autofixable")
+        autofixable = yes_no(r.get("autofixable"))
 
         action_taken = "none"
         vendor_action = "none"
