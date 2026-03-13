@@ -247,8 +247,27 @@ def get_asset_outputs(vendor, submission_type, submission_id):
             (df_summary["vendor_action_required"] != "none").sum()
         )
 
-    except Exception as e:
-        print("Issue summary error:", e)
+    except Exception:
+
+        # fallback to validation report
+        try:
+
+            validation_blob = (
+                f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
+                f"validation_report.xlsx"
+            )
+
+            raw = container.get_blob_client(validation_blob).download_blob().readall()
+            df_validation = pd.read_excel(BytesIO(raw))
+
+            summary["total_issues"] = len(df_validation)
+
+            summary["remaining_issues"] = int(
+                (df_validation["severity"] == "blocking").sum()
+            )
+
+        except Exception as e:
+            print("Validation fallback error:", e)
 
     return jsonify({
         "files": files,
@@ -288,3 +307,26 @@ def get_asset_report():
         },
         mimetype="application/octet-stream"
     )
+
+@ingestion_bp.route("/api/asset-report-preview")
+@login_required
+def preview_asset_report():
+
+    blob_path = unquote(request.args.get("path"))
+
+    if not blob_path:
+        return {"error":"Missing path"},400
+
+    conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    blob_service = BlobServiceClient.from_connection_string(conn)
+
+    container = blob_service.get_container_client("silver")
+
+    raw = container.get_blob_client(blob_path).download_blob().readall()
+
+    df = pd.read_excel(BytesIO(raw))
+
+    return jsonify({
+        "columns": list(df.columns),
+        "rows": df.fillna("").to_dict(orient="records")
+    })

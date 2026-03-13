@@ -616,6 +616,28 @@ F3=Log off
 </div>
 </div>
 
+<div class="modal fade" id="excelPreviewModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Report Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+        <div style="max-height:500px;overflow:auto;">
+          <table class="table table-sm table-striped" id="excelPreviewTable">
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
 
 <script>
 
@@ -785,6 +807,59 @@ pipe.classList.add("failed");
 });
 
 }
+
+async function previewExcel(path){
+
+  try{
+
+    const res = await fetch("/ingestion/api/asset-report-preview?path=" + encodeURIComponent(path));
+    const data = await res.json();
+
+    const table = document.getElementById("excelPreviewTable");
+
+    table.innerHTML = "";
+
+    /* header */
+
+    let header = "<thead><tr>";
+
+    data.columns.forEach(c=>{
+      header += `<th>${c}</th>`;
+    });
+
+    header += "</tr></thead>";
+
+    /* rows */
+
+    let rows = "<tbody>";
+
+    data.rows.forEach(r=>{
+
+      rows += "<tr>";
+
+      data.columns.forEach(c=>{
+        rows += `<td>${r[c]}</td>`;
+      });
+
+      rows += "</tr>";
+
+    });
+
+    rows += "</tbody>";
+
+    table.innerHTML = header + rows;
+
+    const modal = new bootstrap.Modal(document.getElementById("excelPreviewModal"));
+    modal.show();
+
+  }catch(err){
+
+    console.error("Preview failed", err);
+
+  }
+
+}
+
 async function loadSubmissionOutputs(vendor, submissionId){
 
   try{
@@ -826,7 +901,11 @@ async function loadSubmissionOutputs(vendor, submissionId){
   const li = document.createElement("li");
 
   const link = document.createElement("a");
-  link.href = "/ingestion/api/asset-report?path=" + encodeURIComponent(f.path);
+  link.href = "#";
+  link.onclick = (e) => {
+    e.preventDefault();
+    previewExcel(f.path);
+  };
 
   const labels = {
     "asset_submission_summary.xlsx":"Asset Processing Summary",
