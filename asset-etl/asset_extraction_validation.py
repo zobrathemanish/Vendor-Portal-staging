@@ -684,26 +684,24 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
             "details": "Asset exists but not declared in mapped.parquet"
         })
 
-    # ------------------------------------------
-    # Add present but failed records
-    # ------------------------------------------
-
-    for filename in present_but_failed:
-        health_rows.append({
-            "filename": filename,
-            "status": "fail",
-            "issue_type": "present_but_failed",
-            "severity": "blocking",
-            "autofixable": False,
-            "details": "Declared asset failed validation"
-        })
-
     df_health = pd.DataFrame(health_rows)
+
+    # Columns intended for human report
+    report_columns = [
+        "filename",
+        "issue_type",
+        "severity",
+        "autofixable",
+        "details",
+        "size_mb"
+    ]
+
+    df_report = df_health[[c for c in report_columns if c in df_health.columns]]
 
     buf = BytesIO()
 
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df_health.to_excel(writer, index=False)
+        df_report.to_excel(writer, index=False)
 
     silver_container.upload_blob(
         f"{paths['log_prefix']}health_report.xlsx",
@@ -724,6 +722,17 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
 
         df_block = pd.DataFrame(blocking)
 
+        report_columns = [
+            "filename",
+            "issue_type",
+            "severity",
+            "autofixable",
+            "details",
+            "size_mb"
+        ]
+
+        df_block = df_block[[c for c in report_columns if c in df_block.columns]]
+
         buf = BytesIO()
 
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
@@ -738,12 +747,7 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
         log("❌ Blocking validation issues detected. Pipeline will stop.")
         raise SystemExit(1)
 
-        # return {
-        #     "status": "failed_validation",
-        #     "blocking_issues": len(blocking),
-        #     "passed": len(validation["passed"]),
-        #     "failed": len(validation["failed"])
-        # }
+
     
     return {
             "status": "success",
