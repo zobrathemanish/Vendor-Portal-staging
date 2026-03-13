@@ -830,7 +830,9 @@ async function loadSubmissionOutputs(vendor, submissionId){
 
   const labels = {
     "asset_submission_summary.xlsx":"Asset Processing Summary",
-    "transformed_assets.zip":"Download Transformed Assets"
+    "transformed_assets.zip":"Download Transformed Assets",
+    "validation_report.xlsx":"Validation Errors Report"
+
   };
 
   link.textContent = labels[f.name] || f.name;
@@ -886,6 +888,8 @@ if(status.stage === "failed" || status.status === "failed"){
   clearInterval(statusInterval);
 
   setFailed(status.message || "Processing failed");
+
+  loadSubmissionOutputs(vendor, submissionId);
 
   return;
 
