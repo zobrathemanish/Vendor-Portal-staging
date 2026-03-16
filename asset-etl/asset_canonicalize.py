@@ -124,24 +124,6 @@ def load_asset_manifest(vendor: str, submission_type: str, submission_id: str) -
     except Exception:
         return {"assets": []}
     
-def load_failed_assets(vendor: str, submission_type: str, submission_id: str):
-
-    prefix = f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
-
-    try:
-
-        blobs = container.list_blobs(name_starts_with=prefix)
-
-        for b in blobs:
-            if "asset_validation" in b.name:
-                raw = container.get_blob_client(b.name).download_blob().readall()
-                obj = json.loads(raw)
-                return {x["filename"].lower() for x in obj.get("failed", [])}
-
-    except Exception:
-        pass
-
-    return set()
 
 
 # =========================================================
@@ -169,11 +151,11 @@ def detect_asset_integrity_issues(mapped_df: pd.DataFrame, manifest: Dict):
         .astype(str)
     )
 
-    uploaded = set(
-        a["filename"].lower()
+    uploaded = {
+        normalize_filename(a["filename"])
         for a in manifest.get("assets", [])
         if "filename" in a
-    )
+    }
 
     missing_assets = declared - uploaded
     extra_assets = uploaded - declared
@@ -219,7 +201,12 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
     df["normalized_filename"] = df["original_filename"].apply(normalize_filename)
 
     manifest = load_asset_manifest(vendor, submission_type, submission_id)
-    failed_assets = load_failed_assets(vendor, submission_type, submission_id)
+
+    failed_assets = {
+        normalize_filename(a["filename"])
+        for a in manifest.get("assets", [])
+        if a.get("validation_status") == "fail"
+    }
 
     # -------------------------------------------------
     # Asset integrity check
@@ -227,11 +214,22 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
 
     integrity_issues = detect_asset_integrity_issues(df, manifest)
 
-    asset_map = {
-        normalize_filename(a["filename"]): a
-        for a in manifest.get("assets", [])
-        if "filename" in a and normalize_filename(a["filename"]) not in failed_assets
-    }
+    asset_map = {}
+
+    for a in manifest.get("assets", []):
+
+        if "filename" not in a:
+            continue
+
+        fname = normalize_filename(a["filename"])
+
+        if fname in failed_assets:
+            continue
+
+        if a.get("issue_type") == "corrupt_image":
+            continue
+
+        asset_map[fname] = a
 
     records = []
     autofix_rows = []

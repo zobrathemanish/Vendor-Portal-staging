@@ -88,33 +88,45 @@ def save_status(vendor, status, submission_id):
 
 def run_step(name, script, vendor, submission_type, submission_id):
 
-    print(f"\n▶️ {name}")
+    print(f"\n▶️ {name}", flush=True)
 
     script_path = os.path.join(BASE_DIR, script)
 
     cmd = [
         sys.executable,
+        "-u",
         script_path,
         "--vendor", vendor,
         "--submission-type", submission_type,
         "--submission-id", submission_id
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
 
-    if result.returncode != 0:
+    output_lines = []
 
-        error_output = result.stderr.strip() or result.stdout.strip()
+    try:
+        for line in process.stdout:
+            line = line.rstrip("\n")
+            output_lines.append(line)
+            print(line, flush=True)
 
-        # Extract clean RuntimeError message if present
-        if "RuntimeError:" in error_output:
-            error_message = error_output.split("RuntimeError:")[-1].strip()
-        else:
-            error_message = error_output.splitlines()[-1]
+        process.wait()
 
+    finally:
+        if process.stdout:
+            process.stdout.close()
+
+    if process.returncode != 0:
+        error_output = "\n".join(output_lines).strip()
+        error_message = error_output.splitlines()[-1] if error_output else f"{script} failed with exit code {process.returncode}"
         raise RuntimeError(error_message)
-
-
 
     
 def update_manifest_step(vendor, submission_id, step, started_at, finished_at):

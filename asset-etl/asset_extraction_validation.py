@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
 
 """
 Purpose:
@@ -83,9 +84,43 @@ def blob_exists(container, path: str) -> bool:
         return False
 
 
-def download_blob(container, blob_path: str) -> bytes:
+def download_blob(container, blob_path):
+
+    import tempfile
+    import time
+
     blob = container.get_blob_client(blob_path)
-    return blob.download_blob().readall()
+
+    props = blob.get_blob_properties()
+    total_size = props.size
+
+    log(f"    Blob size: {total_size/1024/1024:.2f} MB", 4)
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+
+    stream = blob.download_blob(max_concurrency=8)
+
+    downloaded = 0
+    start = time.time()
+
+    with open(tmp.name, "wb") as f:
+        for chunk in stream.chunks():
+
+            f.write(chunk)
+
+            downloaded += len(chunk)
+
+            if downloaded % (50 * 1024 * 1024) < len(chunk):
+                log(
+                    f"    Downloaded {downloaded/1024/1024:.1f} / {total_size/1024/1024:.1f} MB",
+                    4
+                )
+
+    elapsed = time.time() - start
+
+    log(f"    Download finished in {elapsed:.2f}s", 4)
+
+    return tmp.name
 
 
 def upload_json(payload: dict, blob_path: str):
@@ -268,101 +303,220 @@ def _build_unique_filename(filename: str, existing_names: set) -> str:
 
 
 def extract_zip_assets(vendor: str, submission_type, submission_id: str, zip_blob_path: str):
+
     log(f"  Extracting ZIP: {zip_blob_path}")
 
+    # -------------------------------------------------
+    # STEP 1 — PATH SETUP
+    # -------------------------------------------------
+
+    log("  Step 1: preparing vendor paths", 2)
     paths = vendor_paths(vendor, submission_type, submission_id)
 
-    # download zip from bronze
-    zip_bytes = download_blob(bronze_container, zip_blob_path)
+    # -------------------------------------------------
+    # STEP 2 — LOAD HASH LOG
+    # -------------------------------------------------
 
-    # ----------------------------
-    # ZIP DUPLICATE DETECTION
-    # ----------------------------
-    zip_hash = compute_file_hash(zip_bytes)
+    log("  Step 2: loading ZIP hash log", 2)
     hash_log = load_zip_hashes(paths["zip_hash_log"])
 
-####Commented temporarily
+    # -------------------------------------------------
+    # STEP 3 — LOAD EXISTING MANIFEST
+    # -------------------------------------------------
+
+    log("  Step 3: loading asset manifest", 2)
+    manifest = load_asset_manifest(vendor, submission_type, submission_id)
+
+    # -------------------------------------------------
+    # STEP 4 — DOWNLOAD ZIP
+    # -------------------------------------------------
+
+    log("  Step 4: downloading ZIP from Azure", 2)
+    zip_path = download_blob(bronze_container, zip_blob_path)
+
+    log(f"  ZIP downloaded to {zip_path}", 2)
+
+    # -------------------------------------------------
+    # STEP 5 — DUPLICATE ZIP DETECTION
+    # -------------------------------------------------
+
+    with open(zip_path, "rb") as f:
+        zip_hash = compute_file_hash(open(zip_path, "rb").read())
+
     # if zip_hash in hash_log["hashes"]:
     #     log(f"  Skipping duplicate ZIP: {zip_blob_path}")
     #     return
 
-    # ----------------------------
-    # LOAD CURRENT STAGING MANIFEST
-    # ----------------------------
-    manifest = load_asset_manifest(vendor, submission_type, submission_id)
+    # -------------------------------------------------
+    # STEP 6 — EXISTING ASSET INDEX
+    # -------------------------------------------------
 
     existing_assets = {
         asset["filename"]: asset
         for asset in manifest.get("assets", [])
         if asset.get("filename")
     }
+
     existing_names = set(existing_assets.keys())
 
     extracted_count = 0
     skipped_existing_count = 0
     unsupported_count = 0
 
-    with zipfile.ZipFile(BytesIO(zip_bytes)) as z:
-        for file_in_zip in z.namelist():
-            if file_in_zip.endswith("/"):
-                continue
+    # -------------------------------------------------
+    # STEP 7 — OPEN ZIP
+    # -------------------------------------------------
 
-            raw_filename = os.path.basename(file_in_zip)
-            if not raw_filename:
-                continue
+    log("  Step 5: opening ZIP archive", 2)
 
-            filename = normalize_filename(raw_filename)
-            ext = os.path.splitext(filename)[1].lower()
+    with zipfile.ZipFile(zip_path) as z:
 
-            if ext not in SUPPORTED_FORMATS:
-                unsupported_count += 1
-                continue
+        files = [f for f in z.namelist() if not f.endswith("/")]
+        total = len(files)
 
+        log(f"  ZIP contains {total} files")
+
+        # -------------------------------------------------
+        # STEP 8 — PROCESS FILES
+        # -------------------------------------------------
+
+    def process_file(file_in_zip, zip_path):
+
+        nonlocal extracted_count
+        nonlocal skipped_existing_count
+        nonlocal unsupported_count
+
+        raw_filename = os.path.basename(file_in_zip)
+
+        if not raw_filename:
+            return
+
+        filename = normalize_filename(raw_filename)
+        ext = os.path.splitext(filename)[1].lower()
+
+        if ext not in SUPPORTED_FORMATS:
+            unsupported_count += 1
+            return
+
+        with zipfile.ZipFile(zip_path) as z:
             data = z.read(file_in_zip)
-            content_hash = compute_file_hash(data)
 
-            # If same filename already exists in manifest, compare hash
-            if filename in existing_assets:
-                existing_asset = existing_assets[filename]
-                if existing_asset.get("content_hash") == content_hash:
-                    skipped_existing_count += 1
-                    log(f"    → skipped existing identical {filename}", 4)
-                    continue
+        size_mb = round(len(data) / (1024 * 1024), 2)
+        content_hash = compute_file_hash(data)
 
-                # same basename but different content: create deterministic unique name
-                filename = _build_unique_filename(filename, existing_names)
+        validation_status = "pass"
+        issue_type = None
+        severity = None
+        autofixable = None
+        width = None
+        height = None
 
-            staging_path = build_staging_path(vendor, submission_type, submission_id, filename)
+        if size_mb > MAX_MB:
+            validation_status = "fail"
+            issue_type = "file_too_large"
+            severity = "blocking"
+            autofixable = False
 
-            silver_container.upload_blob(
-                name=staging_path,
-                data=data,
-                overwrite=True
-            )
+        elif ext in SUPPORTED_IMAGE_FORMATS:
 
-            manifest["assets"].append(
-                {
-                    "filename": filename,
-                    "source_blob_path": staging_path,
-                    "content_hash": content_hash,
-                    "size_bytes": len(data),
-                    "source_zip_blob_path": zip_blob_path,
-                    "source_zip_hash": zip_hash,
-                    "extracted_at": datetime.utcnow().isoformat()
-                }
-            )
+            try:
+                with Image.open(BytesIO(data)) as img:
 
-            existing_names.add(filename)
-            existing_assets[filename] = manifest["assets"][-1]
+                    width, height = img.size
 
-            extracted_count += 1
-            log(f"    → extracted {filename}", 4)
+                    if width < MIN_WIDTH or height < MIN_HEIGHT:
 
-    # persist manifest and zip hash only after successful ZIP processing
-    save_asset_manifest(vendor, submission_type, submission_id, manifest)
+                        issue_type = "low_resolution"
+                        severity = "warning"
+                        autofixable = False
+
+            except Exception:
+
+                validation_status = "fail"
+                issue_type = "corrupt_image"
+                severity = "blocking"
+                autofixable = False
+
+        # duplicate filename handling
+        if filename in existing_assets:
+
+            existing_asset = existing_assets[filename]
+
+            if existing_asset.get("content_hash") == content_hash:
+                skipped_existing_count += 1
+                return
+
+            filename = _build_unique_filename(filename, existing_names)
+
+        staging_path = build_staging_path(
+            vendor,
+            submission_type,
+            submission_id,
+            filename
+        )
+
+        silver_container.upload_blob(
+            name=staging_path,
+            data=data,
+            overwrite=True,
+            max_concurrency=8
+        )
+
+        if extracted_count % 50 == 0:
+            log(f"    Extracted {extracted_count} assets...", 4)
+
+        manifest["assets"].append({
+            "filename": filename,
+            "source_blob_path": staging_path,
+            "content_hash": content_hash,
+            "size_bytes": len(data),
+            "size_mb": size_mb,
+            "width": width,
+            "height": height,
+            "validation_status": validation_status,
+            "issue_type": issue_type,
+            "severity": severity,
+            "autofixable": autofixable,
+            "source_zip_blob_path": zip_blob_path,
+            "source_zip_hash": zip_hash,
+            "extracted_at": datetime.utcnow().isoformat()
+        })
+
+        existing_names.add(filename)
+
+        extracted_count += 1
+
+
+    with ThreadPoolExecutor(max_workers=min(16, os.cpu_count() * 4)) as executor:
+        list(executor.map(lambda f: process_file(f, zip_path), files))
+
+    # -------------------------------------------------
+    # STEP 9 — SAVE MANIFEST
+    # -------------------------------------------------
+
+    log("  Step 6: saving asset manifest", 2)
+
+    save_asset_manifest(
+        vendor,
+        submission_type,
+        submission_id,
+        manifest
+    )
+
+    # -------------------------------------------------
+    # STEP 10 — SAVE ZIP HASH
+    # -------------------------------------------------
 
     hash_log["hashes"].append(zip_hash)
-    save_zip_hashes(paths["zip_hash_log"], hash_log)
+
+    save_zip_hashes(
+        paths["zip_hash_log"],
+        hash_log
+    )
+
+    # -------------------------------------------------
+    # FINAL SUMMARY
+    # -------------------------------------------------
 
     log(
         f"  ZIP done: extracted={extracted_count}, "
@@ -370,86 +524,40 @@ def extract_zip_assets(vendor: str, submission_type, submission_id: str, zip_blo
         f"unsupported={unsupported_count}"
     )
 
-
 # =========================================================
 # STEP 2 — VALIDATE ASSETS
 # =========================================================
 
-def validate_assets(blob_paths: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+def validate_assets(vendor, submission_type, submission_id):
+
+    manifest = load_asset_manifest(vendor, submission_type, submission_id)
+
     passed = []
     failed = []
 
-    total = len(blob_paths)
+    assets = manifest.get("assets", [])
 
-    for idx, blob_path in enumerate(blob_paths, start=1):
-        if idx == 1 or idx % 10 == 0 or idx == total:
+    total = len(assets)
+
+    for idx, asset in enumerate(assets, start=1):
+
+        if idx == 1 or idx % 50 == 0 or idx == total:
             log(f"  Validating assets... ({idx}/{total})")
 
-        filename = os.path.basename(blob_path)
-        ext = os.path.splitext(filename)[1].lower()
-
         record = {
-            "filename": filename,
-            "blob_path": blob_path,
-            "source_blob_path": blob_path,
-            "status": "pass",
-            "issue_type": None,
-            "severity": None,
-            "autofixable": None,
-            "details": None
+            "filename": asset.get("filename"),
+            "blob_path": asset.get("source_blob_path"),
+            "source_blob_path": asset.get("source_blob_path"),
+            "status": asset.get("validation_status", "pass"),
+            "issue_type": asset.get("issue_type"),
+            "severity": asset.get("severity"),
+            "autofixable": asset.get("autofixable"),
+            "details": None,
+            "size_mb": asset.get("size_mb"),
+            "width": asset.get("width"),
+            "height": asset.get("height"),
+            "content_hash": asset.get("content_hash")
         }
-        try:
-            blob = silver_container.get_blob_client(blob_path)
-            data = blob.download_blob().readall()
-
-            size_mb = round(len(data) / (1024 * 1024), 2)
-            record["size_mb"] = size_mb
-            record["content_hash"] = compute_file_hash(data)
-
-        except Exception:
-            record["status"] = "fail"
-            record["issue_type"] = "blob_read_error"
-            record["severity"] = "blocking"
-            record["autofixable"] = False
-            failed.append(record)
-            continue
-
-        # FORMAT VALIDATION
-        if ext not in SUPPORTED_FORMATS:
-            record["status"] = "fail"
-            record["issue_type"] = "unsupported_format"
-            record["severity"] = "blocking"
-            record["autofixable"] = False
-
-        elif size_mb > MAX_MB:
-            record["status"] = "fail"
-            record["issue_type"] = "file_too_large"
-            record["severity"] = "blocking"
-            record["autofixable"] = False
-
-        # IMAGE VALIDATION
-        elif ext in SUPPORTED_IMAGE_FORMATS:
-            try:
-                with Image.open(BytesIO(data)) as img:
-                    w, h = img.size
-                    record["width"] = w
-                    record["height"] = h
-
-                    if w < MIN_WIDTH or h < MIN_HEIGHT:
-                        record["issue_type"] = "low_resolution"
-                        record["severity"] = "warning"
-                        record["autofixable"] = False
-                        record["details"] = f"{w}x{h}"
-
-            except Exception:
-                record["status"] = "fail"
-                record["issue_type"] = "corrupt_image"
-                record["severity"] = "blocking"
-                record["autofixable"] = False
-
-        # DOCUMENT VALIDATION
-        elif ext in SUPPORTED_DOCUMENT_FORMATS:
-            pass
 
         if record["status"] == "pass":
             passed.append(record)
@@ -577,12 +685,14 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     for blob in zip_blobs:
         extract_zip_assets(vendor, submission_type, submission_id, blob)
 
-    staged_assets = list_staged_assets(vendor, submission_type, submission_id)
+    manifest = load_asset_manifest(vendor, submission_type, submission_id)
 
-    log(f"  Found {len(staged_assets)} staged assets")
-    log("  Validating assets (this may take a moment)...")
+    total_assets = len(manifest.get("assets", []))
 
-    validation = validate_assets(staged_assets)
+    log(f"  Found {total_assets} staged assets")
+    log(f"  Validating {total_assets} staged assets...")
+
+    validation = validate_assets(vendor, submission_type, submission_id)
 
     # =========================================================
     # DECLARED VS ACTUAL RECONCILIATION
@@ -605,13 +715,13 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     asset_manifest = {
         "vendor": vendor,
         "submission_type": submission_type,
-        "submission_id" : submission_id,
+        "submission_id": submission_id,
         "run_timestamp": RUN_TS,
         "summary": {
             "total_raw_blobs": len(asset_blobs),
             "zip_blobs": len(zip_blobs),
             "direct_supported_files": len(direct_supported_files),
-            "total_assets": len(staged_assets),
+            "total_assets": total_assets,
             "passed": len(validation["passed"]),
             "failed": len(validation["failed"]),
         },

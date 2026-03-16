@@ -121,7 +121,7 @@ def download_blob(path: str) -> bytes:
     for attempt in range(1, DOWNLOAD_RETRIES + 1):
 
         try:
-            return container.get_blob_client(path).download_blob().readall()
+            return container.get_blob_client(path).download_blob(max_concurrency=8).readall()
 
         except ResourceNotFoundError:
             raise
@@ -141,7 +141,8 @@ def upload_blob(path: str, data: bytes, metadata=None):
         path,
         data,
         overwrite=True,
-        metadata=metadata
+        metadata=metadata,
+        max_concurrency=8
     )
 
 
@@ -699,7 +700,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         total_assets = len(rows)
         processed_assets = 0
 
-        workers = min(8, os.cpu_count() * 2)
+        workers = min(16, (os.cpu_count() or 4) * 4)
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
 
@@ -752,6 +753,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                     log_data["missing_assets"].append(result["file"])
 
                 elif status == "skipped":
+
                     log_data["skipped"].append(result["file"])
 
                     original_file = result.get("original_filename")
@@ -759,7 +761,9 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 
                     if local_path:
                         with open(local_path, "rb") as fh:
-                            assets_for_zip.append((result["file"], fh.read()))
+                            data = fh.read()
+
+                        assets_for_zip.append((result["file"], data))
 
 
                 elif status == "error":
@@ -774,7 +778,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         write_output(log_path, json.dumps(log_data, indent=2).encode())
         log(f"Assets added to ZIP: {len(assets_for_zip)}", 2)
 
-        create_assets_zip(vendor, submission_type, submission_id)
+        create_assets_zip(vendor, submission_type, submission_id, assets_for_zip)
 
         create_vendor_action_report(vendor,submission_type, submission_id)
 
@@ -816,7 +820,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 import zipfile
 from io import BytesIO
 
-def create_assets_zip(vendor, submission_type, submission_id):
+def create_assets_zip(vendor, submission_type, submission_id, assets):
 
     prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
 
@@ -826,17 +830,9 @@ def create_assets_zip(vendor, submission_type, submission_id):
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
 
-        blobs = container.list_blobs(name_starts_with=prefix)
+        for filename, data in assets:
 
-        for blob in blobs:
-
-            blob_path = blob.name
-
-            data = container.get_blob_client(blob_path).download_blob().readall()
-
-            zip_name = blob_path.replace(prefix, "")
-
-            z.writestr(zip_name, data)
+            z.writestr(filename, data)
 
             asset_count += 1
 

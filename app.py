@@ -26,6 +26,10 @@ load_dotenv()
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Hide Flask access logs (GET /asset-status spam)
+import logging
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
 # ---------------------------------------
 # DATABASE CONFIG
 # ---------------------------------------
