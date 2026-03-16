@@ -21,7 +21,7 @@ if PROJECT_ROOT not in sys.path:
 
 submission_progress = {}
 
-ingestion_bp = Blueprint(
+asset_ingestion_bp = Blueprint(
     "ingestion",
     __name__,
     url_prefix="/ingestion"
@@ -31,7 +31,7 @@ ingestion_bp = Blueprint(
 # PRODUCT INGESTION
 # ---------------------------------------
 
-@ingestion_bp.route("/product")
+@asset_ingestion_bp.route("/product")
 @login_required
 def ingest_product():
     return render_template("ingestion/ingest_product.html")
@@ -41,7 +41,7 @@ def ingest_product():
 # PRICING INGESTION
 # ---------------------------------------
 
-@ingestion_bp.route("/pricing")
+@asset_ingestion_bp.route("/pricing")
 @login_required
 def ingest_pricing():
     return render_template("ingestion/ingest_pricing.html")
@@ -50,12 +50,12 @@ def ingest_pricing():
 # ---------------------------------------
 # ASSET INGESTION
 # ---------------------------------------
-@ingestion_bp.route("/assets")
+@asset_ingestion_bp.route("/assets")
 @login_required
 def ingest_assets():
     return render_template("ingestion/ingest_assets.html")
 
-@ingestion_bp.route("/start-asset-etl", methods=["POST"])
+@asset_ingestion_bp.route("/start-asset-etl", methods=["POST"])
 @login_required
 def start_asset_etl():
 
@@ -94,7 +94,7 @@ def start_asset_etl():
         "submission_id": submission_id
     })
 
-@ingestion_bp.route("/api/asset-status/<vendor>/<submission_id>")
+@asset_ingestion_bp.route("/api/asset-status/<vendor>/<submission_id>")
 @login_required
 def get_asset_status(vendor, submission_id):
 
@@ -153,7 +153,7 @@ def get_asset_status(vendor, submission_id):
         })
     
 
-@ingestion_bp.route("/api/asset-outputs/<vendor>/<submission_type>/<submission_id>")
+@asset_ingestion_bp.route("/api/asset-outputs/<vendor>/<submission_type>/<submission_id>")
 @login_required
 def get_asset_outputs(vendor, submission_type, submission_id):
     import os
@@ -278,7 +278,7 @@ def get_asset_outputs(vendor, submission_type, submission_id):
 from flask import Response
 from azure.storage.blob import BlobServiceClient
 
-@ingestion_bp.route("/api/asset-report")
+@asset_ingestion_bp.route("/api/asset-report")
 @login_required
 def get_asset_report():
 
@@ -308,7 +308,7 @@ def get_asset_report():
         mimetype="application/octet-stream"
     )
 
-@ingestion_bp.route("/api/asset-report-preview")
+@asset_ingestion_bp.route("/api/asset-report-preview")
 @login_required
 def preview_asset_report():
 
@@ -331,7 +331,7 @@ def preview_asset_report():
         "rows": df.fillna("").to_dict(orient="records")
     })
 
-@ingestion_bp.route("/api/transformed-assets/<vendor>/<submission_type>/<submission_id>")
+@asset_ingestion_bp.route("/api/transformed-assets/<vendor>/<submission_type>/<submission_id>")
 @login_required
 def list_transformed_assets(vendor, submission_type, submission_id):
 
@@ -357,7 +357,7 @@ def list_transformed_assets(vendor, submission_type, submission_id):
 
     return jsonify(images)
 
-@ingestion_bp.route("/api/asset-image")
+@asset_ingestion_bp.route("/api/asset-image")
 @login_required
 def get_asset_image():
 
