@@ -209,6 +209,141 @@ height:2px;
 background:#fff;
 }
 
+.progress-bar.status-started{
+background:#6c757d;
+}
+
+.progress-bar.status-processing{
+background:#0d6efd;
+}
+
+.progress-bar.status-completed{
+background:#198754;
+}
+
+.progress-bar.status-failed{
+background:#dc3545;
+}
+
+/* ============================= */
+/* PIPELINE VISUAL */
+/* ============================= */
+
+.pipeline-visual{
+display:flex;
+align-items:center;
+gap:8px;
+margin-top:10px;
+}
+
+.pipeline-stage{
+display:flex;
+flex-direction:column;
+align-items:center;
+font-size:11px;
+}
+
+.stage-dot{
+width:14px;
+height:14px;
+border-radius:50%;
+background:#cfcfcf;
+border:2px solid #777;
+}
+
+.pipeline-stage.active + .pipeline-line{
+background:#0078ff33;
+}
+
+.pipeline-line{
+flex:1;
+height:6px;
+background:#cfcfcf;
+border-radius:4px;
+position:relative;
+overflow:hidden;
+}
+
+.pipeline-line.flowing::after{
+content:"";
+position:absolute;
+top:0;
+left:-40%;
+width:40%;
+height:100%;
+background:linear-gradient(
+90deg,
+rgba(0,120,255,0) 0%,
+rgba(0,120,255,0.5) 40%,
+rgba(0,120,255,1) 50%,
+rgba(0,120,255,0.5) 60%,
+rgba(0,120,255,0) 100%
+);
+animation:waterFlow 1.8s linear infinite;
+}
+
+.pipeline-fill{
+position:absolute;
+top:0;
+left:0;
+height:100%;
+width:0%;
+background:linear-gradient(
+90deg,
+#4da6ff,
+#0078ff
+);
+transition:width 0.6s ease;
+}
+
+.pipeline-line.filled{
+background:#0078ff;
+}
+
+@keyframes waterFlow{
+0%{ left:-40%; }
+100%{ left:100%; }
+}
+
+.stage-label{
+margin-top:4px;
+font-size:11px;
+color:#333;
+}
+
+.pipeline-stage.active .stage-dot{
+background:#0078ff;
+border-color:#0078ff;
+box-shadow:0 0 6px rgba(0,120,255,0.6);
+}
+
+.pipeline-stage.active .stage-label{
+font-weight:bold;
+}
+
+/* ============================= */
+/* PIPELINE FAILURE STYLE */
+/* ============================= */
+
+.pipeline-stage.failed .stage-dot{
+background:#dc3545;
+border-color:#dc3545;
+box-shadow:0 0 6px rgba(220,53,69,0.6);
+}
+
+.pipeline-stage.failed .stage-label{
+color:#dc3545;
+font-weight:bold;
+}
+
+.pipeline-line.failed{
+background:#dc3545;
+}
+
+.pipeline-line.failed .pipeline-fill{
+background:#dc3545;
+}
+
 </style>
 </head>
 
@@ -230,7 +365,6 @@ Fort Garry Industries
 
 </div>
 
-
 <div class="system-shell">
 
 <!-- LEFT RAIL -->
@@ -239,13 +373,11 @@ Fort Garry Industries
 <div class="system-rail-line"></div>
 </div>
 
-
 <div class="system-center">
 
 <div class="system-top-bar">
 <div class="system-top-line"></div>
 </div>
-
 
 <!-- WORKSPACE -->
 
@@ -256,7 +388,6 @@ Fort Garry Industries
 <div class="workspace-frame">
 
 <div class="row">
-
 
 <!-- LEFT PANEL -->
 
@@ -274,20 +405,26 @@ Fort Garry Industries
 {% endif %}
 {% endwith %}
 
-<form action="{{ url_for('ingestion.ingest_product') }}" method="POST" enctype="multipart/form-data">
+<form action="{{ url_for('ingestion.ingest_product') }}" method="POST" enctype="multipart/form-data" id="productForm">
 
 <div class="mb-3">
 
-<label class="form-label fw-semibold">Select Vendor</label>
+<label class="form-label fw-semibold">Submission Type</label>
 
-<select class="form-select" name="vendor_name" required>
+<select class="form-select" name="submission_type" id="submissionType" required>
+<option value="product_submission" selected>Product Submission</option>
+<option value="product_delta_submission">Delta Product Submission</option>
+<option value="product_review">Product Review</option>
+<option value="delta_product_review">Delta Product Review</option>
+</select>
 
+<label class="form-label fw-semibold mt-3">Select Vendor</label>
+
+<select class="form-select" name="vendor_name" id="vendorName" required>
 <option disabled selected>Select vendor...</option>
-
 <option value="Dayton Parts">Dayton Parts</option>
 <option value="Grote Lighting">Grote Lighting</option>
 <option value="Rigid Industries">Rigid Industries</option>
-
 </select>
 
 </div>
@@ -296,16 +433,34 @@ Fort Garry Industries
 
 <label class="form-label fw-semibold">Product File (.xml)</label>
 
-<input class="form-control" type="file" name="product_file" accept=".xml" required>
+<input class="form-control"
+       type="file"
+       id="productFile"
+       name="product_file"
+       accept=".xml"
+       required>
+
+<small class="text-muted">
+Upload XML product catalog file for ingestion.
+</small>
 
 </div>
 
+<div class="progress mt-2 d-none" id="productUploadProgress">
+<div class="progress-bar progress-bar-striped progress-bar-animated"
+     role="progressbar"
+     style="width:0%"
+     id="productProgressBar">
+0%
+</div>
+</div>
+
+<input type="hidden" name="product_blob_path" id="productBlobPath">
+
 <div class="d-grid mb-3">
-
-<button type="submit" class="btn btn-primary">
-Submit Assets
+<button type="submit" class="btn btn-primary" id="submitBtn">
+Submit Products
 </button>
-
 </div>
 
 </form>
@@ -313,29 +468,83 @@ Submit Assets
 </div>
 </div>
 
-
 <!-- RIGHT PANEL -->
 
 <div class="col" style="flex:0 0 360px; max-width:360px; margin-top:12px;">
 
 <div class="card">
 
-<h5>Output status</h5>
+<h5>Submission Status</h5>
 
-<div id="output-files" class="output-report">
-No outputs available.
-</div>
+<div id="submission-status" class="output-report">
+
+  <div id="statusText"><strong>Status:</strong> Waiting for submission</div>
+
+  <div id="statusMeta" class="mt-2 text-muted"></div>
+
+  <div class="pipeline-visual mt-3 d-none" id="pipelineContainer">
+
+    <div class="pipeline-stage" id="stage-upload">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Upload</div>
+    </div>
+
+    <div class="pipeline-line">
+      <div class="pipeline-fill"></div>
+    </div>
+
+    <div class="pipeline-stage" id="stage-validate">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Validate</div>
+    </div>
+
+    <div class="pipeline-line">
+      <div class="pipeline-fill"></div>
+    </div>
+
+    <div class="pipeline-stage" id="stage-transform">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Transform</div>
+    </div>
+
+    <div class="pipeline-line">
+      <div class="pipeline-fill"></div>
+    </div>
+
+    <div class="pipeline-stage" id="stage-ready">
+      <div class="stage-dot"></div>
+      <div class="stage-label">Ready</div>
+    </div>
+
+  </div>
+
+  <strong>-------------</strong>
+
+  <div id="productSummary" class="asset-summary-panel"></div>
+
+  <div id="currentFile" class="mt-3 text-muted"></div>
+
+  <div id="submissionOutputs" class="mt-3" style="display:none;">
+
+    <hr>
+
+    <strong>Output Files</strong>
+
+    <ul id="outputList" style="padding-left:18px;margin-top:8px;">
+    </ul>
+
+  </div>
 
 </div>
 
 </div>
 
-
-</div>
-</div>
-</div>
 </div>
 
+</div>
+</div>
+</div>
+</div>
 
 <!-- FOOTER -->
 
@@ -364,13 +573,11 @@ F3=Log off
 
 </div>
 
-
 <div class="system-bottom-bar">
 <div class="system-bottom-line"></div>
 </div>
 
 </div>
-
 
 <!-- RIGHT RAIL -->
 
@@ -381,6 +588,27 @@ F3=Log off
 </div>
 </div>
 
+<div class="modal fade" id="excelPreviewModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Report Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+        <div style="max-height:500px;overflow:auto;">
+          <table class="table table-sm table-striped" id="excelPreviewTable">
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
 
 <script>
 
@@ -401,7 +629,6 @@ updateSystemTime()
 setInterval(updateSystemTime,1000)
 
 </script>
-
 
 <script>
 
@@ -425,6 +652,407 @@ break
 
 </script>
 
+<script type="module">
+
+import { BlockBlobClient } from "https://cdn.jsdelivr.net/npm/@azure/storage-blob/+esm";
+
+let submissionId = null;
+let statusInterval = null;
+
+const productInput = document.getElementById("productFile");
+const vendorSelect = document.getElementById("vendorName");
+
+const progressContainer = document.getElementById("productUploadProgress");
+const progressBar = document.getElementById("productProgressBar");
+
+const submitBtn = document.getElementById("submitBtn");
+const blobPathInput = document.getElementById("productBlobPath");
+
+const statusText = document.getElementById("statusText");
+const statusMeta = document.getElementById("statusMeta");
+const currentFile = document.getElementById("currentFile");
+
+function resetSubmissionStatus(){
+
+statusText.innerHTML = "<strong>Status:</strong> Waiting for submission";
+statusMeta.textContent = "";
+currentFile.textContent = "";
+
+document.getElementById("pipelineContainer").classList.add("d-none");
+
+document.getElementById("productSummary").innerHTML = "";
+document.getElementById("outputList").innerHTML = "";
+document.getElementById("submissionOutputs").style.display = "none";
+
+document.querySelectorAll(".pipeline-stage").forEach(s=>{
+s.classList.remove("active","failed");
+});
+
+document.querySelectorAll(".pipeline-line").forEach(l=>{
+l.classList.remove("filled","flowing","failed");
+});
+
+document.querySelectorAll(".pipeline-fill").forEach(f=>{
+f.style.width = "0%";
+});
+
+progressBar.style.width = "0%";
+progressBar.textContent = "0%";
+progressBar.classList.remove("bg-success","bg-danger");
+progressBar.classList.add("progress-bar-animated");
+}
+
+function updateStage(stage, percent, message){
+
+statusText.innerHTML = "<strong>Status:</strong> " + stage;
+statusMeta.textContent = message;
+
+const upload = document.getElementById("stage-upload");
+const validate = document.getElementById("stage-validate");
+const transform = document.getElementById("stage-transform");
+const ready = document.getElementById("stage-ready");
+
+const fills = document.querySelectorAll(".pipeline-fill");
+
+upload.classList.add("active");
+
+/* PIPE 1 : Upload -> Validate */
+if(percent < 25){
+fills[0].style.width = (percent/25)*100 + "%";
+}else{
+fills[0].style.width = "100%";
+validate.classList.add("active");
+}
+
+/* PIPE 2 : Validate -> Transform */
+if(percent >= 25 && percent < 50){
+fills[1].style.width = ((percent-25)/25)*100 + "%";
+}else if(percent >= 50){
+fills[1].style.width = "100%";
+transform.classList.add("active");
+}
+
+/* PIPE 3 : Transform -> Ready */
+if(percent >= 50 && percent < 90){
+fills[2].style.width = ((percent-50)/40)*100 + "%";
+}else if(percent >= 90){
+fills[2].style.width = "100%";
+ready.classList.add("active");
+}
+
+}
+
+function setCompleted(message){
+
+statusText.innerHTML = "<strong>Status:</strong> Completed";
+statusMeta.textContent = message;
+currentFile.textContent = "";
+
+}
+
+function setFailed(message){
+
+statusText.innerHTML = "<strong>Status:</strong> Failed";
+statusMeta.textContent = message;
+currentFile.textContent = "";
+
+document.querySelectorAll(".pipeline-stage").forEach(stage=>{
+stage.classList.remove("active");
+stage.classList.add("failed");
+});
+
+document.querySelectorAll(".pipeline-line").forEach(pipe=>{
+pipe.classList.remove("flowing");
+pipe.classList.add("failed");
+});
+
+}
+
+async function previewExcel(path){
+
+  try{
+
+    const res = await fetch("/ingestion/api/product-report-preview?path=" + encodeURIComponent(path));
+    const data = await res.json();
+
+    const table = document.getElementById("excelPreviewTable");
+    table.innerHTML = "";
+
+    let header = "<thead><tr>";
+    data.columns.forEach(c=>{
+      header += `<th>${c}</th>`;
+    });
+    header += "</tr></thead>";
+
+    let rows = "<tbody>";
+    data.rows.forEach(r=>{
+      rows += "<tr>";
+      data.columns.forEach(c=>{
+        rows += `<td>${r[c] ?? ""}</td>`;
+      });
+      rows += "</tr>";
+    });
+    rows += "</tbody>";
+
+    table.innerHTML = header + rows;
+
+    const modal = new bootstrap.Modal(document.getElementById("excelPreviewModal"));
+    modal.show();
+
+  }catch(err){
+
+    console.error("Preview failed", err);
+
+  }
+
+}
+
+async function loadSubmissionOutputs(vendor, submissionId){
+
+  try{
+
+    const submissionType = document.getElementById("submissionType").value;
+
+    const res = await fetch(`/ingestion/api/product-outputs/${vendor}/${submissionType}/${submissionId}`);
+    const data = await res.json();
+
+    if (data.summary) {
+      const s = data.summary;
+      const summaryBox = document.getElementById("productSummary");
+
+      summaryBox.innerHTML = `
+        Records Processed: ${s.records_processed ?? 0}<br>
+        Total Issues: ${s.total_issues ?? 0}<br>
+        Autofixed Issues: ${s.autofixed_issues ?? 0}<br>
+        Remaining Issues: ${s.remaining_issues ?? 0}
+      `;
+    }
+
+    const list = document.getElementById("outputList");
+    const panel = document.getElementById("submissionOutputs");
+
+    list.innerHTML = "";
+    panel.style.display = "block";
+
+    if(!data.files || !data.files.length){
+      list.innerHTML = "<li>No output files generated yet</li>";
+      return;
+    }
+
+    data.files.forEach(f => {
+
+      const li = document.createElement("li");
+      li.style.display = "flex";
+      li.style.alignItems = "center";
+      li.style.marginBottom = "4px";
+      li.style.listStyle = "disc";
+      li.style.marginLeft = "16px";
+
+      const labels = {
+        "product_submission_summary.xlsx": "Product Processing Summary",
+        "transformed_products.xlsx": "Transformed Products",
+        "validation_report.xlsx": "Validation Errors Report",
+        "health_issues.xlsx": "Health Issues Report",
+        "mapped.xlsx": "Mapped Output"
+      };
+
+      const viewLink = document.createElement("a");
+      viewLink.href = "#";
+      viewLink.textContent = labels[f.name] || f.name;
+      viewLink.onclick = (e)=>{
+        e.preventDefault();
+        previewExcel(f.path);
+      };
+
+      const spacer = document.createElement("span");
+      spacer.style.flex = "1";
+      spacer.style.margin = "0 8px";
+      spacer.style.borderBottom = "1px dotted #999";
+      spacer.style.transform = "translateY(6px)";
+
+      const downloadLink = document.createElement("a");
+      downloadLink.href = "/ingestion/api/product-report?path=" + encodeURIComponent(f.path);
+      downloadLink.textContent = "[Download]";
+      downloadLink.style.fontSize = "12px";
+      downloadLink.style.textDecoration = "none";
+      downloadLink.target = "_blank";
+
+      li.appendChild(viewLink);
+      li.appendChild(spacer);
+      li.appendChild(downloadLink);
+
+      list.appendChild(li);
+
+    });
+
+  }catch(err){
+
+    console.error("Failed to load outputs", err);
+
+  }
+
+}
+
+async function pollSubmissionStatus(vendor, submissionId){
+
+if(statusInterval) clearInterval(statusInterval);
+
+statusInterval = setInterval(async ()=>{
+
+try{
+
+const res = await fetch(`/ingestion/api/product-status/${vendor}/${submissionId}`);
+const status = await res.json();
+
+if(!status){
+console.error("Empty status response");
+return;
+}
+
+updateStage(
+status.stage,
+status.progress || 0,
+status.message || ""
+);
+
+if(status.current_file){
+currentFile.textContent = "Current file: " + status.current_file;
+}
+
+if(status.stage === "complete"){
+
+clearInterval(statusInterval);
+
+setCompleted(status.message || "Processing completed");
+
+loadSubmissionOutputs(vendor, submissionId);
+
+}
+
+if(status.stage === "failed" || status.status === "failed"){
+
+clearInterval(statusInterval);
+
+setFailed(status.message || "Processing failed");
+
+loadSubmissionOutputs(vendor, submissionId);
+
+return;
+
+}
+
+}catch(err){
+
+console.error("Status polling failed:", err);
+
+}
+
+},2000);
+
+}
+
+submitBtn.addEventListener("click", async (e)=>{
+
+e.preventDefault();
+
+resetSubmissionStatus();
+
+submissionId = new Date().toISOString()
+  .replace(/[-:]/g,"")
+  .split(".")[0];
+
+const file = productInput.files[0];
+const vendor = vendorSelect.value;
+
+if(!vendor){
+alert("Please select vendor.");
+return;
+}
+
+if(!file){
+alert("Please upload product XML file.");
+return;
+}
+
+progressContainer.classList.remove("d-none");
+submitBtn.disabled = true;
+
+try{
+
+const res = await fetch("/api/get-product-upload-sas",{
+method:"POST",
+headers:{ "Content-Type":"application/json"},
+body:JSON.stringify({
+vendor,
+filename:file.name,
+submission_id: submissionId
+})
+});
+
+const data = await res.json();
+
+const blobClient = new BlockBlobClient(data.sas_url);
+
+await blobClient.uploadBrowserData(file,{
+overwrite:true,
+blobHTTPHeaders:{ blobContentType:"application/xml" },
+onProgress:(p)=>{
+
+const percent = Math.round((p.loadedBytes/file.size)*100);
+
+progressBar.style.width = percent + "%";
+progressBar.textContent = file.name + " " + percent + "%";
+
+}
+});
+
+blobPathInput.value = data.blob_path;
+
+progressBar.classList.remove("progress-bar-animated");
+progressBar.classList.add("bg-success");
+progressBar.textContent = "Product file uploaded";
+
+updateStage("Upload complete",10,"Starting product pipeline");
+document.getElementById("pipelineContainer").classList.remove("d-none");
+
+const start = await fetch("/ingestion/start-product-etl",{
+method:"POST",
+headers:{ "Content-Type":"application/json"},
+body:JSON.stringify({
+vendor,
+blob_path: data.blob_path,
+submission_type: document.getElementById("submissionType").value,
+submission_id: submissionId
+})
+});
+
+const startData = await start.json();
+
+submissionId = startData.submission_id || submissionId;
+
+pollSubmissionStatus(vendor, submissionId);
+
+submitBtn.disabled = false;
+
+}catch(err){
+
+console.error(err);
+
+progressBar.classList.remove("progress-bar-animated");
+progressBar.classList.add("bg-danger");
+progressBar.textContent = "Upload failed";
+
+setFailed("Product upload failed.");
+
+submitBtn.disabled = false;
+
+}
+
+});
+
+resetSubmissionStatus();
+
+</script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 

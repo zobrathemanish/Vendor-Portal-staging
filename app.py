@@ -37,7 +37,7 @@ logging.getLogger("werkzeug").setLevel(logging.ERROR)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 import os
-print("DB FILE LOCATION:", os.path.abspath("users.db"))
+# print("DB FILE LOCATION:", os.path.abspath("users.db"))
 
 
 db.init_app(app)
