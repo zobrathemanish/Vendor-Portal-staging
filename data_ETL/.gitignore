@@ -1,0 +1,23 @@
+# Ignore all local autofix output folders
+autofix_*/
+
+# Ignore all local profiling output folders
+profiling_*/
+
+# Ignore Azure-mode output folders generated locally
+in_review/vendor=*/autofix/
+in_review/vendor=*/profiling/
+
+# Ignore any temporary Excel or Parquet debug outputs
+*.parquet
+*.xlsx
+*.json
+
+# But keep YAML and config files
+!*.yaml
+!*.yml
+
+# ======================================================
+# ETL generated data (local + Azure mirror)
+# ======================================================
+ETL/data_etl/silver/

@@ -1,0 +1,202 @@
+vendor: "Dayton"
+
+validation:
+  enabled: false
+
+  ####################################################
+  # ITEM MASTER VALIDATION
+  ####################################################
+  item_master:
+    required_fields:
+      - Part Number
+      - Brand Label
+      - Product Status
+      - Quantity UOM
+      - Quantity Size
+      - Category
+
+    optional_fields:
+      - VMRS Code
+      - Barcode Number
+      - Barcode Type
+      - Subcategory
+
+    unique_key: "Part Number"
+
+    # Barcode rules
+    barcode_type_field: "Barcode Type"
+    barcode_number_field: "Barcode Number"
+
+    # Length rules
+    upc_field: "UPC"
+    en_field: "EN"
+    unspsc_field: "UNSPSC"
+
+    # Allowed product statuses
+    allowed_statuses:
+      - Active
+      - Inactive
+      - Available to Order
+      - Temporarily Unavailable
+      - Obsolete
+
+    # Hazmat rules
+    hazmat_field: "HazmatFlag"
+    allowed_hazmat_values: ["", "Y", "N", "Yes", "No"]
+    hazmat_truthy_values: ["Y", "Yes"]
+    un_number_field: "UN Number"
+
+
+  ####################################################
+  # DESCRIPTIONS VALIDATION
+  ####################################################
+  descriptions:
+    code_field: "Description Code"
+    value_field: "Description Value"
+    sequence_field: "Sequence"
+
+  # We only require at least one of ASC/DES per SKU (not XOR)
+    must_have_exactly_one_primary: false
+    require_primary_for_all_skus: true
+
+    max_length_codes:
+      ASC: 120
+      DES: 120
+      SHO: 120
+
+    require_des_for_all_skus: false   # ASC-only allowed
+
+
+  ####################################################
+  # EXTENDED INFO VALIDATION
+  ####################################################
+  extended_info:
+    code_field: "Extended Info Code"
+    value_field: "Extended Info Value"
+
+    # Alias support (e.g., Autocare CTO, HSB)
+    required_aliases:
+      COO: ["COO", "CTO"]
+      HTS: ["HTS", "HSB"]
+
+    # Enforce presence of paired values
+    required_pairs:
+      COO: required
+      HTS: required
+
+
+  ####################################################
+  # ATTRIBUTE VALIDATION
+  ####################################################
+  attributes:
+    name_field: "Attribute Name"
+    value_field: "Attribute Value"
+
+
+  ####################################################
+  # PART INTERCHANGE VALIDATION
+  ####################################################
+  part_interchange:
+    brand_field: "Brand Label"
+    part_field: "Interchange Part Number"
+
+
+  ####################################################
+  # PACKAGES VALIDATION
+  ####################################################
+  packages:
+    require_at_least_one_row: false
+
+    uom_field: "Package UOM"
+    allowed_uom:
+      - Each
+      - Box
+      - Case
+      - Pallet
+      - Bag
+      # Autocare shortcuts
+      - EA
+      - BX
+      - CS
+      - PL
+      - CA
+      - PK
+
+    qty_field: "Package Quantity of Eaches"
+    weight_uom_field: "Weight UOM"
+    weight_field: "Weight"
+    dim_uom_field: "Dimension UOM"
+    merch_len_field: "Merch Length"
+    merch_wid_field: "Merch Width"
+    merch_hgt_field: "Merch Height"
+    content_field: null   #Grote does not have packet content
+
+  ####################################################
+  # DIGITAL ASSET VALIDATION
+  ####################################################
+  assets:
+    require_asset_for_all_skus: false
+    file_field: "FileName"
+    media_field: "MediaType"
+    acceptable_primary_media:
+    - P01
+    - P04
+
+
+
+  ####################################################
+  # PRICING VALIDATION
+  ####################################################
+  pricing:
+    required_fields:
+      - Part Number
+      - List Price
+      - Jobber Price
+      - Net Price
+      - Currency
+
+    numeric_positive_fields:
+      - List Price
+      - Jobber Price
+      - Net Price
+
+    numeric_fields:
+      - Discount %
+
+    require_pricing_for_all_skus: false
+
+    net_cost_field: "Net Price"
+    effective_date_field: "Effective Date"
+    moq_unit_field: "MOQ Unit"
+    moq_field: "MOQ"
+    currency_field: "Currency"
+
+    promo_fields:
+      price: "Promo Price"
+      start: "Promo Start Date"
+      end: "Promo End Date"
+
+    quote_fields:
+      price: "Quote Price"
+      start: "Quote Start Date"
+      end: "Quote End Date"
+
+    tender_fields:
+      price: "Tender Price"
+      start: "Tender Start Date"
+      end: "Tender End Date"
+
+    core_fields:
+      price: "Core Price"
+      part: "Core Part Number"
+      cost: "Core Cost"
+
+
+  ####################################################
+  # DIGITAL ASSET VALIDATION
+  ####################################################
+  assets:
+    require_asset_for_all_skus: false
+    file_field: "FileName"
+    media_field: "MediaType"
+    required_media_types_per_sku: ["P04", "P01"]

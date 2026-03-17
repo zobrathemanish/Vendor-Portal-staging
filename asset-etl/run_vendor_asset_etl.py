@@ -286,7 +286,7 @@ def main():
 
     except Exception as e:
 
-        print(f"\n❌ Pipeline failed: {e}")
+        print(f"\n Pipeline failed: {e}")
 
         status["status"] = "failed"
         status["stage"] = "failed"

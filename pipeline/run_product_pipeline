@@ -1,0 +1,73 @@
+@asset_ingestion_bp.route("/start-product-etl", methods=["POST"])
+@login_required
+def start_product_etl():
+
+    data = request.get_json()
+
+    vendor = data.get("vendor")
+    submission_id = data.get("submission_id")
+    blob_path = data.get("blob_path")
+    submission_type = data.get("submission_type")
+
+    print(f"Starting product ingestion: {vendor} {submission_id}")
+
+    # ---------------------------------------
+    # STEP 1: RUN MAPPING + VALIDATION
+    # ---------------------------------------
+
+    mapping_script = os.path.join(
+        current_app.root_path,
+        "mapping_validation",
+        "scripts",
+        "run_mapping_validation.py"
+    )
+
+    result = subprocess.run([
+        sys.executable,
+        mapping_script,
+        "--vendor", vendor,
+        "--submission-id", submission_id,
+        "--blob-path", blob_path
+    ], capture_output=True, text=True)
+
+    if result.returncode != 0:
+
+        return jsonify({
+            "status": "failed",
+            "stage": "validation",
+            "message": "Mapping / Validation failed"
+        })
+
+    # ---------------------------------------
+    # STEP 2: CREATE MANIFEST
+    # ---------------------------------------
+
+    create_submission_manifest(
+        vendor,
+        submission_id,
+        submission_type,
+        [blob_path]
+    )
+
+    # ---------------------------------------
+    # STEP 3: START ETL
+    # ---------------------------------------
+
+    etl_script = os.path.join(
+        current_app.root_path,
+        "data_ETL",
+        "run_vendor_etl.py"
+    )
+
+    subprocess.Popen([
+        sys.executable,
+        etl_script,
+        "--vendor", vendor,
+        "--submission-type", submission_type,
+        "--submission-id", submission_id
+    ])
+
+    return jsonify({
+        "status": "started",
+        "submission_id": submission_id
+    })

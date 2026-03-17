@@ -1,0 +1,202 @@
+vendor: "Rigid Industries"
+
+product_mapping:
+
+  
+  # 1. ITEM MASTER
+  
+  Item Master:
+    source: "product_xlsx"
+    sheet: "DATASHEET"
+    mappings:
+      Brand Label: "Rigid Industries"
+      Part Number: "PN"
+      UNSPSC: null
+      HazmatFlag: "HAZMAT"
+
+      Product Status: "ASIN"
+
+      Barcode Type: "UPC"
+      Barcode Number: "UPC (GTIN)"
+
+      Quantity UOM: "PACKAGE TYPE"
+      Quantity Size: null
+
+      VMRS Code: null
+    
+      Category: "ITEM TYPE"
+      Subcategory: "PRODUCT FAMILY"
+
+  
+  # 2. DESCRIPTIONS
+  
+  Descriptions:
+    source: "product_xlsx"
+    sheet: "DATASHEET"
+    explode: true
+    mappings:
+      Part Number: "PN"
+
+      # Description types
+      Description Code: [ASC, MKT, LONG, INV, WRN]
+      ASC: "80 CHARACTER DESCRIPTION"
+      MKT: "MARKETING COPY"
+      LONG: "240 CHARACTER PRODUCT DESCRIPTION"
+      INV: "30 CHARACTER INVOICE DESCRIPTION"
+      WRN: "CALI PROP65 MESSAGE"
+
+      Sequence: null
+      Description Change Type: null
+
+  # 3. EXTENDED INFO (EXPICodes)
+  
+  Extended Info:
+    source: "product_xlsx"
+    sheet: "DATASHEET"
+    explode: true
+    mappings:
+      Part Number: "PN"
+      Extended Info Change Type: null
+      Extended Info Code: [COO, HTS, YWAR, WURL, SB, EMI]
+      code_field: "Extended Info Code"
+      COO: "COO"
+      HTS: "HTS CODE"
+      YWAR: "WARRANTY TIME"
+      WURL: "WARRANTY LINK"
+      SB: 'SCHEDULE B CODE'
+      EMI: "EMISSIONS CODE"
+      
+      Extended Info Value: "VALUE"
+  
+  # 4. ATTRIBUTES
+  
+  Attributes:
+    source: "product_xlsx"
+    sheet: "DATASHEET"
+    mappings:
+      Part Number: "PN"
+      Attribute Change Type: null
+      Attribute Name: null
+      Attribute Value: null
+      FITS IN: "PRODUCT FITS WHAT"
+      Features:
+      - "ATTRIBUTE 1"
+      - "ATTRIBUTE 2"
+      - "ATTRIBUTE 3"
+      - "ATTRIBUTE 4"
+      - "ATTRUBUTE 5"  
+      - "ATTRIBUTE 6"
+      - "ATTRIBUTE 7"
+      - "ATTRIBUTE 8"
+      - "ATTRIBUTE 9"
+      - "ATTRIBUTE 10"
+      - "ATTRIBUTE 11"
+      - "ATTRIBUTE 12"
+      - "ATTRIBUTE 13"
+      - "ATTRIBUTE 14"
+      - "ATTRIBUTE 15"
+      - "ATTRIBUTE 16"
+      - "ATTRIBUTE 17"
+      - "ATTRIBUTE 18"
+ 
+      SEO: "GOOGLE TITLE AS PART OF ATTRIBUTE DATA"
+
+
+  
+  # 5. PART INTERCHANGE
+  
+  Part InterChange:
+    source: "product_xlsx"
+    sheet: "DATASHEET"
+    mappings:
+      Part Number: "PN"
+      Part Interchange Change Type: null
+      Brand Label: "BRAND"
+      Interchange Part Number: "SUPERCEDES PN"
+
+
+  
+  # 6. PACKAGES
+  
+  Packages:
+    source: "product_xlsx"
+    sheet: "DATASHEET"
+    mappings:
+      Part Number: "PN"
+      Package Change Type: null
+      Package UOM: "PACKAGE TYPE"
+      Package Quantity of Eaches: null
+
+      Weight UOM: null
+      Weight: "WEIGHT"
+
+      Dimension UOM: null
+
+      Merch Length: null
+      Merch Width: null
+      Merch Height: null
+
+      Ship Length: null
+      Ship Width: null
+      Ship Height: null
+
+
+  # 7. PRICING (XLSX)
+
+  Pricing:
+    source: "pricing_xlsx"
+    sheet: "PRICE LIST"
+    header_row: 3
+
+    # join extra fields from DATASHEET
+    lookups:
+      DATASHEET:
+        key: "PN"
+        columns:
+          MOQ Unit: "MOQ"
+          MOQ: "PACKAGE TYPE"
+
+    mappings:
+      Vendor: "RIGID INDUSTRIES"
+      Part Number: "PN"
+
+      Pricing Method: "List Jobber MAP"
+      Currency: "CAD"
+
+      MOQ Unit: "@lookup.DATASHEET.MOQ Unit"
+      MOQ: "@lookup.DATASHEET.MOQ"
+
+      Pricing Change Type: null
+      Pricing Type: null
+
+      List Price: "MSRP"
+      Jobber Price: "JOBBER"
+      MAP: "MAP"
+      Net Price: "JOBBER"
+      Dealer Price: null
+      Discount %: null
+
+      Notes: "Unified file extraction"
+
+
+  
+  # 8. DIGITAL ASSETS
+  
+  Digital Assets:
+    source: "product_xlsx"
+    sheet: "DATASHEET"
+    mappings:
+      Part Number: "PN"
+      Digital Change Type: null
+
+      MediaType: null
+      Brand logo link: "BRAND LOGO IMAGE LINK"
+      FileName: null
+
+      # Azure asset path will be constructed in script
+      FilePath: null
+      FileType: null
+      Representation: null
+      Orientation: null
+      Height: null
+      Width: null

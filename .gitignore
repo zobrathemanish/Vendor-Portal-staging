@@ -17,3 +17,10 @@ asset-etl/_local_asset_test_output
 
 #logs
 asset-etl/logs
+
+##Mapping_Validation
+mapping_validation/mapped
+mapping_validation/silver
+mapping_validation/tmp
+mapping_validation/venv
+

@@ -854,7 +854,7 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
             overwrite=True
         )
 
-        log("❌ Blocking validation issues detected. Pipeline will stop.")
+        log(" Blocking validation issues detected. Pipeline will stop.")
         raise SystemExit(1)
 
 

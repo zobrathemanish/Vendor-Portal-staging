@@ -1,0 +1,26 @@
+{
+  "vendor": "Grote Lighting",
+  "file": "raw/vendor=Grote Lighting/submission=20260304_145440/mapped/Item_Master.parquet",
+  "timestamp": "2026-03-04T14:55:34.143521",
+  "stage": "VALIDATION",
+  "error_type": "ValidationError",
+  "error_message": "2 validation errors found.",
+  "details": [
+    {
+      "Vendor": "Grote Lighting",
+      "Section": "Item Master",
+      "Part Number": "00210",
+      "Field": "Category",
+      "ErrorCode": "REQUIRED_FIELD_EMPTY",
+      "Message": "Required field 'Category' is empty."
+    },
+    {
+      "Vendor": "Grote Lighting",
+      "Section": "Pricing",
+      "Part Number": "",
+      "Field": "Part Number",
+      "ErrorCode": "REQUIRED_FIELD_EMPTY",
+      "Message": "Missing required pricing field 'Part Number'."
+    }
+  ]
+}

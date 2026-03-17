@@ -979,7 +979,7 @@ submitBtn.disabled = true;
 
 try{
 
-const res = await fetch("/api/get-product-upload-sas",{
+const res = await fetch("/ingestion/get-product-upload-sas",{
 method:"POST",
 headers:{ "Content-Type":"application/json"},
 body:JSON.stringify({

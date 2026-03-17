@@ -73,6 +73,6 @@ def write_status(vendor, stage, status, message="", submission_id=None, extra=No
 
     container.upload_blob(
         name=blob_path,
-        data=json.dumps(payload, indent=2),
+        data=json.dumps(payload, indent=2, default=str),
         overwrite=True
     )

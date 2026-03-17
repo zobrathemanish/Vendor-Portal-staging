@@ -1,0 +1,18 @@
+{
+  "vendor": "Grote Lighting",
+  "file": "raw/vendor=Grote Lighting/submission=20260225_184526/mapped/Item_Master.parquet",
+  "timestamp": "2026-02-25T18:45:44.042188",
+  "stage": "VALIDATION",
+  "error_type": "ValidationError",
+  "error_message": "1 validation errors found.",
+  "details": [
+    {
+      "Vendor": "Grote Lighting",
+      "Section": "Item Master",
+      "Part Number": "43850",
+      "Field": "Category",
+      "ErrorCode": "REQUIRED_FIELD_EMPTY",
+      "Message": "Required field 'Category' is empty."
+    }
+  ]
+}
