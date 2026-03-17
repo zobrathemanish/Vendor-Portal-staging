@@ -452,7 +452,7 @@ def get_latest_vendor_submission_id(
 
     return sorted(submissions, reverse=True)[0]
 
-def create_submission_manifest(vendor, submission_id, submission_type, files):
+def create_submission_manifest(vendor, workflow, submission_id, submission_type, files):
 
     conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 
@@ -463,6 +463,7 @@ def create_submission_manifest(vendor, submission_id, submission_type, files):
     manifest = {
         "vendor": vendor,
         "submission_id": submission_id,
+        "workflow": workflow,
         "submission_type": submission_type,
         "status": "uploaded",
         "files_uploaded": files,
@@ -473,8 +474,11 @@ def create_submission_manifest(vendor, submission_id, submission_type, files):
     }
 
     blob_path = (
-        f"raw/vendor={vendor}/assets/"
-        f"submission={submission_id}/manifest.json"
+        f"raw/vendor={vendor}/"
+        f"{workflow}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"manifest.json"
     )
 
     container_client.upload_blob(

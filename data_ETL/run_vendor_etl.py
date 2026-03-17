@@ -13,7 +13,6 @@ Run the full vendor ETL pipeline end-to-end, including:
 - Vendor scorecard
 
 Supports:
-- Azure mode (default)
 - Local mode (--local)
 """
 
@@ -40,7 +39,7 @@ STEPS = [
 # ============================================================
 # RUNNER
 # ============================================================
-def run_step(name, script, vendor, submission_id, local: bool, mode: str):
+def run_step(name, script, vendor, workflow, submission_id, submission_type, local: bool):
     print(f"\n▶️  {name}")
 
     module_name = f"data_ETL.{script.replace('.py','')}"
@@ -48,13 +47,10 @@ def run_step(name, script, vendor, submission_id, local: bool, mode: str):
 
     if "--vendor" in STEPS_BY_SCRIPT[script]:
         cmd += ["--vendor", vendor]
-    
-    # need submission id as well
-    cmd += ["--submission-id", submission_id]
 
-     # ✅ Do NOT pass --mode to profiling or scorecard
-    if script not in ("vendor_profiling.py", "vendor_scorecard.py"):
-        cmd += ["--mode", mode]
+    cmd += ["--submission-id", submission_id]
+    cmd += ["--workflow", workflow]
+    cmd += ["--submission-type", submission_type]
 
     if local:
         cmd.append("--local")
@@ -71,7 +67,7 @@ def run_step(name, script, vendor, submission_id, local: bool, mode: str):
     )
 
     if result.returncode != 0:
-        print(f"\n Failed at step: {name}")
+        print(f"\n❌ Failed at step: {name}")
         sys.exit(1)
 
 
@@ -82,17 +78,18 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vendor", type=str)
-    parser.add_argument("--submission-id", type=str, required=True)
+
+    parser.add_argument("--vendor")
+    parser.add_argument("--submission-id", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--submission-type", dest="submission_type", required=True)
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--local", action="store_true")
-    parser.add_argument("--mode", default="full")
 
     args = parser.parse_args()
 
     submission_id = args.submission_id
     local = args.local
-    mode = "LOCAL" if local else "AZURE"
 
     if args.all:
         raise SystemExit("--all is not supported in run_vendor_etl.py (use orchestrator)")
@@ -103,20 +100,29 @@ def main():
     vendor = args.vendor
 
     print(
-    f"\n🚀 Running full ETL | vendor={vendor} | submission={submission_id} ({mode} mode)"
-)
+        f"\n🚀 Running full ETL | vendor={vendor} | submission={submission_id}"
+    )
+
 
     for name, script, flags in STEPS:
 
-        # 🚫 Skip analytics in post_review mode
-        if args.mode == "post_review" and script in (
+        # 🚫 Skip analytics for review submissions
+        if args.submission_type.endswith("_review") and script in (
             "vendor_profiling.py",
             "vendor_scorecard.py",
         ):
-            print(f"⏭ Skipping {name} (post_review mode)")
+            print(f"⏭ Skipping {name} (review submission)")
             continue
 
-        run_step(name, script, vendor, submission_id, local, args.mode)
+        run_step(
+            name,
+            script,
+            vendor,
+            args.workflow,
+            submission_id,
+            args.submission_type,
+            local
+        )
 
     print(f"\n✅ ETL pipeline completed successfully for {vendor}")
 
