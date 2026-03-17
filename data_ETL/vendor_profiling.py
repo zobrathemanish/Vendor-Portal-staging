@@ -43,7 +43,6 @@ IN_REVIEW = "in_review"
 LOGS_DIR = "logs"
 READY_DIR = "ready"
 ANALYTICS_DIR = "analytics/vendor_profiling"
-PRICING_REVIEW = "post_pricing_review"
 
 # =========================================================
 # OUTPUT SCHEMA (STABLE CONTRACT)
@@ -104,8 +103,22 @@ COLUMN_ORDER = [
     "profiling_generated_ts",
 ]
 
-def submission_base_path(vendor: str, submission_id: str, local: bool, mode: str) -> str:
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
+# =========================================================
+# PIPELINE CONTEXT (NEW)
+# =========================================================
+class PipelineContext:
+    def __init__(self, workflow: str, submission_type: str):
+        self.workflow = workflow      # "product" | "pricing"
+        self.submission_type = submission_type            # "review" | "post_review"
+
+    @property
+    def in_review_root(self):
+        if self.workflow == "pricing":
+            return "post_pricing_review"
+        return "in_review"
+
+def submission_base_path(vendor: str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
+    root = ctx.in_review_root
 
     if local:
         return os.path.join(
@@ -117,14 +130,14 @@ def submission_base_path(vendor: str, submission_id: str, local: bool, mode: str
     return f"{root}/vendor={vendor}/submission={submission_id}"
 
 def build_vendor_profile_for_submission(
-    vendor: str,
-    submission_id: str,
+    vendor,
+    submission_id,
     container,
-    local: bool,
-    mode: str,
-) -> Dict:
+    local,
+    ctx: PipelineContext,
+):
 
-    base = submission_base_path(vendor, submission_id, local, mode)
+    base = submission_base_path(vendor, submission_id, local, ctx)
 
     profile = {
         "vendor": vendor,
@@ -647,27 +660,29 @@ def build_vendor_profile(vendor: str, container, local: bool) -> Dict:
 def run_vendor_profiling(
     vendor: str,
     submission_id: str,
-    mode: str = "full",
+    workflow: str = "product",
+    submission_type: str = "review",
     local: bool = False,
 ):
+    ctx = PipelineContext(workflow=workflow, submission_type=submission_type)
     container = None if local else get_container()
 
     print("▶️ Vendor Profiling")
     print("Vendor:", vendor)
-    print("Mode:", mode)
+    print("CTX:", ctx)
 
     profile = build_vendor_profile_for_submission(
         vendor=vendor,
         submission_id=submission_id,
         container=container,
         local=local,
-        mode=mode,
+        ctx=ctx,
     )
 
     df = pd.DataFrame([profile])
     df = df.reindex(columns=[c for c in COLUMN_ORDER if c in df.columns])
 
-    base = submission_base_path(vendor, submission_id, local, mode)
+    base = submission_base_path(vendor, submission_id, local, ctx)
 
     out_base = (
         os.path.join(base, "analytics", "vendor_profiling")
@@ -699,14 +714,17 @@ def main():
     parser.add_argument("--submission-id", required=True)
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--mode", default="full")
+    parser.add_argument("--workflow", default="product")
+    parser.add_argument("--submission-type", default="review")
 
     args = parser.parse_args()
 
     run_vendor_profiling(
         vendor=args.vendor,
         submission_id=args.submission_id,
+        workflow=args.workflow,
+        submission_type=args.submission_type,
         local=args.local,
-        mode=args.mode,
     )
 
 if __name__ == "__main__":

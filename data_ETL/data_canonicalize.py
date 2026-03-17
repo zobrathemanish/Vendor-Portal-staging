@@ -189,7 +189,7 @@ ITEM_MASTER_CANDIDATES = [
     "Category",
     "HazmatFlag"
     "Barcode Type",
-    "UNSPSC"
+    "UNSPSC",
     "Barcode Number",
     "Barcode UOM",
     "Quantity UOM",
@@ -262,7 +262,7 @@ def excel_bytes(item, pricing, attrs, summary) -> bytes:
 # =========================================================
 # RUNNER
 # =========================================================
-def canonicalize_vendor(vendor: str, submission_id:str, local: bool, mode:str):
+def canonicalize_vendor(vendor: str, submission_id: str, submission_type: str, workflow: str, local: bool, mode: str):
     print(f"\n🧱 Canonicalizing vendor: {vendor}")
     if local:
         print("📁 Mode      : LOCAL")
@@ -280,7 +280,9 @@ def canonicalize_vendor(vendor: str, submission_id:str, local: bool, mode:str):
         root = PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT
 
         blob_path = (
-            f"{root}/vendor={vendor}/"
+            f"{root}/workflow={workflow}/"
+            f"vendor={vendor}/"
+            f"submission_type={submission_type}/"
             f"submission={submission_id}/"
             f"{AUTOFIX_DIRNAME}/data_autofixed.parquet"
         )
@@ -330,13 +332,16 @@ def canonicalize_vendor(vendor: str, submission_id:str, local: bool, mode:str):
         root = PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT
 
         base = (
-            f"{root}/vendor={vendor}/"
+            f"{root}/workflow={workflow}/"
+            f"vendor={vendor}/"
+            f"submission_type={submission_type}/"
             f"submission={submission_id}/"
             f"{CANONICAL_DIRNAME}"
         )
-
         review = (
-            f"{root}/vendor={vendor}/"
+            f"{root}/workflow={workflow}/"
+            f"vendor={vendor}/"
+            f"submission_type={submission_type}/"
             f"submission={submission_id}/"
             f"{REVIEW_DIRNAME}"
         )
@@ -395,10 +400,18 @@ if __name__ == "__main__":
     parser.add_argument("--all", action="store_true", help="Run for all vendors")
     parser.add_argument("--local", action="store_true", help="Run in local mode")
     parser.add_argument("--mode", default="full")
+    parser.add_argument("--workflow", required=False)
+    parser.add_argument("--submission-type", dest="submission_type", required=False)
 
     args = parser.parse_args()
     submission_id = args.submission_id
-    mode = args.mode
+    submission_type = args.submission_type
+    def resolve_mode(submission_type: str) -> str:
+        if submission_type and "review" in submission_type:
+            return "post_review"
+        return "full"
+
+    mode = resolve_mode(args.submission_type)
 
 
     # -------------------------
@@ -411,8 +424,14 @@ if __name__ == "__main__":
             if not args.vendor:
                 raise SystemExit(" Provide --vendor and --submission-id")
 
-            canonicalize_vendor(args.vendor, submission_id, local=True, mode=mode)
-
+        canonicalize_vendor(
+            args.vendor,
+            submission_id,
+            args.submission_type,
+            args.workflow,
+            local=False,
+            mode=mode
+        )
     # -------------------------
     # AZURE MODE
     # -------------------------
@@ -425,9 +444,16 @@ if __name__ == "__main__":
                 raise SystemExit(" No Azure vendors found with autofix outputs")
             print(f"🔎 Found {len(vendors)} Azure vendors")
             for v in vendors:
-                canonicalize_vendor(v, submission_id, local=False, mode=mode)
+                canonicalize_vendor(
+                    v,
+                    submission_id,
+                    args.submission_type,
+                    args.workflow,
+                    local=False,
+                    mode=mode
+                )
         else:
             if not args.vendor:
                 raise SystemExit("Provide --vendor and --submission_id")
-            canonicalize_vendor(args.vendor,submission_id, local=False, mode=mode)
+            canonicalize_vendor(args.vendor,submission_id,args.submission_type,args.workflow, local=False, mode=mode)
 

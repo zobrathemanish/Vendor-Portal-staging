@@ -279,7 +279,7 @@ def apply_fix(df, idx, field, old_value, issue):
                 num_old = df.loc[idx, numeric_field].values[0]
                 num_new = convert_weight_to_kg(num_old, source)
                 if num_new is not None and num_new != num_old:
-                    df.loc[idx, numeric_field] = num_new
+                    df.loc[idx, numeric_field] = str(num_new)
                     transformations.append(
                         f"{numeric_field}: {num_old} {source} → {num_new} KG"
                     )
@@ -294,7 +294,7 @@ def apply_fix(df, idx, field, old_value, issue):
                     continue
                 new_dim = convert_dimension_to_cm(old_dim, source)
                 if new_dim is not None and new_dim != old_dim:
-                    df.loc[idx, col] = new_dim
+                    df.loc[idx, col] = str(new_dim)
                     transformations.append(
                         f"{col}: {old_dim} {source} → {new_dim} CM"
                     )
@@ -534,13 +534,15 @@ def run_vendor_local(vendor: str, local_mapped: str, local_issues: str):
 # =========================================================
 # AZURE MODE
 # =========================================================
-def run_vendor_azure(container, vendor: str, submission_id: str, mode: str):
+def run_vendor_azure(container, vendor: str, submission_id: str, submission_type: str, workflow: str, mode: str):
     print(f"\n🛠 Autofix (Azure Mode) for vendor: {vendor}")
 
     root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
 
     base = (
-        f"{root}/vendor={vendor}/"
+        f"{root}/workflow={workflow}/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
         f"submission={submission_id}"
     )
 
@@ -656,11 +658,19 @@ if __name__ == "__main__":
     parser.add_argument("--local_mapped", help="Local mapped.xlsx (single-vendor only)")
     parser.add_argument("--local_issues", help="Local health_issues.parquet (single-vendor only)")
     parser.add_argument("--mode", default="full")
+    parser.add_argument("--workflow", required=False)
+    parser.add_argument("--submission-type", dest="submission_type", required=False)
 
 
     args = parser.parse_args()
     submission_id = args.submission_id
-    mode = args.mode
+    submission_type = args.submission_type
+    def resolve_mode(submission_type: str) -> str:
+        if submission_type and "review" in submission_type:
+            return "post_review"
+        return "full"
+
+    mode = resolve_mode(args.submission_type)
 
     # -------------------------
     # LOCAL MODE
@@ -715,8 +725,22 @@ if __name__ == "__main__":
                 raise SystemExit(" No vendors found with profiling outputs")
             print(f"🔎 Found {len(vendors)} Azure vendors")
             for v in vendors:
-                run_vendor_azure(container, v, submission_id, mode)
+                run_vendor_azure(
+                    container,
+                    v,
+                    submission_id,
+                    args.submission_type,
+                    args.workflow,
+                    mode
+                )
         else:
             if not args.vendor:
                 raise SystemExit("Provide --vendor or use --all")
-            run_vendor_azure(container, args.vendor, submission_id, mode)
+            run_vendor_azure(
+                container,
+                args.vendor,
+                submission_id,
+                args.submission_type,
+                args.workflow,
+                mode
+            )

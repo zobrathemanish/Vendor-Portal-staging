@@ -38,7 +38,6 @@ PROFILE_BASE_DIR = "analytics/vendor_profiling"
 OUT_BASE_DIR = "analytics/vendor_scorecard"
 
 IN_REVIEW = "in_review"
-PRICING_REVIEW = "post_pricing_review"
 
 WEIGHTS = {
     "data_quality": 0.35,
@@ -47,9 +46,28 @@ WEIGHTS = {
     "operations": 0.15,
 }
 
+# =========================================================
+# PIPELINE CONTEXT (NEW)
+# =========================================================
+class PipelineContext:
+    def __init__(self, submission_type: str):
+        self.submission_type = submission_type
+
+    @property
+    def workflow(self):
+        if "pricing" in self.submission_type:
+            return "pricing"
+        return "product"
+
+    @property
+    def in_review_root(self):
+        if self.workflow == "pricing":
+            return "post_pricing_review"
+        return "in_review"
+
 #Adding Base Resolver
-def submission_base_path(vendor: str, submission_id: str, local: bool, mode: str) -> str:
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
+def submission_base_path(vendor: str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
+    root = ctx.in_review_root
 
     if local:
         return os.path.join("silver", root, f"vendor={vendor}", f"submission={submission_id}")
@@ -91,8 +109,8 @@ def read_profile(container, path: str, local: bool) -> pd.DataFrame:
     raise ValueError(f"Unsupported profile format: {path}")
 
 
-def write_outputs(container, vendor: str, submission_id: str, df: pd.DataFrame, local: bool, mode: str):
-    base = submission_base_path(vendor, submission_id, local, mode)
+def write_outputs(container, vendor, submission_id, df, local, ctx):
+    base = submission_base_path(vendor, submission_id, local, ctx)
 
     if local:
         out_dir = os.path.join(base, "analytics", "vendor_scorecard")
@@ -136,8 +154,8 @@ def list_vendors(local: bool, container=None) -> List[str]:
     return sorted(vendors)
 
 
-def get_profile_path(vendor: str, submission_id: str, local: bool, mode: str) -> str:
-    base = submission_base_path(vendor, submission_id, local, mode)
+def get_profile_path(vendor: str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
+    base = submission_base_path(vendor, submission_id, local, ctx)
 
     if local:
         return os.path.join(
@@ -234,17 +252,18 @@ def infer_vendor_from_submission(
 def run_vendor_scorecard(
     vendor: str,
     submission_id: str,
-    mode: str = "full",
+    submission_type: str = "product_submission",
     local: bool = False,
 ):
     container = None if local else get_container()
 
     print("▶️ Vendor Scorecard")
     print("Vendor:", vendor)
-    print("Mode:", mode)
+    print("Submission Type ", submission_type)
 
-    profile_path = get_profile_path(vendor, submission_id, local, mode)
+    ctx = PipelineContext(submission_type=submission_type)
 
+    profile_path = get_profile_path(vendor, submission_id, local, ctx)
     if local and not os.path.exists(profile_path):
         print(f"⚠️ No profiling found | vendor={vendor} | submission={submission_id}")
         return
@@ -294,14 +313,14 @@ def run_vendor_scorecard(
 
     df["scorecard_generated_ts"] = datetime.utcnow().isoformat()
 
-    write_outputs(container, vendor, submission_id, df, local, mode)
+    write_outputs(container, vendor, submission_id, df, local, ctx)
 
     print(f"✅ Vendor scorecard generated | vendor={vendor} | submission={submission_id}")
 
     # -------------------------------------------------
     # ADMIN UPDATE (ONLY AFTER PRICING REVIEW)
     # -------------------------------------------------
-    if not local and mode == "post_review":
+    if not local and ctx.workflow == "pricing":
         can_promote = bool(df.get("can_promote", [True])[0])
 
         if can_promote:
@@ -327,14 +346,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--vendor", required=True)
     parser.add_argument("--submission-id", required=True)
-    parser.add_argument("--mode", default="full")
+    parser.add_argument("--submission-type", default="product_submission")
+    parser.add_argument("--workflow", default="product")
     parser.add_argument("--local", action="store_true")
     args = parser.parse_args()
 
     run_vendor_scorecard(
         vendor=args.vendor,
         submission_id=args.submission_id,
-        mode=args.mode,
+        submission_type=args.submission_type,
         local=args.local,
     )
 

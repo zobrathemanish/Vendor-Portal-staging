@@ -173,18 +173,47 @@ INTERNAL_COLUMNS = [
     "_norm_part_number",
 ]
 
+class PipelineContext:
+    def __init__(self, workflow: str, stage: str):
+        self.workflow = workflow      # "product" | "pricing"
+        self.stage = stage            # "review" | "post_review"
+
+    @property
+    def in_review_root(self):
+        return "post_pricing_review" if self.workflow == "pricing" else "in_review"
+
+    @property
+    def ready_root(self):
+        return "ready_pricing_review" if self.workflow == "pricing" else "ready"
+
 def strip_internal_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop(columns=[c for c in INTERNAL_COLUMNS if c in df.columns], errors="ignore")
 
+def filter_tabs_by_workflow(tabs: Dict[str, pd.DataFrame], workflow: str) -> Dict[str, pd.DataFrame]:
+
+    if workflow == "products":
+        return {k: v for k, v in tabs.items() if k != "Pricing"}
+
+    if workflow == "pricing":
+        return {k: v for k, v in tabs.items() if k == "Pricing"}
+
+    return tabs
 
 # =========================================================
 # PROJECT ROOT (LOCAL MODE)
 # =========================================================
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))  # ETL/data_etl
 
-def local_in_review_vendor(vendor: str, mode: str) -> str:
+def local_in_review_vendor(vendor: str, workflow: str, submission_type: str, mode: str):
     root = PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT
-    return os.path.join(PROJECT_ROOT, "silver", root, f"vendor={vendor}")
+    return os.path.join(
+        PROJECT_ROOT,
+        "silver",
+        root,
+        f"workflow={workflow}",
+        f"vendor={vendor}",
+        f"submission_type={submission_type}"
+    )
 
 def local_ready_vendor_submission(vendor: str, submission_id: str, mode: str) -> str:
     ready_root = READY_PRICING_ROOT if mode == "post_review" else READY_ROOT
@@ -865,7 +894,7 @@ def load_optional_json(container, path_azure: str, path_local: str, local: bool)
     except Exception:
         return None
     
-def build_review_reports(container, vendor: str, submission_id: str, local: bool, mode: str):
+def build_review_reports(container, vendor: str, workflow: str, submission_type: str, submission_id: str, local: bool, mode: str):
     """
     Builds etl_review_reports.xlsx which contains:
     - Health report
@@ -883,7 +912,7 @@ def build_review_reports(container, vendor: str, submission_id: str, local: bool
     # -----------------------------------------------------
     if local:
         base = os.path.join(
-            local_in_review_vendor(vendor, mode),
+            local_in_review_vendor(vendor, workflow, submission_type, mode),
             f"submission={submission_id}"
         )
     else:
@@ -1069,12 +1098,12 @@ def build_review_reports(container, vendor: str, submission_id: str, local: bool
 # =========================================================
 # BUILD PER VENDOR
 # =========================================================
-def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, local: bool, mode: str):
+def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, submission_type: str, workflow: str, local: bool, mode: str):
     print(f"\n🧩 Building ETL mapped for vendor: {vendor}")
 
     if local:
         in_autofix = os.path.join(
-            local_in_review_vendor(vendor, mode),
+            local_in_review_vendor(vendor, workflow, submission_type, mode),
             f"submission={submission_id}",
             AUTOFIX_DIR,
             "data_autofixed.parquet"
@@ -1094,7 +1123,7 @@ def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, loca
             None,
             "",
             os.path.join(
-                local_in_review_vendor(vendor, mode),
+                local_in_review_vendor(vendor, workflow, submission_type, mode),
                 f"submission={submission_id}",
                 INTEGRITY_DIR,
                 "integrity_issues.parquet"
@@ -1105,7 +1134,7 @@ def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, loca
             None,
             "",
            os.path.join(
-                local_in_review_vendor(vendor, mode),
+                local_in_review_vendor(vendor, workflow, submission_type, mode),
                 f"submission={submission_id}",
                 INTEGRITY_DIR,
             "integrity_summary.json"),
@@ -1114,15 +1143,22 @@ def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, loca
 
     else:
         input_root = PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT
-        in_autofix = f"{input_root}/vendor={vendor}/submission={submission_id}/{AUTOFIX_DIR}/data_autofixed.parquet"
+        in_autofix = (
+            f"{input_root}/workflow={workflow}/"
+            f"vendor={vendor}/"
+            f"submission_type={submission_type}/"
+            f"submission={submission_id}/"
+            f"{AUTOFIX_DIR}/data_autofixed.parquet"
+        )
 
         ready_root = READY_PRICING_ROOT if mode == "post_review" else READY_ROOT
         out_base = (
-            f"{ready_root}/vendor={vendor}/"
+            f"{ready_root}/workflow={workflow}/"
+            f"vendor={vendor}/"
+            f"submission_type={submission_type}/"
             f"submission={submission_id}/"
             f"{REVIEW_DIR}"
         )
-
 
         print(f"☁️ AZURE input  = {in_autofix}")
         print(f"☁️ AZURE output = {out_base}")
@@ -1131,13 +1167,13 @@ def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, loca
 
         integrity_issues = load_optional_parquet(
             container,
-            f"{IN_REVIEW_ROOT}/vendor={vendor}/submission={submission_id}/{INTEGRITY_DIR}/integrity_issues.parquet",
+            f"{IN_REVIEW_ROOT}/workflow={workflow}/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/{INTEGRITY_DIR}/integrity_issues.parquet",
             "",
             local=False
         )
         integrity_summary = load_optional_json(
             container,
-            f"{IN_REVIEW_ROOT}/vendor={vendor}/submission={submission_id}/{INTEGRITY_DIR}/integrity_summary.json",
+            f"{IN_REVIEW_ROOT}/workflow={workflow}/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/{INTEGRITY_DIR}/integrity_summary.json",
             "",
             local=False
         )
@@ -1146,6 +1182,7 @@ def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, loca
     # Rehydrate tabs
     # -----------------------------------------------------
     tabs = _split_tabs_from_autofixed(df)
+    tabs = filter_tabs_by_workflow(tabs, workflow)
 
     # -----------------------------------------------------
     # Inject row-level hash (baseline)
@@ -1328,7 +1365,7 @@ def build_etl_mapped_for_vendor(container, vendor: str, submission_id: str, loca
     # -----------------------------------------------------
     # Generate the new review workbook
     # -----------------------------------------------------
-    build_review_reports(container=container, vendor=vendor, submission_id = submission_id, local=local, mode=mode)
+    build_review_reports(container=container, vendor=vendor,workflow=workflow, submission_type=submission_type, submission_id = submission_id, local=local, mode=mode)
 
     # -----------------------------------------------------
     # Write errors_all.xlsx
@@ -1436,10 +1473,20 @@ if __name__ == "__main__":
     parser.add_argument("--submission-id", required=True)
     parser.add_argument("--local", action="store_true")
     parser.add_argument("--mode", default="full")
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--submission-type", dest="submission_type", required=True)
 
     args = parser.parse_args()
 
     submission_id = args.submission_id
 
     container = None if args.local else get_container()
-    build_etl_mapped_for_vendor(container, args.vendor, submission_id, local=args.local, mode = args.mode)
+    build_etl_mapped_for_vendor(
+        container,
+        args.vendor,
+        submission_id,
+        args.submission_type,
+        args.workflow,
+        local=args.local,
+        mode=args.mode
+    )
