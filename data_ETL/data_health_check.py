@@ -1187,7 +1187,7 @@ def load_mapped_workbook_from_azure(container, vendor: str, submission_id: str, 
         root = IN_REVIEW_ROOT
 
     base = (
-        f"{root}/workflow=products/"
+        f"{root}/products_workflow/"
         f"vendor={vendor}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"

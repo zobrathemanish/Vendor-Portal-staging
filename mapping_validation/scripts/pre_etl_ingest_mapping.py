@@ -376,9 +376,9 @@ def save_outputs(
 
     base_prefix = (
         f"in_review/{workflow}_workflow/"
-        f"{vendor}/"
-        f"{submission_type}/"
-        f"{submission_id}/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
         f"mapped"
     )
 

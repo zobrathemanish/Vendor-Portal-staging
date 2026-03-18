@@ -154,7 +154,11 @@ def promote_to_silver(vendor: str, workflow:str, submission_id: str, submission_
         f"mapped/"
     )
     silver_mapped_prefix = (
-        f"in_review/vendor={vendor}/submission={submission_id}/mapped/"
+        f"in_review/{workflow}_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"mapped/"
     )
 
     bronze_client = blob_service.get_container_client("bronze")
@@ -288,15 +292,14 @@ def assert_identifier_integrity(df, col="Part Number"):
                 f"Identifier corruption detected in validation for {col}"
             )
 
-def process_vendor(vendor: str, workflow: str, submission_id: str, submission_type: str):
+def process_vendor(vendor: str, workflow: str,submission_type: str, submission_id: str):
     if not submission_id:
         raise RuntimeError("submission_id is REQUIRED")
 
     print(f"\n Running validation for vendor: {vendor}")
 
     success_marker = (
-        f"in_review/"
-        f"workflow={workflow}/"
+        f"in_review/{workflow}_workflow/"
         f"vendor={vendor}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"
@@ -335,8 +338,7 @@ def process_vendor(vendor: str, workflow: str, submission_id: str, submission_ty
         return
 
     base = (
-        f"in_review/"
-        f"workflow={workflow}/"
+        f"in_review/{workflow}_workflow/"
         f"vendor={vendor}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"
@@ -546,7 +548,10 @@ def process_vendor(vendor: str, workflow: str, submission_id: str, submission_ty
             "vendor": vendor,
             "file": (
                 f"raw/vendor={vendor}/"
-                f"submission={submission_id}/mapped/Item_Master.parquet"
+                f"workflow={workflow}/"
+                f"submission_type={submission_type}/"
+                f"submission={submission_id}/"
+                f"mapped/Item_Master.parquet"
             ),
             "timestamp": datetime.datetime.utcnow().isoformat(),
             "stage": "VALIDATION",
@@ -609,8 +614,7 @@ def process_vendor(vendor: str, workflow: str, submission_id: str, submission_ty
         silver_client = blob_service.get_container_client(SILVER_CONTAINER)
 
         flags_blob = (
-            f"in_review/"
-            f"workflow={workflow}/"
+            f"in_review/{workflow}_workflow/"
             f"vendor={vendor}/"
             f"submission_type={submission_type}/"
             f"submission={submission_id}/"
@@ -642,7 +646,7 @@ def main():
     parser.add_argument("--submission-type", required=True)
     args = parser.parse_args()
 
-    process_vendor(args.vendor,args.workflow, args.submission_id, args.submission_type)
+    process_vendor(args.vendor,args.workflow, args.submission_type, args.submission_id)
 
 
 if __name__ == "__main__":
