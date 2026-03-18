@@ -48,33 +48,37 @@ class BaseVendorAdapter:
     def process(self) -> Dict[str, pd.DataFrame]:
         from mapping_validation.scripts.pre_etl_ingest_mapping import log_ingestion_error
 
-        try:
-            product = self.load_product()
-        except Exception as e:
-            log_ingestion_error(
-                vendor=self.vendor,
-                stage="PRODUCT_LOAD_ERROR",
-                file=None,
-                error=e,
-                submission_id=self.submission_id
-            )
-            raise RuntimeError(f"PRODUCT_LOAD_ERROR: {e}") from e
+        product = None
+        pricing = None
 
         try:
-            pricing = None
 
-            if self.workflow == "pricing":
+            if self.workflow == "products":
+                product = self.load_product()
+
+            elif self.workflow == "pricing":
                 pricing = self.load_pricing()
 
+            else:
+                raise ValueError(f"Unknown workflow: {self.workflow}")
+
         except Exception as e:
+
+            stage = (
+                "PRODUCT_LOAD_ERROR"
+                if self.workflow == "products"
+                else "PRICING_LOAD_ERROR"
+            )
+
             log_ingestion_error(
                 vendor=self.vendor,
-                stage="PRICING_LOAD_ERROR",
+                stage=stage,
                 file=None,
                 error=e,
                 submission_id=self.submission_id
             )
-            raise RuntimeError("PRICING_LOAD_ERROR")
+
+            raise RuntimeError(f"{stage}: {e}") from e
 
         combined = {**(product or {}), **(pricing or {})}
 

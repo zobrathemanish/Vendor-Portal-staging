@@ -11,7 +11,7 @@ from mapping_validation.mapping_engine.xml_mapper import XMLMapper
 from mapping_validation.mapping_engine.excel_mapper import ExcelMapper
 from mapping_validation.vendor_adapters.base_adapter import BaseVendorAdapter
 
-from mapping_validation.helpers.file_ingestion import list_vendor_files, download_blob_bytes
+from mapping_validation.helpers.file_ingestion import download_blob_bytes
 
 
 class GroteAdapter(BaseVendorAdapter):
@@ -155,11 +155,30 @@ class GroteAdapter(BaseVendorAdapter):
         if not pricing_cfg:
             return {}
 
-        pricing_files = list_vendor_files(
-            vendor_name,
-            self.workflow,
-            self.submission_id
+        from azure.storage.blob import BlobServiceClient
+        import os
+
+        conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        blob_service = BlobServiceClient.from_connection_string(conn)
+        container = blob_service.get_container_client("bronze")
+
+        base_prefix = (
+            f"raw/vendor={self.vendor}/"
+            f"workflow={self.workflow}/"
+            f"submission_type={self.submission_type}/"
+            f"submission={self.submission_id}/"
+            f"original_excel/"
         )
+
+        print("[DEBUG PRICING PREFIX]", base_prefix)
+
+        pricing_files = [
+            blob.name
+            for blob in container.list_blobs(name_starts_with=base_prefix)
+            if blob.name.lower().endswith((".xlsx", ".xls"))
+        ]
+
+        print("[DEBUG PRICING FILES]", pricing_files)
 
         if not pricing_files:
 
@@ -177,8 +196,8 @@ class GroteAdapter(BaseVendorAdapter):
 
         if yaml_sheet:
 
-            print("🔎 YAML requested sheet:", yaml_sheet)
-            print("📄 Sheets available:", xls.sheet_names)
+            print(" YAML requested sheet:", yaml_sheet)
+            print(" Sheets available:", xls.sheet_names)
 
             if yaml_sheet not in xls.sheet_names:
 

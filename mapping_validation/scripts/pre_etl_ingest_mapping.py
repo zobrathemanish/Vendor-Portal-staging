@@ -101,7 +101,11 @@ def find_submission_files(
         blobs = []
 
         for blob in container.list_blobs(name_starts_with=prefix):
-            blobs.append(blob.name)
+            if workflow == "products" and blob.name.lower().endswith(".xml"):
+                blobs.append(blob.name)
+
+            elif workflow == "pricing" and blob.name.lower().endswith((".xlsx", ".xls")):
+                blobs.append(blob.name)
 
         if not blobs:
             raise RuntimeError(f"No files found under {prefix}")
@@ -218,14 +222,13 @@ def process_vendor(vendor: str, workflow:str, submission_type:str, submission_id
         if workflow == "products":
             combined = {
                 k: v for k, v in combined.items()
-                if k not in ["pricing"]
+                if k != "Pricing"
             }
 
         elif workflow == "pricing":
-
             combined = {
                 k: v for k, v in combined.items()
-                if k == "pricing"
+                if k == "Pricing"
             }
 
     except Exception as e:
@@ -372,11 +375,10 @@ def save_outputs(
     container = blob_service.get_container_client("silver")
 
     base_prefix = (
-        f"in_review/"
-        f"workflow={workflow}/"
-        f"vendor={vendor}/"
-        f"submission_type={submission_type}/"
-        f"submission={submission_id}/"
+        f"in_review/{workflow}_workflow/"
+        f"{vendor}/"
+        f"{submission_type}/"
+        f"{submission_id}/"
         f"mapped"
     )
 

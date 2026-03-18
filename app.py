@@ -16,6 +16,7 @@ from routes.category_review_routes import category_review_bp
 from routes.dashboard_routes import admin_bp
 from routes.assets_ingestion_routes import asset_ingestion_bp
 from routes.product_ingestion_routes import product_ingestion_bp
+from routes.pricing_ingestion_routes import pricing_ingestion_bp
 
 load_dotenv()
 
@@ -69,6 +70,7 @@ app.register_blueprint(category_review_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(asset_ingestion_bp)
 app.register_blueprint(product_ingestion_bp)
+app.register_blueprint(pricing_ingestion_bp)
 
 # ---------------------------------------
 # MAIN
