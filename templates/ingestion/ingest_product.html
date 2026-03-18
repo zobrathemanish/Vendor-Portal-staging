@@ -813,6 +813,12 @@ async function loadSubmissionOutputs(vendor, submissionId){
 
     const submissionType = document.getElementById("submissionType").value;
 
+    if (!submissionType) {
+      alert("Please select submission type.");
+      submitBtn.disabled = false;
+      return;
+    }
+
     const res = await fetch(`/ingestion/api/product-outputs/${vendor}/${submissionType}/${submissionId}`);
     const data = await res.json();
 
@@ -985,6 +991,7 @@ headers:{ "Content-Type":"application/json"},
 body:JSON.stringify({
 vendor,
 filename:file.name,
+submission_type: document.getElementById("submissionType").value,
 submission_id: submissionId
 })
 });

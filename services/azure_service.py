@@ -475,7 +475,7 @@ def create_submission_manifest(vendor, workflow, submission_id, submission_type,
 
     blob_path = (
         f"raw/vendor={vendor}/"
-        f"{workflow}/"
+        f"workflow={workflow}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"
         f"manifest.json"

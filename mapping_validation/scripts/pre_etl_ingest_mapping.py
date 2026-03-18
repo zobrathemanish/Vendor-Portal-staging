@@ -83,25 +83,30 @@ def load_vendor_mapping(vendor: str) -> dict | None:
     return None
 
 
-def find_submission_files(vendor: str, workflow: str, submission_id: str):
+def find_submission_files(
+        vendor: str,
+        workflow: str,
+        submission_type: str,
+        submission_id: str,
+    ):
+        container = blob_service.get_container_client(CONTAINER_NAME)
 
-    container = blob_service.get_container_client(CONTAINER_NAME)
+        prefix = (
+            f"{RAW_PREFIX}{vendor}/"
+            f"workflow={workflow}/"
+            f"submission_type={submission_type}/"
+            f"submission={submission_id}/"
+        )
 
-    prefix = (
-        f"{RAW_PREFIX}{vendor}/"
-        f"{workflow}/"
-        f"submission={submission_id}/"
-    )
+        blobs = []
 
-    blobs = []
+        for blob in container.list_blobs(name_starts_with=prefix):
+            blobs.append(blob.name)
 
-    for blob in container.list_blobs(name_starts_with=prefix):
-        blobs.append(blob.name)
+        if not blobs:
+            raise RuntimeError(f"No files found under {prefix}")
 
-    if not blobs:
-        raise RuntimeError(f"No files found under {prefix}")
-
-    return blobs
+        return blobs
 
 # ---------------------------------------------
 # DISCOVER VENDORS
@@ -181,9 +186,9 @@ def log_ingestion_error(
 # ---------------------------------------------
 # MAIN PROCESSOR
 # ---------------------------------------------
-def process_vendor(vendor: str, workflow:str, submission_id: str, submission_type:str):
+def process_vendor(vendor: str, workflow:str, submission_type:str, submission_id: str):
 
-    files = find_submission_files(vendor, workflow, submission_id)
+    files = find_submission_files(vendor, workflow, submission_type, submission_id)
 
     print(f"[FILES FOUND] {len(files)}")
     for f in files:
@@ -204,8 +209,9 @@ def process_vendor(vendor: str, workflow:str, submission_id: str, submission_typ
     adapter = VendorAdapterFactory.create(
         vendor,
         mapping,
+        workflow,
+        submission_type,
         submission_id,
-        workflow
     )
     try:
         combined = adapter.process()
@@ -451,8 +457,8 @@ def main():
     process_vendor(
         args.vendor,
         args.workflow,
-        args.submission_id,
-        args.submission_type
+        args.submission_type,
+        args.submission_id
     )
 
 

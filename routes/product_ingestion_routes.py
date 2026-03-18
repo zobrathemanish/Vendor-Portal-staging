@@ -47,13 +47,18 @@ def get_product_upload_sas():
     vendor = data.get("vendor")
     filename = data.get("filename")
     submission_id = data.get("submission_id")
+    submission_type = data.get("submission_type")
+    workflow = "products"
 
     if not vendor or not filename:
         return {"error": "Missing vendor or filename"}, 400
 
     blob_path = (
-        f"raw/vendor={vendor}/products/"
-        f"submission={submission_id}/original_xml/{filename}"
+        f"raw/vendor={vendor}/"
+        f"workflow={workflow}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"original_xml/{filename}"
     )
 
     sas_url = generate_upload_sas(

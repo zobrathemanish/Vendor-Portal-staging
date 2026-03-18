@@ -21,6 +21,8 @@ class GroteAdapter(BaseVendorAdapter):
 
         raw/vendor=<vendor>/<workflow>/submission=<submission_id>/
     """
+    def __init__(self, vendor, mapping, workflow, submission_type, submission_id):
+        super().__init__(vendor, mapping, workflow, submission_type, submission_id)
 
     # ------------------------------------------------------------
     # PRODUCT LOADING
@@ -32,11 +34,30 @@ class GroteAdapter(BaseVendorAdapter):
         sections = {}
         vendor_name = self.vendor
 
-        product_files = list_vendor_files(
-            vendor_name,
-            self.workflow,
-            self.submission_id
+        from azure.storage.blob import BlobServiceClient
+        import os
+
+        conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        blob_service = BlobServiceClient.from_connection_string(conn)
+        container = blob_service.get_container_client("bronze")
+
+        base_prefix = (
+            f"raw/vendor={self.vendor}/"
+            f"workflow={self.workflow}/"
+            f"submission_type={self.submission_type}/"
+            f"submission={self.submission_id}/"
+            f"original_xml/"
         )
+
+        print("[DEBUG PREFIX]", base_prefix)
+
+        product_files = [
+            blob.name
+            for blob in container.list_blobs(name_starts_with=base_prefix)
+            if blob.name.lower().endswith(".xml")
+        ]
+
+        print("[DEBUG FILES]", product_files)
 
         if not product_files:
 

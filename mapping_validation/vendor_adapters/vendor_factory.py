@@ -11,8 +11,10 @@ class VendorAdapterFactory:
     def create(
         vendor_name: str,
         mapping: dict,
+        workflow: str,
+        submission_type: str,   # ✅ ADD
         submission_id: str,
-        workflow: str
+
     ):
 
         pm = mapping.get("product_mapping", {})
@@ -27,21 +29,24 @@ class VendorAdapterFactory:
             return RigidAdapter(
                 vendor=vendor_name,
                 mapping=mapping,
-                submission_id=submission_id,
-                workflow=workflow
+                workflow=workflow,
+                submission_type = submission_type,
+                submission_id=submission_id
             )
 
         if vendor_name.lower().startswith("dayton"):
             return DaytonAdapter(
                 vendor=vendor_name,
                 mapping=mapping,
-                submission_id=submission_id,
-                workflow=workflow
+                workflow=workflow,
+                submission_type = submission_type,
+                submission_id=submission_id
             )
 
         return GroteAdapter(
             vendor=vendor_name,
             mapping=mapping,
-            submission_id=submission_id,
-            workflow=workflow
+            workflow=workflow,
+            submission_type=submission_type,
+            submission_id=submission_id
         )

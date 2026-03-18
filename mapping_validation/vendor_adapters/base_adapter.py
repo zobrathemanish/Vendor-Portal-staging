@@ -10,12 +10,13 @@ class BaseVendorAdapter:
     Abstract adapter used by all vendor-specific implementations.
     """
 
-    def __init__(self, vendor: str, mapping: dict, submission_id: str, workflow: str):
+    def __init__(self, vendor, mapping, workflow, submission_type, submission_id):
         self.vendor = vendor
         self.mapping = mapping
+        self.workflow = workflow
         self.pm = mapping.get("product_mapping", {}) or {}
         self.submission_id = submission_id
-        self.workflow = workflow
+        self.submission_type = submission_type
 
     # -----------------------------------------------------------------
     # PRODUCT MAPPING (XML or Excel). Child classes override this.
@@ -57,7 +58,7 @@ class BaseVendorAdapter:
                 error=e,
                 submission_id=self.submission_id
             )
-            raise RuntimeError("PRODUCT_LOAD_ERROR")
+            raise RuntimeError(f"PRODUCT_LOAD_ERROR: {e}") from e
 
         try:
             pricing = None

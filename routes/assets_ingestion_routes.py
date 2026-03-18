@@ -65,9 +65,11 @@ def start_asset_etl():
     submission_type = data.get("submission_type")
     blob_paths = data.get("blob_paths", [])
     submission_id = data.get("submission_id")
+    workflow = data.get("workflow")
 
     create_submission_manifest(
         vendor,
+        workflow,
         submission_id,
         submission_type,
         blob_paths
@@ -97,9 +99,6 @@ def start_asset_etl():
 @asset_ingestion_bp.route("/api/asset-status/<vendor>/<submission_id>")
 @login_required
 def get_asset_status(vendor, submission_id):
-
-    import json
-    import os
 
     status_path = os.path.join(
         current_app.root_path,
