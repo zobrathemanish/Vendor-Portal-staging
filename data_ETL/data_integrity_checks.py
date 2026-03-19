@@ -63,6 +63,13 @@ SUPPORTED_WORKFLOWS = {WORKFLOW_PRODUCTS, WORKFLOW_PRICING}
 
 RUN_TS = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
 
+def parse_submission_type(submission_type: str):
+    return {
+        "is_review": "review" in submission_type,
+        "is_delta": "delta" in submission_type,
+        "workflow": "pricing" if "pricing" in submission_type else "product"
+    }
+
 
 # =========================================================
 # MODE HELPERS
@@ -105,57 +112,78 @@ def write_bytes(container, path: str, data: bytes, local: bool):
         container.upload_blob(path, data, overwrite=True)
 
 
-def list_vendors(local: bool, container=None, mode="full", workflow: Optional[str] = None) -> List[str]:
-    """
-    Detect vendors having canonical outputs for the requested workflow.
+def list_vendors(
+    local: bool,
+    container=None,
+    workflow: str = None,
+    submission_type: str = None,
+    submission_id: str = None,
+) -> List[str]:
 
-    Mostly retained for compatibility. In practice orchestrator should pass vendor.
-    """
-    if workflow and workflow not in SUPPORTED_WORKFLOWS:
-        raise ValueError(f"Unsupported workflow: {workflow}")
+    ensure_supported_workflow(workflow)
 
-    vendors = set()
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
 
     expected_file = (
         "item_master_canonical.parquet"
         if workflow == WORKFLOW_PRODUCTS
         else "pricing_canonical.parquet"
-        if workflow == WORKFLOW_PRICING
-        else None
     )
 
+    vendors = set()
+
+    # -------------------------
+    # LOCAL MODE
+    # -------------------------
     if local:
-        base = os.path.join("silver", root)
+        base = os.path.join(
+            "silver",
+            root,
+            f"{workflow}_workflow"
+        )
+
         if not os.path.exists(base):
             return []
 
-        for dirpath, _, filenames in os.walk(base):
-            if expected_file and expected_file in filenames and f"workflow={workflow}" in dirpath:
-                try:
-                    vendor = dirpath.split("vendor=", 1)[1].split(os.sep, 1)[0]
-                    vendors.add(vendor)
-                except Exception:
-                    continue
+        for d in os.listdir(base):
+            if not d.startswith("vendor="):
+                continue
+
+            check_path = os.path.join(
+                base,
+                d,
+                f"submission_type={submission_type}",
+                f"submission={submission_id}",
+                CANONICAL_DIR,
+                expected_file
+            )
+
+            if os.path.exists(check_path):
+                vendor = d.split("vendor=", 1)[1]
+                vendors.add(vendor)
+
+    # -------------------------
+    # AZURE MODE
+    # -------------------------
     else:
-        prefix = f"{root}/workflow="
+        prefix = f"{root}/{workflow}_workflow/"
+
         for blob in container.list_blobs(name_starts_with=prefix):
             name = blob.name
 
-            if workflow and f"/workflow={workflow}/" not in f"/{name}/":
-                continue
-
-            if expected_file and not name.endswith(f"/{CANONICAL_DIR}/{expected_file}"):
-                continue
-
-            try:
-                vendor = name.split("vendor=", 1)[1].split("/", 1)[0]
-                vendors.add(vendor)
-            except Exception:
-                continue
+            if (
+                f"/submission_type={submission_type}/" in name
+                and f"/submission={submission_id}/" in name
+                and name.endswith(f"{CANONICAL_DIR}/{expected_file}")
+            ):
+                try:
+                    vendor = name.split("vendor=", 1)[1].split("/", 1)[0]
+                    vendors.add(vendor)
+                except Exception:
+                    continue
 
     return sorted(vendors)
-
 
 # =========================================================
 # HELPERS
@@ -190,22 +218,31 @@ def ensure_supported_workflow(workflow: str) -> None:
         )
 
 
-def build_base_path(vendor: str, submission_id: str, submission_type: str, workflow: str, local: bool, mode: str) -> str:
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
+def build_base_path(
+    vendor: str,
+    workflow: str,
+    submission_type: str,
+    submission_id: str,
+    local: bool,
+) -> str:
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
 
     if local:
         return os.path.join(
             "silver",
             root,
-            f"workflow={workflow}",
+            f"{workflow}_workflow",
             f"vendor={vendor}",
             f"submission_type={submission_type}",
             f"submission={submission_id}",
         )
 
     return (
-        f"{root}/workflow={workflow}/vendor={vendor}/"
-        f"submission_type={submission_type}/submission={submission_id}"
+        f"{root}/{workflow}_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}"
     )
 
 
@@ -404,7 +441,14 @@ def run_workflow_checks(workflow: str, data: Dict[str, pd.DataFrame]) -> List[Di
 # =========================================================
 # SNAPSHOT in_review → logs (append-only)
 # =========================================================
-def snapshot_in_review_to_logs(container, vendor: str, submission_id: str, submission_type: str, workflow: str, local: bool, mode: str):
+def snapshot_in_review_to_logs(
+        container,
+        vendor: str,
+        workflow: str,
+        submission_type: str,
+        submission_id: str,
+        local: bool,
+    ):
     """
     Copy selected in_review folders into silver/logs with a timestamp.
     Append-only. Never overwritten.
@@ -413,9 +457,22 @@ def snapshot_in_review_to_logs(container, vendor: str, submission_id: str, submi
         print("ℹ️  Local mode: skipping logs snapshot")
         return
 
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
-    src_base = f"{root}/workflow={workflow}/vendor={vendor}/submission_type={submission_type}/submission={submission_id}"
-    dest_base = f"logs/vendor={vendor}/submission={submission_id}/workflow={workflow}/run_ts={RUN_TS}"
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+
+    src_base = (
+        f"{root}/{workflow}_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}"
+    )
+
+    dest_base = (
+        f"logs/vendor={vendor}/"
+        f"submission={submission_id}/"
+        f"workflow={workflow}/"
+        f"run_ts={RUN_TS}"
+    )
 
     snapshot_dirs = ["profiling", "autofix", "canonical", "integrity"]
 
@@ -435,16 +492,22 @@ def snapshot_in_review_to_logs(container, vendor: str, submission_id: str, submi
 # =========================================================
 # MAIN RUNNER
 # =========================================================
-def run_vendor(vendor: str, submission_id: str, submission_type: str, workflow: str, container, local: bool, mode: str):
+def run_vendor(
+        vendor: str,
+        workflow: str,
+        submission_type: str,
+        submission_id: str,
+        container,
+        local: bool,
+    ):
     ensure_supported_workflow(workflow)
 
     base = build_base_path(
         vendor=vendor,
-        submission_id=submission_id,
-        submission_type=submission_type,
         workflow=workflow,
+        submission_type=submission_type,
+        submission_id=submission_id,
         local=local,
-        mode=mode,
     )
 
     data = load_workflow_data(base=base, workflow=workflow, container=container, local=local)
@@ -501,14 +564,18 @@ def run_vendor(vendor: str, submission_id: str, submission_type: str, workflow: 
         submission_type=submission_type,
         workflow=workflow,
         local=local,
-        mode=mode,
     )
 
 
 # =========================================================
 # External Pipeline Entry Point
 # =========================================================
-def run_integrity_checks(vendor: str, submission_id: str, submission_type: str, workflow: str, source: str = "full") -> bool:
+def run_integrity_checks(
+        vendor: str,
+        workflow: str,
+        submission_type: str,
+        submission_id: str,
+    ) -> bool:
     """
     Entry point for other pipelines.
 
@@ -517,7 +584,6 @@ def run_integrity_checks(vendor: str, submission_id: str, submission_type: str, 
     """
     ensure_supported_workflow(workflow)
 
-    mode = "post_review" if source == "post_review" else "full"
     container = get_container()
 
     run_vendor(
@@ -527,12 +593,13 @@ def run_integrity_checks(vendor: str, submission_id: str, submission_type: str, 
         workflow=workflow,
         container=container,
         local=False,
-        mode=mode,
     )
 
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+
     summary_path = (
-        f"{root}/workflow={workflow}/"
+        f"{root}/{workflow}_workflow/"
         f"vendor={vendor}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"
@@ -581,5 +648,4 @@ if __name__ == "__main__":
         workflow=args.workflow,
         container=container,
         local=args.local,
-        mode=mode,
     )

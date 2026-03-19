@@ -50,6 +50,13 @@ PROJECT_ROOT = os.path.abspath(
     os.path.dirname(__file__)
 )
 
+def parse_submission_type(submission_type: str):
+    return {
+        "is_review": "review" in submission_type,
+        "is_delta": "delta" in submission_type,
+        "workflow": "pricing" if "pricing" in submission_type else "product"
+    }
+
 #shared logic
 def enforce_identifier_types(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -79,17 +86,19 @@ def enforce_identifier_types(df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 # IO RESOLUTION
 # =========================================================
-def local_vendor_root(vendor: str, submission_id: str, mode: str) -> str:
-    root = PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT
+def local_vendor_root(vendor: str, workflow: str, submission_type: str, submission_id: str) -> str:
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
 
     return os.path.join(
         PROJECT_ROOT,
         "silver",
         root,
+        f"{workflow}_workflow",
         f"vendor={vendor}",
-        f"submission={submission_id}"
+        f"submission_type={submission_type}",
+        f"submission={submission_id}",
     )
-
 
 
 def get_container():
@@ -126,24 +135,54 @@ def write_local_bytes(path: str, data: bytes):
 
 #Vendor Discovery Helpers
 
-def list_vendors_local() -> List[str]:
-    root = os.path.join(PROJECT_ROOT, "silver", IN_REVIEW_ROOT)
-    if not os.path.exists(root):
-        return []
-    return sorted(
-        d.split("vendor=", 1)[1]
-        for d in os.listdir(root)
-        if d.startswith("vendor=")
+def list_vendors_local(workflow: str, submission_type: str, submission_id: str) -> List[str]:
+    meta = parse_submission_type(submission_type)
+    root_name = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
+
+    root = os.path.join(
+        PROJECT_ROOT,
+        "silver",
+        root_name,
+        f"{workflow}_workflow",
     )
 
+    if not os.path.exists(root):
+        return []
 
-def list_vendors_azure(container) -> List[str]:
-    prefix = f"{IN_REVIEW_ROOT}/vendor="
+    vendors = []
+    for d in os.listdir(root):
+        if d.startswith("vendor="):
+            check_path = os.path.join(
+                root,
+                d,
+                f"submission_type={submission_type}",
+                f"submission={submission_id}",
+                AUTOFIX_DIRNAME,
+                "data_autofixed.parquet"
+            )
+            if os.path.exists(check_path):
+                vendors.append(d.split("vendor=", 1)[1])
+
+    return sorted(vendors)
+
+
+def list_vendors_azure(container, workflow: str, submission_type: str, submission_id: str) -> List[str]:
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
+
+    prefix = f"{root}/{workflow}_workflow/"
+
     vendors = set()
     for blob in container.list_blobs(name_starts_with=prefix):
-        if f"/{AUTOFIX_DIRNAME}/data_autofixed.parquet" in blob.name:
+        expected = (
+            f"/submission_type={submission_type}/"
+            f"submission={submission_id}/"
+            f"{AUTOFIX_DIRNAME}/data_autofixed.parquet"
+        )
+        if expected in blob.name and "vendor=" in blob.name:
             v = blob.name.split("vendor=", 1)[1].split("/", 1)[0]
             vendors.add(v)
+
     return sorted(vendors)
 
 
@@ -262,25 +301,32 @@ def excel_bytes(item, pricing, attrs, summary) -> bytes:
 # =========================================================
 # RUNNER
 # =========================================================
-def canonicalize_vendor(vendor: str, submission_id: str, submission_type: str, workflow: str, local: bool, mode: str):
+def canonicalize_vendor(
+        vendor: str,
+        workflow: str,
+        submission_type: str,
+        submission_id: str,
+        local: bool,
+    ):
     print(f"\n🧱 Canonicalizing vendor: {vendor}")
     if local:
         print("📁 Mode      : LOCAL")
         print(f"📁 PROJECT_ROOT = {PROJECT_ROOT}")
-        print(f"📁 Vendor root  = {local_vendor_root(vendor)}")
+        print(f"📁 Vendor root  = {local_vendor_root(vendor, workflow, submission_type, submission_id)}")
     else:
         print("☁️ Mode      : AZURE")
 
     if local:
-        root = local_vendor_root(vendor, submission_id, mode)
+        root = local_vendor_root(vendor, workflow, submission_type, submission_id)
         in_path = os.path.join(root, AUTOFIX_DIRNAME, "data_autofixed.parquet")
         df = pd.read_parquet(in_path)
     else:
         container = get_container()
-        root = PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT
+        meta = parse_submission_type(submission_type)
+        root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
 
         blob_path = (
-            f"{root}/workflow={workflow}/"
+            f"{root}/{workflow}_workflow/"
             f"vendor={vendor}/"
             f"submission_type={submission_type}/"
             f"submission={submission_id}/"
@@ -314,7 +360,7 @@ def canonicalize_vendor(vendor: str, submission_id: str, submission_type: str, w
     }
 
     if local:
-        root_path = local_vendor_root(vendor, submission_id, mode)
+        root_path = local_vendor_root(vendor, workflow, submission_type, submission_id)
 
         base = os.path.join(root_path, CANONICAL_DIRNAME)
         review = os.path.join(root_path, REVIEW_DIRNAME)
@@ -329,17 +375,18 @@ def canonicalize_vendor(vendor: str, submission_id: str, submission_type: str, w
                           json.dumps(summary, indent=2).encode())
         write_local_parquet(f"{review}/review_changes.parquet", pd.DataFrame())
     else:
-        root = PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT
+        root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
 
         base = (
-            f"{root}/workflow={workflow}/"
+            f"{root}/{workflow}_workflow/"
             f"vendor={vendor}/"
             f"submission_type={submission_type}/"
             f"submission={submission_id}/"
             f"{CANONICAL_DIRNAME}"
         )
+
         review = (
-            f"{root}/workflow={workflow}/"
+            f"{root}/{workflow}_workflow/"
             f"vendor={vendor}/"
             f"submission_type={submission_type}/"
             f"submission={submission_id}/"
@@ -367,7 +414,12 @@ def canonicalize_vendor(vendor: str, submission_id: str, submission_type: str, w
 # External Pipeline Entry Point
 # =========================================================
 
-def run_data_canonicalize(vendor: str, submission_id: str, source: str = "full") -> None:
+def run_data_canonicalize(
+        vendor: str,
+        workflow: str,
+        submission_type: str,
+        submission_id: str
+    ) -> None:
     """
     Entry point for other pipelines (e.g. post-review pipeline).
     source:
@@ -375,16 +427,12 @@ def run_data_canonicalize(vendor: str, submission_id: str, source: str = "full")
         "reviewed"  → post_pricing_review
     """
 
-    if source == "reviewed":
-        mode = "post_review"
-    else:
-        mode = "full"
-
     canonicalize_vendor(
         vendor=vendor,
+        workflow=workflow,
+        submission_type=submission_type,
         submission_id=submission_id,
         local=False,
-        mode=mode
     )
 
 
@@ -400,20 +448,22 @@ if __name__ == "__main__":
     parser.add_argument("--all", action="store_true", help="Run for all vendors")
     parser.add_argument("--local", action="store_true", help="Run in local mode")
     parser.add_argument("--mode", default="full")
-    parser.add_argument("--workflow", required=False)
-    parser.add_argument("--submission-type", dest="submission_type", required=False)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--submission-type", dest="submission_type", required=True)
 
     args = parser.parse_args()
     submission_id = args.submission_id
     submission_type = args.submission_type
-    def resolve_mode(submission_type: str) -> str:
-        if submission_type and "review" in submission_type:
-            return "post_review"
-        return "full"
 
-    mode = resolve_mode(args.submission_type)
+    if not submission_id:
+        raise SystemExit("Provide --submission-id")
 
+    if not args.workflow:
+        raise SystemExit("Provide --workflow")
 
+    if not submission_type:
+        raise SystemExit("Provide --submission-type")
+  
     # -------------------------
     # LOCAL MODE
     # -------------------------
@@ -426,11 +476,10 @@ if __name__ == "__main__":
 
         canonicalize_vendor(
             args.vendor,
-            submission_id,
-            args.submission_type,
             args.workflow,
-            local=False,
-            mode=mode
+            args.submission_type,
+            submission_id,
+            local=True,
         )
     # -------------------------
     # AZURE MODE
@@ -439,21 +488,31 @@ if __name__ == "__main__":
         container = get_container()
 
         if args.all:
-            vendors = list_vendors_azure(container)
+            vendors = list_vendors_azure(
+                container,
+                args.workflow,
+                args.submission_type,
+                submission_id
+            )
             if not vendors:
                 raise SystemExit(" No Azure vendors found with autofix outputs")
             print(f"🔎 Found {len(vendors)} Azure vendors")
             for v in vendors:
                 canonicalize_vendor(
                     v,
-                    submission_id,
-                    args.submission_type,
                     args.workflow,
+                    args.submission_type,
+                    submission_id,
                     local=False,
-                    mode=mode
                 )
         else:
             if not args.vendor:
                 raise SystemExit("Provide --vendor and --submission_id")
-            canonicalize_vendor(args.vendor,submission_id,args.submission_type,args.workflow, local=False, mode=mode)
+            canonicalize_vendor(
+                args.vendor,
+                args.workflow,
+                args.submission_type,
+                submission_id,
+                local=False,
+            )
 

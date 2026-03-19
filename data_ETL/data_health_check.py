@@ -110,10 +110,13 @@ def local_vendor_root(vendor: str) -> str:
         f"vendor={vendor}"
     )
 
-def resolve_mode(submission_type: str) -> str:
-    if "review" in submission_type:
-        return "post_review"
-    return "full"
+
+def parse_submission_type(submission_type: str):
+    return {
+        "is_review": "review" in submission_type,
+        "is_delta": "delta" in submission_type,
+        "workflow": "pricing" if "pricing" in submission_type else "product"
+    }
 
 # -----------------------------
 # ENTITY-level required fields (per tab)
@@ -1180,14 +1183,16 @@ def compute_statistics(vendor: str, tab: str, df: pd.DataFrame) -> Dict[str, Any
 # =========================================================
 # Load workbook
 # =========================================================
-def load_mapped_workbook_from_azure(container, vendor: str, submission_id: str, submission_type: str, mode: str):
-    if mode == "post_review":
+def load_mapped_workbook_from_azure(container, vendor: str, workflow:str, submission_type: str, submission_id: str):
+    meta = parse_submission_type(submission_type)
+
+    if meta["is_review"]:
         root = PRICING_REVIEW_ROOT
     else:
         root = IN_REVIEW_ROOT
 
     base = (
-        f"{root}/products_workflow/"
+        f"{root}/{workflow}_workflow/"
         f"vendor={vendor}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"
@@ -1201,9 +1206,9 @@ def load_mapped_workbook_from_azure(container, vendor: str, submission_id: str, 
         raw = download_blob_bytes(container, xlsx_blob)
         wb_all = pd.read_excel(BytesIO(raw), sheet_name=None, dtype=str)
         
-        if mode == "post_review":
-            # In post-review, input is etl_mapped.xlsx which contains Summary.
-            # We must strictly enforce business schema only.
+        meta = parse_submission_type(submission_type)
+
+        if meta["is_review"]:
             wb = {
                 name: df
                 for name, df in wb_all.items()
@@ -1232,7 +1237,8 @@ def load_mapped_workbook_from_azure(container, vendor: str, submission_id: str, 
 
 def load_mapped_workbook_local(local_xlsx: str, mode: str) -> Tuple[Dict[str, pd.DataFrame], str]:
     wb_all = pd.read_excel(local_xlsx, sheet_name=None, dtype=str)
-    if mode == "post_review":
+    meta = parse_submission_type(submission_type)
+    if meta["is_review"]:
         wb = {
             name: df
             for name, df in wb_all.items()
@@ -1393,23 +1399,25 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
 def write_vendor_outputs(
     container,
     vendor: str,
-    submission_id: str,
+    workflow:str,
     submission_type:str,
+    submission_id: str,
     issues_df: pd.DataFrame,
     row_missing_df: pd.DataFrame,
     col_missing_df: pd.DataFrame,
     entity_comp_df: pd.DataFrame,
     payload: Dict[str, Any],
-    mode: str,
 ) -> None:
     
-    if mode == "post_review":
+    meta = parse_submission_type(submission_type)
+
+    if meta["is_review"]:
         root = PRICING_REVIEW_ROOT
     else:
         root = IN_REVIEW_ROOT
 
     out_base = (
-        f"{root}/workflow=products/"
+        f"{root}/{workflow}_workflow/"
         f"vendor={vendor}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"
@@ -1442,13 +1450,16 @@ def write_vendor_outputs(
 # =========================================================
 # Run modes
 # =========================================================
-def run_vendor_azure(container, vendor: str, submission_id: str, submission_type: str, mode: str):
+def run_vendor_azure(container, vendor: str, workflow: str, submission_type: str, submission_id: str):
     print(f"\n🩺 Health check vendor: {vendor}")
-    print(f"   ↳ input : {IN_REVIEW_ROOT}/workflow=products/vendor={vendor}/submission_type={submission_type}/mapped/mapped.xlsx")
+    print(
+        f"   ↳ input : {IN_REVIEW_ROOT}/{workflow}_workflow/"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/mapped/mapped.xlsx"
+    )
 
-    sheets, source_file = load_mapped_workbook_from_azure(container, vendor, submission_id, submission_type, mode)
+    sheets, source_file = load_mapped_workbook_from_azure(container, vendor, workflow, submission_type, submission_id)
     issues_df, row_missing_df, col_missing_df, entity_comp_df, payload = profile_vendor(vendor, sheets, source_file)
-    write_vendor_outputs(container, vendor, submission_id, submission_type, issues_df, row_missing_df, col_missing_df, entity_comp_df, payload, mode)
+    write_vendor_outputs(container, vendor, workflow, submission_type, submission_id, issues_df, row_missing_df, col_missing_df, entity_comp_df, payload)
 
     print(f"✅ Done: {vendor} | issues={len(issues_df)} | tabs={len(sheets)}")
 
@@ -1524,7 +1535,7 @@ def run_vendor_local(local_xlsx: str, vendor: str) -> None:
 # External Pipeline Entry Point
 # =========================================================
 
-def run_health_check(vendor: str, submission_id: str, submission_type: str, source: str = "full") -> None:
+def run_health_check(vendor: str, workflow:str, submission_type: str, submission_id: str,  source: str = "full") -> None:
     """
     Entry point for other pipelines (e.g. post-review pipeline).
     source:
@@ -1539,16 +1550,18 @@ def run_health_check(vendor: str, submission_id: str, submission_type: str, sour
         mode = "full"
 
     print("MODE:", mode)
-    print("ROOT:", PRICING_REVIEW_ROOT if mode == "post_review" else IN_REVIEW_ROOT)
+    meta = parse_submission_type(submission_type)
+
+    print("ROOT:", PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT)
 
     container = get_container()
 
     run_vendor_azure(
         container=container,
         vendor=vendor,
-        submission_id=submission_id,
+        workflow=workflow,
         submission_type = submission_type,
-        mode=mode
+        submission_id=submission_id,
     )
 
 # =========================================================
@@ -1565,12 +1578,11 @@ if __name__ == "__main__":
     parser.add_argument("--local", action="store_true", help="Run in local mode (auto-detect mapped.xlsx)")
     parser.add_argument("--local_xlsx", type=str, help="Explicit path to mapped.xlsx (local debug)")
     parser.add_argument("--submission-type", required=True)
-    parser.add_argument("--workflow", required=False)
+    parser.add_argument("--workflow", required=True)
 
     args = parser.parse_args()
     submission_id = args.submission_id
     submission_type = args.submission_type
-    mode = resolve_mode(submission_type)
 
     print("🔥 USING data_health_check FROM:", __file__)
 
@@ -1617,9 +1629,9 @@ if __name__ == "__main__":
             raise SystemExit("No vendors found with mapped outputs under in_review/")
         print(f"🔎 Running health check for {len(vendors)} vendors")
         for v in vendors:
-            run_vendor_azure(container, v, submission_id, submission_type, mode)
+            run_vendor_azure(container, v, args.workflow, submission_type, submission_id)
     else:
         if not args.vendor:
             raise SystemExit(" Provide --vendor and --submission_id")
-        run_vendor_azure(container, args.vendor, submission_id, submission_type, mode)
+        run_vendor_azure(container, args.vendor, args.workflow, submission_type, submission_id)
 

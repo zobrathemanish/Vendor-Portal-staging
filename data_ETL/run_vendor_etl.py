@@ -39,7 +39,7 @@ STEPS = [
 # ============================================================
 # RUNNER
 # ============================================================
-def run_step(name, script, vendor, workflow, submission_id, submission_type, local: bool):
+def run_step(name, script, vendor, workflow, submission_type, submission_id, local: bool):
     print(f"\n▶️  {name}")
 
     module_name = f"data_ETL.{script.replace('.py','')}"
@@ -89,6 +89,8 @@ def main():
     args = parser.parse_args()
 
     submission_id = args.submission_id
+    submission_type = args.submission_type
+    workflow = args.workflow
     local = args.local
 
     if args.all:
@@ -118,9 +120,9 @@ def main():
             name,
             script,
             vendor,
-            args.workflow,
+            workflow,
+            submission_type,
             submission_id,
-            args.submission_type,
             local
         )
 

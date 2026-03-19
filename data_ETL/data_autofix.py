@@ -61,43 +61,79 @@ PROJECT_ROOT = os.path.abspath(
     os.path.dirname(__file__)
 )
 
-
+def parse_submission_type(submission_type: str):
+    return {
+        "is_review": "review" in submission_type,
+        "is_delta": "delta" in submission_type,
+        "workflow": "pricing" if "pricing" in submission_type else "product"
+    }
 
 # Helpers
 
-def local_vendor_root(vendor: str, mode: str) -> str:
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
+def local_vendor_root(vendor: str, workflow: str, submission_type: str, submission_id: str) -> str:
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
 
     return os.path.join(
         PROJECT_ROOT,
         "silver",
         root,
-        f"vendor={vendor}"
+        f"{workflow}_workflow",
+        f"vendor={vendor}",
+        f"submission_type={submission_type}",
+        f"submission={submission_id}",
     )
 
+def list_vendors_local(workflow: str, submission_type: str, submission_id: str) -> List[str]:
+    meta = parse_submission_type(submission_type)
+    root_name = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
 
-def list_vendors_local() -> List[str]:
-    root = os.path.join(PROJECT_ROOT, "silver", IN_REVIEW)
+    root = os.path.join(
+        PROJECT_ROOT,
+        "silver",
+        root_name,
+        f"{workflow}_workflow",
+    )
     if not os.path.exists(root):
         return []
+
     vendors = []
     for d in os.listdir(root):
         if d.startswith("vendor="):
-            vendors.append(d.split("vendor=", 1)[1])
+            vendor_root = os.path.join(
+                root,
+                d,
+                f"submission_type={submission_type}",
+                f"submission={submission_id}",
+                PROFILE_DIRNAME,
+                ISSUES_FILENAME,
+            )
+            if os.path.exists(vendor_root):
+                vendors.append(d.split("vendor=", 1)[1])
+
     return sorted(vendors)
 
 
-def list_vendors_azure(container) -> List[str]:
-    prefix = f"{IN_REVIEW}/vendor="
+def list_vendors_azure(container, workflow: str, submission_type: str, submission_id: str) -> List[str]:
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+
+    prefix = (
+        f"{root}/{workflow}_workflow/"
+    )
+
     vendors = set()
     for blob in container.list_blobs(name_starts_with=prefix):
-        if f"/{PROFILE_DIRNAME}/{ISSUES_FILENAME}" in blob.name:
+        expected_suffix = (
+            f"/submission_type={submission_type}/"
+            f"submission={submission_id}/"
+            f"{PROFILE_DIRNAME}/{ISSUES_FILENAME}"
+        )
+        if expected_suffix in blob.name and "vendor=" in blob.name:
             v = blob.name.split("vendor=", 1)[1].split("/", 1)[0]
             vendors.add(v)
+
     return sorted(vendors)
-
-
-
 
 # =========================================================
 # Load YAML UOM config
@@ -443,7 +479,14 @@ def add_entity_identity(flat: pd.DataFrame, vendor: str):
 # =========================================================
 # LOCAL MODE
 # =========================================================
-def run_vendor_local(vendor: str, local_mapped: str, local_issues: str):
+def run_vendor_local(
+    vendor: str,
+    workflow: str,
+    submission_type: str,
+    submission_id: str,
+    local_mapped: str,
+    local_issues: str,
+):
     print(f"\n🛠 Autofix (Local Mode) for vendor: {vendor}")
 
     sheets = pd.read_excel(
@@ -486,7 +529,7 @@ def run_vendor_local(vendor: str, local_mapped: str, local_issues: str):
     flat = add_entity_identity(flat, vendor)
     flat = enforce_identifier_types(flat)
 
-    vendor_root = local_vendor_root(vendor, mode)
+    vendor_root = local_vendor_root(vendor, workflow, submission_type, submission_id)
     out_dir = os.path.join(vendor_root, OUT_DIRNAME)
     os.makedirs(out_dir, exist_ok=True)
 
@@ -534,13 +577,20 @@ def run_vendor_local(vendor: str, local_mapped: str, local_issues: str):
 # =========================================================
 # AZURE MODE
 # =========================================================
-def run_vendor_azure(container, vendor: str, submission_id: str, submission_type: str, workflow: str, mode: str):
-    print(f"\n🛠 Autofix (Azure Mode) for vendor: {vendor}")
+def run_vendor_azure(
+        container,
+        vendor: str,
+        workflow: str,
+        submission_type: str,
+        submission_id: str,
+    ):
+    print(f"\n Autofix (Azure Mode) for vendor: {vendor}")
 
-    root = PRICING_REVIEW if mode == "post_review" else IN_REVIEW
+    meta = parse_submission_type(submission_type)
+    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
 
     base = (
-        f"{root}/workflow={workflow}/"
+        f"{root}/{workflow}_workflow/"
         f"vendor={vendor}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}"
@@ -622,26 +672,15 @@ def run_vendor_azure(container, vendor: str, submission_id: str, submission_type
 # External Pipeline Entry Point
 # =========================================================
 
-def run_autofix(vendor: str, submission_id: str, source: str = "full") -> None:
-    """
-    Entry point for other pipelines (e.g. post-review pipeline).
-    source:
-        "full"      → in_review
-        "reviewed"  → post_pricing_review
-    """
-
+def run_autofix(vendor: str, workflow: str, submission_type: str, submission_id: str) -> None:
     container = get_container()
-
-    if source == "reviewed":
-        mode = "post_review"
-    else:
-        mode = "full"
 
     run_vendor_azure(
         container=container,
         vendor=vendor,
+        workflow=workflow,
+        submission_type=submission_type,
         submission_id=submission_id,
-        mode=mode
     )
 
 # =========================================================
@@ -657,32 +696,34 @@ if __name__ == "__main__":
     parser.add_argument("--local", action="store_true", help="Run in local mode")
     parser.add_argument("--local_mapped", help="Local mapped.xlsx (single-vendor only)")
     parser.add_argument("--local_issues", help="Local health_issues.parquet (single-vendor only)")
-    parser.add_argument("--mode", default="full")
-    parser.add_argument("--workflow", required=False)
-    parser.add_argument("--submission-type", dest="submission_type", required=False)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--submission-type", dest="submission_type", required=True)
 
 
     args = parser.parse_args()
     submission_id = args.submission_id
     submission_type = args.submission_type
-    def resolve_mode(submission_type: str) -> str:
-        if submission_type and "review" in submission_type:
-            return "post_review"
-        return "full"
 
-    mode = resolve_mode(args.submission_type)
+    if not submission_id:
+        raise SystemExit("Provide --submission-id")
+
+    if not args.workflow:
+        raise SystemExit("Provide --workflow")
+
+    if not submission_type:
+        raise SystemExit("Provide --submission-type")
 
     # -------------------------
     # LOCAL MODE
     # -------------------------
     if args.local:
         if args.all:
-            vendors = list_vendors_local()
+            vendors = list_vendors_local(args.workflow, args.submission_type, submission_id)
             if not vendors:
                 raise SystemExit(" No local vendors found under silver/in_review/")
             print(f"🔎 Found {len(vendors)} local vendors")
             for v in vendors:
-                vendor_root = local_vendor_root(v, mode)
+                vendor_root = local_vendor_root(v, args.workflow, args.submission_type, submission_id)
                 mapped = os.path.join(vendor_root, MAPPED_DIRNAME, MAPPED_FILENAME)
                 issues = os.path.join(vendor_root, PROFILE_DIRNAME, ISSUES_FILENAME)
 
@@ -690,12 +731,24 @@ if __name__ == "__main__":
                     print(f"⚠️ Skipping {v}: missing mapped or health_issues")
                     continue
 
-                run_vendor_local(v, mapped, issues)
+                run_vendor_local(
+                    v,
+                    args.workflow,
+                    args.submission_type,
+                    submission_id,
+                    mapped,
+                    issues,
+                )
         else:
             if not args.vendor or not submission_id:
                 raise SystemExit(" Provide --vendor and --submission-id")
 
-            vendor_root = local_vendor_root(args.vendor, mode)
+            vendor_root = local_vendor_root(
+                args.vendor,
+                args.workflow,
+                args.submission_type,
+                submission_id,
+            )
 
             mapped = args.local_mapped or os.path.join(
                 vendor_root, MAPPED_DIRNAME, MAPPED_FILENAME
@@ -710,8 +763,14 @@ if __name__ == "__main__":
             if not os.path.exists(issues):
                 raise SystemExit(f" health_issues.parquet not found at: {issues}")
 
-            run_vendor_local(args.vendor, mapped, issues)
-
+            run_vendor_local(
+                args.vendor,
+                args.workflow,
+                args.submission_type,
+                submission_id,
+                mapped,
+                issues,
+            )
 
     # -------------------------
     # AZURE MODE
@@ -720,7 +779,12 @@ if __name__ == "__main__":
         container = get_container()
 
         if args.all:
-            vendors = list_vendors_azure(container)
+            vendors = list_vendors_azure(
+                container,
+                args.workflow,
+                args.submission_type,
+                submission_id,
+            )
             if not vendors:
                 raise SystemExit(" No vendors found with profiling outputs")
             print(f"🔎 Found {len(vendors)} Azure vendors")
@@ -728,10 +792,9 @@ if __name__ == "__main__":
                 run_vendor_azure(
                     container,
                     v,
-                    submission_id,
-                    args.submission_type,
                     args.workflow,
-                    mode
+                    args.submission_type,
+                    submission_id,
                 )
         else:
             if not args.vendor:
@@ -739,8 +802,7 @@ if __name__ == "__main__":
             run_vendor_azure(
                 container,
                 args.vendor,
-                submission_id,
-                args.submission_type,
                 args.workflow,
-                mode
+                args.submission_type,
+                submission_id,
             )
