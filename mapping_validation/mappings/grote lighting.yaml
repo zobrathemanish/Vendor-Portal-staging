@@ -8,6 +8,7 @@ product_mapping:
   Item Master:
     Brand Label: "ns:BrandLabel"
     Part Number: "ns:PartNumber"
+    PartTerminologyID: "ns:PartTerminologyID"
     UNSPSC: null                      # Grote does NOT send UNSPSC
     HazmatFlag: "ns:HazardousMaterialCode"
 

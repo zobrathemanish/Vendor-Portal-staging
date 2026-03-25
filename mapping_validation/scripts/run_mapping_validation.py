@@ -1,3 +1,4 @@
+#run_mapping_validation.py (orchestrator)
 import argparse
 import subprocess
 import sys
@@ -36,7 +37,6 @@ def main():
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--submission-id", required=True)
     parser.add_argument("--submission-type", required=True)
-    parser.add_argument("--blob-path", required=True)
 
     args = parser.parse_args()
 
@@ -44,7 +44,6 @@ def main():
     workflow = args.workflow
     submission_id = args.submission_id
     submission_type = args.submission_type
-    blob_path = args.blob_path
 
     print("===================================")
     print("RUNNING MAPPING")

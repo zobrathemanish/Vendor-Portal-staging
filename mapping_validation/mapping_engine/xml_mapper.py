@@ -57,6 +57,15 @@ class XMLMapper:
         for item in items:
             row: Dict[str, Any] = {}
 
+            # --------------------------------------------------
+            # PTID EXTRACTION (SAFE ADDITION)
+            # --------------------------------------------------
+            try:
+                ptid_node = item.find("ns:PartTerminologyID", namespaces=self.nsmap)
+                ptid_value = ptid_node.text if ptid_node is not None else None
+            except Exception:
+                ptid_value = None
+
             for col, expr in section_cfg.items():
                 if expr is None:
                     row[col] = None
@@ -101,6 +110,10 @@ class XMLMapper:
 
             if row.get("Quantity UOM"):
                 row["Quantity UOM"] = str(row["Quantity UOM"]).strip()
+            
+            # Inject PTID without breaking schema
+            if "PartTerminologyID" not in row:
+                row["PartTerminologyID"] = ptid_value
 
             rows.append(row)
 

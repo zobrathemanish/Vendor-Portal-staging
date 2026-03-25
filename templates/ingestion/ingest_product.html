@@ -438,6 +438,7 @@ Fort Garry Industries
        id="productFile"
        name="product_file"
        accept=".xml"
+       multiple
        required>
 
 <small class="text-muted">
@@ -967,7 +968,7 @@ submissionId = new Date().toISOString()
   .replace(/[-:]/g,"")
   .split(".")[0];
 
-const file = productInput.files[0];
+const files = productInput.files;
 const vendor = vendorSelect.value;
 
 if(!vendor){
@@ -975,8 +976,8 @@ alert("Please select vendor.");
 return;
 }
 
-if(!file){
-alert("Please upload product XML file.");
+if(!files || files.length === 0){
+alert("Please upload at least one product XML file.");
 return;
 }
 
@@ -985,35 +986,37 @@ submitBtn.disabled = true;
 
 try{
 
-const res = await fetch("/ingestion/get-product-upload-sas",{
-method:"POST",
-headers:{ "Content-Type":"application/json"},
-body:JSON.stringify({
-vendor,
-filename:file.name,
-submission_type: document.getElementById("submissionType").value,
-submission_id: submissionId
-})
-});
+for (let i = 0; i < files.length; i++) {
 
-const data = await res.json();
+    const file = files[i];
 
-const blobClient = new BlockBlobClient(data.sas_url);
+    const res = await fetch("/ingestion/get-product-upload-sas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            vendor,
+            filename: file.name,
+            submission_type: document.getElementById("submissionType").value,
+            submission_id: submissionId
+        })
+    });
 
-await blobClient.uploadBrowserData(file,{
-overwrite:true,
-blobHTTPHeaders:{ blobContentType:"application/xml" },
-onProgress:(p)=>{
+    const data = await res.json();
 
-const percent = Math.round((p.loadedBytes/file.size)*100);
+    const blobClient = new BlockBlobClient(data.sas_url);
 
-progressBar.style.width = percent + "%";
-progressBar.textContent = file.name + " " + percent + "%";
+    await blobClient.uploadBrowserData(file, {
+        overwrite: true,
+        blobHTTPHeaders: { blobContentType: "application/xml" },
+        onProgress: (p) => {
 
+            const percent = Math.round((p.loadedBytes / file.size) * 100);
+
+            progressBar.style.width = percent + "%";
+            progressBar.textContent = `${file.name} ${percent}%`;
+        }
+    });
 }
-});
-
-blobPathInput.value = data.blob_path;
 
 progressBar.classList.remove("progress-bar-animated");
 progressBar.classList.add("bg-success");
@@ -1027,7 +1030,6 @@ method:"POST",
 headers:{ "Content-Type":"application/json"},
 body:JSON.stringify({
 vendor,
-blob_path: data.blob_path,
 submission_type: document.getElementById("submissionType").value,
 submission_id: submissionId
 })

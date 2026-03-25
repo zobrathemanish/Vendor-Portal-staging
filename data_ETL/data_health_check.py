@@ -337,12 +337,12 @@ def add_lineage_and_ids(df: pd.DataFrame, vendor: str, source_file: str, source_
         df["_entity_id"] = df["_entity_key"].apply(lambda p: sha256(f"{vendor}|{p}") if p else None)
         #DEBUG
         print("DEBUG AFTER NORMALIZATION:")
-        print("Original:", df[part_col].head(5).tolist())
-        print("EntityKey:", df["_entity_key"].head(5).tolist())
+        # print("Original:", df[part_col].head(5).tolist())
+        # print("EntityKey:", df["_entity_key"].head(5).tolist())
         df[part_col] = df["_entity_key"]
         print("after doing whatsoever")
-        print("Original:", df[part_col].head(5).tolist())
-        print("EntityKey:", df["_entity_key"].head(5).tolist())
+        # print("Original:", df[part_col].head(5).tolist())
+        # print("EntityKey:", df["_entity_key"].head(5).tolist())
         df[part_col] = df["_entity_key"]
 
     else:

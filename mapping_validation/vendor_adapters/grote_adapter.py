@@ -1,4 +1,4 @@
-# vendor_adapters/grote_adapter.py
+# vendor_adapters/grote_adapter.py (this adapter is used by all opticat vendors although named grote_adapter)
 
 from __future__ import annotations
 from typing import Dict
@@ -27,11 +27,13 @@ class GroteAdapter(BaseVendorAdapter):
     # ------------------------------------------------------------
     # PRODUCT LOADING
     # ------------------------------------------------------------
+    # ------------------------------------------------------------
+    # PRODUCT LOADING
+    # ------------------------------------------------------------
     def load_product(self) -> Dict[str, pd.DataFrame]:
 
         from mapping_validation.scripts.pre_etl_ingest_mapping import log_ingestion_error  # local import to avoid circular dependency
 
-        sections = {}
         vendor_name = self.vendor
 
         from azure.storage.blob import BlobServiceClient
@@ -59,6 +61,9 @@ class GroteAdapter(BaseVendorAdapter):
 
         print("[DEBUG FILES]", product_files)
 
+        # ------------------------------------------------------------
+        # HANDLE NO FILES
+        # ------------------------------------------------------------
         if not product_files:
 
             sections = {}
@@ -71,76 +76,108 @@ class GroteAdapter(BaseVendorAdapter):
                 if isinstance(sec_cfg, dict):
 
                     if sec_name == "Item Master":
-
-                        sections[sec_name] = pd.DataFrame(
-                            columns=list(sec_cfg.keys())
-                        )
-
+                        sections[sec_name] = pd.DataFrame(columns=list(sec_cfg.keys()))
                     else:
-
-                        sections[sec_name] = pd.DataFrame(
-                            columns=list(sec_cfg.get("mappings", {}).keys())
-                        )
+                        sections[sec_name] = pd.DataFrame(columns=list(sec_cfg.get("mappings", {}).keys()))
 
             raise RuntimeError(
                 f"No product files found for vendor={vendor_name}, submission={self.submission_id}"
             )
 
-        xml_path = product_files[0]
+        # ------------------------------------------------------------
+        # MULTI-FILE PROCESSING
+        # ------------------------------------------------------------
+        all_section_frames = {
+            sec_name: []
+            for sec_name in self.pm.keys()
+            if sec_name != "Pricing"
+        }
 
-        print(f"[XML FILE] {xml_path}")
+        for xml_path in product_files:
 
-        try:
+            print(f"[PROCESSING XML] {xml_path}")
 
-            xml_bytes = download_blob_bytes(xml_path)
+            try:
+                xml_bytes = download_blob_bytes(xml_path)
 
-            parser = etree.XMLParser(recover=True)
-            root = etree.fromstring(xml_bytes, parser)
+                parser = etree.XMLParser(recover=True)
+                root = etree.fromstring(xml_bytes, parser)
 
-        except Exception as e:
+            except Exception as e:
 
-            log_ingestion_error(
-                vendor=vendor_name,
-                stage="XML_PARSE",
-                file=xml_path,
-                error=e,
-                submission_id=self.submission_id
-            )
+                log_ingestion_error(
+                    vendor=vendor_name,
+                    stage="XML_PARSE",
+                    file=xml_path,
+                    error=e,
+                    submission_id=self.submission_id
+                )
 
-            raise RuntimeError("XML_PARSE_FAILED")
+                continue  # skip bad file
 
-        xml_mapper = XMLMapper(root)
+            xml_mapper = XMLMapper(root)
 
-        for sec_name, sec_cfg in self.pm.items():
+            for sec_name, sec_cfg in self.pm.items():
 
-            if sec_name == "Pricing":
+                if sec_name == "Pricing":
+                    continue
+
+                if not isinstance(sec_cfg, dict):
+                    continue
+
+                # -------------------------------
+                # ITEM MASTER
+                # -------------------------------
+                if sec_name == "Item Master":
+
+                    df = xml_mapper.map_item_master(sec_cfg)
+
+                    if not df.empty:
+                        all_section_frames[sec_name].append(df)
+
+                    continue
+
+                # -------------------------------
+                # OTHER SECTIONS
+                # -------------------------------
+                path = sec_cfg.get("path")
+                mappings = sec_cfg.get("mappings")
+
+                if not path or not mappings:
+                    continue
+
+                df = xml_mapper.map_xml_section(path, mappings)
+
+                if not df.empty:
+                    all_section_frames[sec_name].append(df)
+
+        # ------------------------------------------------------------
+        # MERGE ALL FILES
+        # ------------------------------------------------------------
+        sections = {}
+
+        for sec_name, df_list in all_section_frames.items():
+
+            sec_cfg = self.pm.get(sec_name, {})
+
+            if not df_list:
+
+                # Empty fallback
+                if sec_name == "Item Master":
+                    sections[sec_name] = pd.DataFrame(columns=list(sec_cfg.keys()))
+                else:
+                    sections[sec_name] = pd.DataFrame(columns=list(sec_cfg.get("mappings", {}).keys()))
+
                 continue
 
-            if not isinstance(sec_cfg, dict):
-                continue
+            merged_df = pd.concat(df_list, ignore_index=True)
 
-            if sec_name == "Item Master":
+            # Safe deduplication
+            merged_df.drop_duplicates(inplace=True)
 
-                df = xml_mapper.map_item_master(sec_cfg)
+            sections[sec_name] = merged_df
 
-                if df.empty:
-                    df = pd.DataFrame(columns=list(sec_cfg.keys()))
-
-                sections[sec_name] = df
-                continue
-
-            path = sec_cfg.get("path")
-            mappings = sec_cfg.get("mappings")
-
-            if not path or not mappings:
-                continue
-
-            df = xml_mapper.map_xml_section(path, mappings)
-
-            if df.empty:
-                df = pd.DataFrame(columns=list(mappings.keys()))
-
-            sections[sec_name] = df
+            print(f"[MERGED] {sec_name}: rows={len(merged_df)}")
 
         return sections
 

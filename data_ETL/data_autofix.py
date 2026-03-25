@@ -616,7 +616,7 @@ def run_vendor_azure(
                 .unique()
                 .tolist()
             )
-            print(f"\n[{sheet}] Part Numbers:")
+            # print(f"\n[{sheet}] Part Numbers:")
             print(sorted(vals))
 
     resolved_all = []
