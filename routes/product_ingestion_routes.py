@@ -342,45 +342,110 @@ def get_product_outputs(vendor, submission_type, submission_id):
 
     def add_file(label, blob_path):
         blob_client = container.get_blob_client(blob_path)
-
         if blob_client.exists():
             files.append({
                 "name": label,
                 "path": blob_path
             })
 
-    # ----------------------------------
-    # IN REVIEW FILES
-    # ----------------------------------
-
-    add_file(
-        "Health Issues Report",
-        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/profiling/vendor_action_report.xlsx"
+    vendor_action_blob = (
+        f"in_review/products_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"profiling/vendor_action_report.xlsx"
     )
 
-    # add_file(
-    #     "Autofix Report",
-    #     f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/autofix/autofix_report.xlsx"
-    # )
-
-    add_file(
-        "Integrity Report",
-        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/integrity/integrity_report.xlsx"
+    integrity_blob = (
+        f"in_review/products_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"integrity/integrity_report.xlsx"
     )
 
-    # ----------------------------------
-    # READY FILE
-    # ----------------------------------
-
-    add_file(
-        "Review Output (ETL Mapped)",
-        f"ready/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/review/etl_mapped.xlsx"
+    etl_mapped_blob = (
+        f"ready/products_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"review/etl_mapped.xlsx"
     )
+
+    full_health_blob = (
+        f"in_review/products_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"profiling/health_issues.xlsx"
+    )
+
+    add_file("Vendor Action Report", vendor_action_blob)
+    add_file("Integrity Report", integrity_blob)
+    add_file("Review Output (ETL Mapped)", etl_mapped_blob)
+
+    summary = {
+        "records_processed": 0,
+        "total_issues": 0,
+        "autofixed_issues": 0,
+        "remaining_issues": 0,
+    }
+
+    try:
+        # ----------------------------------
+        # FULL HEALTH REPORT -> total + autofixed
+        # ----------------------------------
+        full_blob_client = container.get_blob_client(full_health_blob)
+        if full_blob_client.exists():
+            raw_full = full_blob_client.download_blob().readall()
+            df_full = pd.read_excel(BytesIO(raw_full), dtype=str)
+
+            summary["total_issues"] = len(df_full)
+
+            if "_fixable_by_code" in df_full.columns:
+                vals = (
+                    df_full["_fixable_by_code"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                )
+                summary["autofixed_issues"] = int(
+                    vals.isin(["true", "1", "yes"]).sum()
+                )
+
+            summary["remaining_issues"] = (
+                summary["total_issues"] - summary["autofixed_issues"]
+            )
+
+        # ----------------------------------
+        # VENDOR ACTION REPORT -> records processed
+        # ----------------------------------
+        vendor_blob_client = container.get_blob_client(vendor_action_blob)
+        if vendor_blob_client.exists():
+            raw_vendor = vendor_blob_client.download_blob().readall()
+            df_vendor = pd.read_excel(BytesIO(raw_vendor), dtype=str)
+
+            if "part number (_entity_key)" in df_vendor.columns:
+                part_col = (
+                    df_vendor["part number (_entity_key)"]
+                    .astype(str)
+                    .str.strip()
+                    .replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+                    .dropna()
+                )
+
+                summary["records_processed"] = part_col.nunique()
+            else:
+                summary["records_processed"] = len(df_vendor)
+
+    except Exception as e:
+        print("PRODUCT OUTPUT SUMMARY ERROR:", e)
 
     return jsonify({
         "files": files,
-        "summary": {}
+        "summary": summary
     })
+
 # ---------------------------------------
 # PRODUCT REPORT DOWNLOAD
 # ---------------------------------------
@@ -429,7 +494,7 @@ def preview_product_report():
     container = blob_service.get_container_client("silver")
     raw = container.get_blob_client(blob_path).download_blob().readall()
 
-    df = pd.read_excel(BytesIO(raw))
+    df = pd.read_excel(BytesIO(raw), dtype=str)
 
     return jsonify({
         "columns": list(df.columns),

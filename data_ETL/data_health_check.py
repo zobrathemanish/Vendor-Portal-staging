@@ -257,12 +257,30 @@ def parquet_bytes_from_df(df: pd.DataFrame) -> bytes:
 def excel_bytes_from_sheets(sheets: Dict[str, pd.DataFrame]) -> bytes:
     """
     Writes multiple sheets into a single xlsx bytes.
+    Forces cells to text format so values like 00211 stay as 00211.
     """
     buf = BytesIO()
+
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         for name, df in sheets.items():
             safe_name = name[:31]  # Excel sheet name limit
-            df.to_excel(writer, sheet_name=safe_name, index=False)
+            safe_df = df.copy()
+
+            # Preserve values as strings and avoid literal "nan"/"None"
+            for col in safe_df.columns:
+                safe_df[col] = safe_df[col].astype(str)
+                safe_df[col] = safe_df[col].replace({"nan": "", "None": ""})
+                
+            safe_df.to_excel(writer, sheet_name=safe_name, index=False)
+
+            ws = writer.book[safe_name]
+
+            # Force all body cells to text format
+            for row in ws.iter_rows(min_row=2):
+                for cell in row:
+                    cell.number_format = "@"
+
+    buf.seek(0)
     return buf.getvalue()
 
 
@@ -1235,7 +1253,7 @@ def load_mapped_workbook_from_azure(container, vendor: str, workflow:str, submis
         return {"mapped": df}, "mapped.parquet"
 
 
-def load_mapped_workbook_local(local_xlsx: str, mode: str) -> Tuple[Dict[str, pd.DataFrame], str]:
+def load_mapped_workbook_local(local_xlsx: str, submission_type: str) -> Tuple[Dict[str, pd.DataFrame], str]:
     wb_all = pd.read_excel(local_xlsx, sheet_name=None, dtype=str)
     meta = parse_submission_type(submission_type)
     if meta["is_review"]:
@@ -1429,44 +1447,6 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
 
 #helper
 def build_vendor_action_df(issues_df: pd.DataFrame) -> pd.DataFrame:
-    if issues_df is None or issues_df.empty:
-        return pd.DataFrame(columns=[
-            "vendor",
-            "_tab",
-            "part number (_entity_key)",
-            "_field",
-            "_issue_type",
-            "_issue_subtype",
-            "_observed_value",
-            "_expected_or_hint",
-            "_severity",
-            "fixable_by_code",
-        ])
-
-    df = issues_df.copy()
-
-    # keep only vendor-actionable rows
-    if "fixable_by_code" in df.columns:
-        df = df[df["fixable_by_code"] == False]
-
-    # select only required columns
-    keep_map = {
-        "vendor": "vendor",
-        "_tab": "_tab",
-        "_entity_key": "part number (_entity_key)",
-        "_field": "_field",
-        "_issue_type": "_issue_type",
-        "_issue_subtype": "_issue_subtype",
-        "_observed_value": "_observed_value",
-        "_expected_or_hint": "_expected_or_hint",
-        "_severity": "_severity",
-        "fixable_by_code": "fixable_by_code",
-    }
-
-    existing = [c for c in keep_map if c in df.columns]
-    df = df[existing].rename(columns=keep_map)
-
-    # ensure final column order
     final_cols = [
         "vendor",
         "_tab",
@@ -1477,14 +1457,52 @@ def build_vendor_action_df(issues_df: pd.DataFrame) -> pd.DataFrame:
         "_observed_value",
         "_expected_or_hint",
         "_severity",
-        "fixable_by_code",
+        "_fixable_by_code",
     ]
+
+    if issues_df is None or issues_df.empty:
+        return pd.DataFrame(columns=final_cols)
+
+    df = issues_df.copy()
+
+    # keep only vendor-actionable rows
+    if "_fixable_by_code" in df.columns:
+        vals = df["_fixable_by_code"].astype(str).str.strip().str.lower()
+        df = df[~vals.isin(["true", "1", "yes"])]
+
+    # preserve part number formatting
+    if "_entity_key" in df.columns:
+        df["_entity_key"] = df["_entity_key"].map(
+            lambda x: "" if pd.isna(x) else str(x).strip()
+        )
+
+    keep_map = {
+        "_vendor": "vendor",
+        "_tab": "_tab",
+        "_entity_key": "part number (_entity_key)",
+        "_field": "_field",
+        "_issue_type": "_issue_type",
+        "_issue_subtype": "_issue_subtype",
+        "_observed_value": "_observed_value",
+        "_expected_or_hint": "_expected_or_hint",
+        "_severity": "_severity",
+        "_fixable_by_code": "_fixable_by_code",
+    }
+
+    existing = [c for c in keep_map if c in df.columns]
+    df = df[existing].rename(columns=keep_map)
 
     for col in final_cols:
         if col not in df.columns:
             df[col] = ""
 
-    return df[final_cols]
+    df = df[final_cols]
+
+    # force all output columns to text-like values
+    for col in df.columns:
+        df[col] = df[col].astype(str).replace({"nan": "", "None": ""})
+
+    return df
 
 # =========================================================
 # Writers
@@ -1570,7 +1588,7 @@ def run_vendor_local(local_xlsx: str, vendor: str, workflow:str) -> None:
     # --------------------------------------------------
     # Load mapped workbook
     # --------------------------------------------------
-    sheets, source_file = load_mapped_workbook_local(local_xlsx)
+    sheets, source_file = load_mapped_workbook_local(local_xlsx, "product_submission")
 
     issues_df, row_missing_df, col_missing_df, entity_comp_df, payload = profile_vendor(
         vendor, sheets, source_file, workflow)
