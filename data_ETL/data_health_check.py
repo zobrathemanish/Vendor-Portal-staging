@@ -1427,6 +1427,64 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
     out_payload = {"summary": summary, "statistics": stats_payload}
     return issues_df, row_missing_df, col_missing_df, entity_comp_df, out_payload
 
+#helper
+def build_vendor_action_df(issues_df: pd.DataFrame) -> pd.DataFrame:
+    if issues_df is None or issues_df.empty:
+        return pd.DataFrame(columns=[
+            "vendor",
+            "_tab",
+            "part number (_entity_key)",
+            "_field",
+            "_issue_type",
+            "_issue_subtype",
+            "_observed_value",
+            "_expected_or_hint",
+            "_severity",
+            "fixable_by_code",
+        ])
+
+    df = issues_df.copy()
+
+    # keep only vendor-actionable rows
+    if "fixable_by_code" in df.columns:
+        df = df[df["fixable_by_code"] == False]
+
+    # select only required columns
+    keep_map = {
+        "vendor": "vendor",
+        "_tab": "_tab",
+        "_entity_key": "part number (_entity_key)",
+        "_field": "_field",
+        "_issue_type": "_issue_type",
+        "_issue_subtype": "_issue_subtype",
+        "_observed_value": "_observed_value",
+        "_expected_or_hint": "_expected_or_hint",
+        "_severity": "_severity",
+        "fixable_by_code": "fixable_by_code",
+    }
+
+    existing = [c for c in keep_map if c in df.columns]
+    df = df[existing].rename(columns=keep_map)
+
+    # ensure final column order
+    final_cols = [
+        "vendor",
+        "_tab",
+        "part number (_entity_key)",
+        "_field",
+        "_issue_type",
+        "_issue_subtype",
+        "_observed_value",
+        "_expected_or_hint",
+        "_severity",
+        "fixable_by_code",
+    ]
+
+    for col in final_cols:
+        if col not in df.columns:
+            df[col] = ""
+
+    return df[final_cols]
 
 # =========================================================
 # Writers
@@ -1434,8 +1492,8 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
 def write_vendor_outputs(
     container,
     vendor: str,
-    workflow:str,
-    submission_type:str,
+    workflow: str,
+    submission_type: str,
     submission_id: str,
     issues_df: pd.DataFrame,
     row_missing_df: pd.DataFrame,
@@ -1443,7 +1501,7 @@ def write_vendor_outputs(
     entity_comp_df: pd.DataFrame,
     payload: Dict[str, Any],
 ) -> None:
-    
+
     meta = parse_submission_type(submission_type)
 
     if meta["is_review"]:
@@ -1471,7 +1529,7 @@ def write_vendor_outputs(
     upload_blob_bytes(container, f"{out_base}/health_summary.json", json.dumps(summary, indent=2).encode("utf-8"))
     upload_blob_bytes(container, f"{out_base}/statistics.json", json.dumps(stats, indent=2).encode("utf-8"))
 
-    # Excel outputs (review-friendly)
+    # Internal Excel outputs
     xlsx = excel_bytes_from_sheets({
         "health_issues": issues_df,
         "health_summary": pd.DataFrame([summary]),
@@ -1481,7 +1539,14 @@ def write_vendor_outputs(
     })
     upload_blob_bytes(container, f"{out_base}/health_issues.xlsx", xlsx)
 
+    # Vendor-facing filtered report
+    vendor_action_df = build_vendor_action_df(issues_df)
+    vendor_action_xlsx = excel_bytes_from_sheets({
+        "vendor_action_report": vendor_action_df
+    })
+    upload_blob_bytes(container, f"{out_base}/vendor_action_report.xlsx", vendor_action_xlsx)
 
+    
 # =========================================================
 # Run modes
 # =========================================================

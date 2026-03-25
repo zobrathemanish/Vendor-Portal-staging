@@ -355,13 +355,13 @@ def get_product_outputs(vendor, submission_type, submission_id):
 
     add_file(
         "Health Issues Report",
-        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/profiling/health_issues.xlsx"
+        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/profiling/vendor_action_report.xlsx"
     )
 
-    add_file(
-        "Autofix Report",
-        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/autofix/autofix_report.xlsx"
-    )
+    # add_file(
+    #     "Autofix Report",
+    #     f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/autofix/autofix_report.xlsx"
+    # )
 
     add_file(
         "Integrity Report",
