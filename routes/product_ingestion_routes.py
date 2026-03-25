@@ -333,120 +333,54 @@ def get_product_status(vendor, submission_id):
 @product_ingestion_bp.route("/api/product-outputs/<vendor>/<submission_type>/<submission_id>")
 @login_required
 def get_product_outputs(vendor, submission_type, submission_id):
+
     conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     blob_service = BlobServiceClient.from_connection_string(conn)
-
     container = blob_service.get_container_client("silver")
-
-    prefixes = [
-        f"in_review/products_workflow/{vendor}/{submission_type}/{submission_id}/reports/",
-        f"in_review/products_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
-    ]
 
     files = []
 
-    try:
-        allowed = {
-            "mapped.xlsx",
-            "health_issues.xlsx",
-            "validation_report.xlsx",
-            "product_submission_summary.xlsx",
-            "transformed_products.xlsx"
-        }
+    def add_file(label, blob_path):
+        blob_client = container.get_blob_client(blob_path)
 
-        for prefix in prefixes:
-            blobs = container.list_blobs(name_starts_with=prefix)
-
-            for blob in blobs:
-                name = blob.name.split("/")[-1]
-
-                if name not in allowed:
-                    continue
-
-                files.append({
-                    "name": name,
-                    "path": blob.name
-                })
-
-    except Exception as e:
-        print("PRODUCT OUTPUT LIST ERROR:", e)
-
-    summary = {
-        "records_processed": 0,
-        "total_issues": 0,
-        "autofixed_issues": 0,
-        "remaining_issues": 0
-    }
+        if blob_client.exists():
+            files.append({
+                "name": label,
+                "path": blob_path
+            })
 
     # ----------------------------------
-    # RECORDS PROCESSED
+    # IN REVIEW FILES
     # ----------------------------------
-    try:
-        mapped_blob = (
-            f"in_review/products_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
-            f"mapped.xlsx"
-        )
 
-        raw = container.get_blob_client(mapped_blob).download_blob().readall()
-        df_mapped = pd.read_excel(BytesIO(raw))
+    add_file(
+        "Health Issues Report",
+        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/profiling/health_issues.xlsx"
+    )
 
-        summary["records_processed"] = len(df_mapped)
+    add_file(
+        "Autofix Report",
+        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/autofix/autofix_report.xlsx"
+    )
 
-    except Exception as e:
-        print("Mapped summary error:", e)
+    add_file(
+        "Integrity Report",
+        f"in_review/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/integrity/integrity_report.xlsx"
+    )
 
     # ----------------------------------
-    # ISSUE SUMMARY
+    # READY FILE
     # ----------------------------------
-    try:
-        summary_blob = (
-            f"in_review/products_workflow/{vendor}/{submission_type}/{submission_id}/reports/"
-            f"product_submission_summary.xlsx"
-        )
 
-        raw = container.get_blob_client(summary_blob).download_blob().readall()
-        df_summary = pd.read_excel(BytesIO(raw))
-
-        if "issue" in df_summary.columns:
-            summary["total_issues"] = int(df_summary["issue"].notna().sum())
-
-        if "action_taken" in df_summary.columns:
-            summary["autofixed_issues"] = int(
-                (df_summary["action_taken"] == "fixed_automatically").sum()
-            )
-
-        if "vendor_action_required" in df_summary.columns:
-            summary["remaining_issues"] = int(
-                (df_summary["vendor_action_required"] != "none").sum()
-            )
-
-    except Exception:
-        # fallback to validation report
-        try:
-            validation_blob = (
-                f"in_review/products_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
-                f"validation_report.xlsx"
-            )
-
-            raw = container.get_blob_client(validation_blob).download_blob().readall()
-            df_validation = pd.read_excel(BytesIO(raw))
-
-            summary["total_issues"] = len(df_validation)
-
-            if "severity" in df_validation.columns:
-                summary["remaining_issues"] = int(
-                    (df_validation["severity"] == "blocking").sum()
-                )
-
-        except Exception as e:
-            print("Product validation fallback error:", e)
+    add_file(
+        "Review Output (ETL Mapped)",
+        f"ready/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/review/etl_mapped.xlsx"
+    )
 
     return jsonify({
         "files": files,
-        "summary": summary
+        "summary": {}
     })
-
-
 # ---------------------------------------
 # PRODUCT REPORT DOWNLOAD
 # ---------------------------------------
@@ -501,3 +435,4 @@ def preview_product_report():
         "columns": list(df.columns),
         "rows": df.fillna("").to_dict(orient="records")
     })
+
