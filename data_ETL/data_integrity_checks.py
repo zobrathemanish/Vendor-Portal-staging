@@ -251,7 +251,12 @@ def build_base_path(
 # =========================================================
 def check_missing_required_fields(item: pd.DataFrame) -> List[Dict]:
     issues = []
-    required_fields = ["Category"]
+    required_fields = [
+        "Brand Label",
+        "Part Number",
+        "PartTerminologyID",   # ✅ NEW (core classification)
+        "Product Status"
+    ]
 
     for field in required_fields:
         if field not in item.columns:

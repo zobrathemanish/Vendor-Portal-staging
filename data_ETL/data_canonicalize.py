@@ -225,8 +225,8 @@ ITEM_MASTER_CANDIDATES = [
     "SKU",
     "Brand Label",
     "Description",
-    "Category",
-    "HazmatFlag"
+    "PartTerminologyID",
+    "HazmatFlag",
     "Barcode Type",
     "UNSPSC",
     "Barcode Number",
@@ -236,7 +236,8 @@ ITEM_MASTER_CANDIDATES = [
     "Minimum Order Quantity UOM",
     "Minimum Order Quantity",
     "VMRS Code",
-    "Product Status"
+    "Product Status",
+    "Category"
 ]
 
 
@@ -341,8 +342,15 @@ def canonicalize_vendor(
     assert_valid_identity(df, vendor)
 
     item = build_item_master(df)
-    pricing = build_pricing(df)
-    attrs = build_attributes_longform(df, list(item.columns), list(pricing.columns))
+    if workflow == "products":
+        print("[CANONICAL] Skipping pricing (product workflow)")
+        pricing = pd.DataFrame(columns=identity_cols(df) + ["Net Price"])
+    else:
+        pricing = build_pricing(df)
+    if workflow == "products":
+        attrs = build_attributes_longform(df, list(item.columns), [])
+    else:
+        attrs = build_attributes_longform(df, list(item.columns), list(pricing.columns))
 
     summary = {
         "vendor": vendor,
@@ -350,7 +358,7 @@ def canonicalize_vendor(
         "input_rows": len(df),
         "unique_products": df["_entity_id"].nunique(),
         "item_master_rows": len(item),
-        "pricing_rows": len(pricing),
+        "pricing_rows": len(pricing) if workflow != "products" else 0,
         "attributes_rows": len(attrs),
         "hashes": {
             "item_master": df_hash(item),

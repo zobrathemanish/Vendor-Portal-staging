@@ -502,7 +502,23 @@ def run_vendor_local(
     issues_df = pd.read_parquet(local_issues)
 
     fixable = issues_df[issues_df["_fixable_by_code"] == True]
+
+    # -----------------------------
+    # WORKFLOW FILTER (CRITICAL)
+    # -----------------------------
+    if workflow == "products":
+        print("[AUTOFIX] Skipping pricing fixes (product workflow)")
+        fixable = fixable[fixable["_tab"] != "Pricing"]
+
+    elif workflow == "pricing":
+        print("[AUTOFIX] Pricing workflow - focusing on pricing fixes")
+        # Optional (strict mode):
+        # fixable = fixable[fixable["_tab"] == "Pricing"]
+
     non_fixable = issues_df[issues_df["_fixable_by_code"] == False].to_dict("records")
+
+    print(f"[AUTOFIX] Total fixable issues after workflow filter: {len(fixable)}")
+    print(f"[AUTOFIX] Tabs involved: {fixable['_tab'].unique().tolist()}")
 
     grouped = fixable.groupby("_tab")
 
@@ -616,8 +632,7 @@ def run_vendor_azure(
                 .unique()
                 .tolist()
             )
-            # print(f"\n[{sheet}] Part Numbers:")
-            print(sorted(vals))
+         
 
     resolved_all = []
     remaining_all = []

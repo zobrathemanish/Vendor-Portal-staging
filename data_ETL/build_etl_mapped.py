@@ -39,7 +39,7 @@ SCHEMA_TABS: Dict[str, List[str]] = {
         "Product Status", "Barcode Type", "Barcode Number",
         "Quantity UOM", "Quantity Size",
         "Minimum Order Quantity UOM", "Minimum Order Quantity",
-        "VMRS Code", "Category",
+        "VMRS Code", "PartTerminologyID",
     ],
     "Descriptions": [
         "Part Number", "Description Change Type",
@@ -73,7 +73,7 @@ SCHEMA_TABS: Dict[str, List[str]] = {
         "Pricing Change Type", "Pricing Type",
         "List Price", "Jobber Price", "Discount %",
         "Dealer Price", "Net Price",
-        "Category", "POP Code", "Effective Date", "Notes",
+         "POP Code", "Effective Date", "Notes",
     ],
 }
 
@@ -287,38 +287,20 @@ def split_tabs(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
 
 def filter_tabs_by_workflow(tabs: Dict[str, pd.DataFrame], workflow: str) -> Dict[str, pd.DataFrame]:
 
-    if workflow == "product":
-        # exclude pricing
-        return {k: v for k, v in tabs.items() if k != "Pricing"}
-
-    if workflow == "pricing":
-        # only item master + pricing
-        return {k: v for k, v in tabs.items() if k in ["Item_Master", "Pricing"]}
-
-    return tabs
-
     # -------------------------------------------------
-    # CASE 2: NO SECTION COLUMN → infer from columns
+    # CASE 1: Already split correctly
     # -------------------------------------------------
-    print("⚠️ No __Section column → inferring tabs from schema")
+    if tabs:
+        if workflow == "products":
+            print("[REVIEW] Product workflow → excluding Pricing tab")
+            return {k: v for k, v in tabs.items() if k != "Pricing"}
 
-    for tab, cols in SCHEMA_TABS.items():
-        available_cols = [c for c in cols if c in df.columns]
+        if workflow == "pricing":
+            print("[REVIEW] Pricing workflow → keeping Item_Master + Pricing")
+            return {k: v for k, v in tabs.items() if k in ["Item_Master", "Pricing"]}
 
-        if not available_cols:
-            tabs[tab] = pd.DataFrame(columns=cols)
-            continue
+        return tabs
 
-        chunk = df[available_cols].copy()
-
-        # ensure all schema columns exist
-        for c in cols:
-            if c not in chunk.columns:
-                chunk[c] = pd.NA
-
-        tabs[tab] = chunk[cols].dropna(how="all").reset_index(drop=True)
-
-    return tabs
 
 def _split_tabs_from_autofixed(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
 

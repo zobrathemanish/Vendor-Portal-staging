@@ -70,10 +70,11 @@ class ValidationEngine:
       - mapped_root: folder where mapped/vendor=<vendor>/ lives
     """
 
-    def __init__(self, vendor_name: str, cfg: Dict[str, Any], mapped_root: str = "mapped"):
+    def __init__(self, vendor_name: str, cfg: Dict[str, Any], workflow:str, mapped_root: str = "mapped"):
         self.vendor = vendor_name
         self.cfg = cfg
         self.mapped_root = mapped_root
+        self.workflow = workflow
 
     # ---------------------------------------------------------
     # Helpers to load parquets
@@ -162,9 +163,17 @@ class ValidationEngine:
 
         # PRICING
         price_cfg = self.cfg.get("pricing", {})
-        if df_price is not None and not df_price.empty and price_cfg:
+
+        if self.workflow == "products":
+            print("[VALIDATION] Skipping pricing (product workflow)")
+            df_price_clean = None
+            price_row_valid = None
+
+        elif df_price is not None and not df_price.empty and price_cfg:
+            print("[VALIDATION] Running pricing validation")
             df_price_clean = self._clean_pricing(df_price, price_cfg)
             price_row_valid = self._validate_pricing(df_item, df_price_clean, price_cfg, errors)
+
         else:
             df_price_clean = df_price
             price_row_valid = None
@@ -193,7 +202,10 @@ class ValidationEngine:
             df_flags["has_valid_descriptions"] = False
 
         # Pricing
-        if df_price_clean is not None and price_row_valid is not None:
+        if self.workflow == "products":
+            df_flags["has_pricing"] = False
+            df_flags["has_valid_pricing"] = False
+        elif df_price_clean is not None and price_row_valid is not None:
             tmp = df_price_clean.assign(_v=price_row_valid)
             sku_valid_price = tmp.groupby(sku_col)["_v"].any()
             df_flags["has_pricing"] = df_flags[sku_col].isin(df_price_clean[sku_col].dropna().unique())
@@ -229,6 +241,9 @@ class ValidationEngine:
         errors: ErrorList
     ) -> pd.Series:
         required = cfg.get("required_fields", [])
+        # Ensure PTID is always required
+        if "PartTerminologyID" not in required:
+            required.append("PartTerminologyID")
         unique_key = cfg.get("unique_key", "Part Number")
 
         barcode_type_field = cfg.get("barcode_type_field")

@@ -17,7 +17,7 @@ This script detects:
 - Format/type issues (dates, numeric coercion)
 - Anomalies (negative values, suspicious zeros, duplicates)
 - Outliers (IQR) including Shipping Volume (Ship L*W*H)
-- Conversion candidates (Currency CAD, Weight UOM KG, Dimension UOM CM)
+- Conversion candidates (Curre"ncy CAD, Weight UOM KG, Dimension UOM CM)
 - String normalization candidates (trim whitespace)
 
 Reads (Azure)
@@ -125,7 +125,7 @@ ENTITY_REQUIRED_FIELDS: Dict[str, Dict[str, str]] = {
     TAB_ITEM_MASTER: {
         "Brand Label": "high",
         "Part Number": "high",
-        "Category": "high",
+        "PartTerminologyID": "high",
         "Product Status": "high",
         "Minimum Order Quantity UOM": "medium",
         "Minimum Order Quantity": "medium",
@@ -335,14 +335,7 @@ def add_lineage_and_ids(df: pd.DataFrame, vendor: str, source_file: str, source_
     if part_col:
         df["_entity_key"] = df[part_col].apply(normalize_part_number)
         df["_entity_id"] = df["_entity_key"].apply(lambda p: sha256(f"{vendor}|{p}") if p else None)
-        #DEBUG
-        print("DEBUG AFTER NORMALIZATION:")
-        # print("Original:", df[part_col].head(5).tolist())
-        # print("EntityKey:", df["_entity_key"].head(5).tolist())
         df[part_col] = df["_entity_key"]
-        print("after doing whatsoever")
-        # print("Original:", df[part_col].head(5).tolist())
-        # print("EntityKey:", df["_entity_key"].head(5).tolist())
         df[part_col] = df["_entity_key"]
 
     else:
@@ -692,7 +685,14 @@ def attributes_min_one(vendor: str, df_attr: pd.DataFrame, universe_parts: set) 
                 field="Attribute Value", expected_or_hint="recommended"
             ))
 
-    missing = sorted([p for p in universe_parts if p not in parts_with_attr])
+    # Normalize universe parts to match attributes
+    normalized_universe = set(normalize_part_number(p) for p in universe_parts if p is not None)
+
+    missing = sorted([p for p in normalized_universe if p not in parts_with_attr])
+
+    print("[DEBUG universe_parts sample]", list(universe_parts)[:5])
+    print("[DEBUG attributes_parts sample]", list(parts_with_attr)[:5])
+
     for pn in missing:
         issues.append(record_issue(
             vendor=vendor, tab=tab, scope="entity",
@@ -1253,9 +1253,10 @@ def load_mapped_workbook_local(local_xlsx: str, mode: str) -> Tuple[Dict[str, pd
 # =========================================================
 # Vendor profiling
 # =========================================================
-def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: str) -> Tuple[
+def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: str,workflow: str) -> Tuple[
     pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, Any]
 ]:
+    print(f"[HEALTH CHECK] Running for workflow={workflow}")
     issues: List[Dict[str, Any]] = []
     row_missing_all: List[pd.DataFrame] = []
     col_missing_all: List[pd.DataFrame] = []
@@ -1287,39 +1288,69 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
 
     # Cross-tab + completeness rules use Item_Master as universe if present
     item_df = profiled.get(TAB_ITEM_MASTER)
-    pricing_df = profiled.get(TAB_PRICING)
     assets_df = profiled.get(TAB_DIGITAL_ASSETS)
 
     item_parts = parts_set(item_df)
-    pricing_parts = parts_set(pricing_df)
     asset_parts = parts_set(assets_df)
 
-    # Cross-reference checks (only if tabs present)
-    if item_df is not None and pricing_df is not None and assets_df is not None:
-        issues += cross_reference_checks(vendor, item_parts, pricing_parts, asset_parts)
+    # 👇 Workflow-aware
+    if workflow == "products":
+        print("[HEALTH CHECK] Skipping pricing checks (product workflow)")
+        pricing_df = None
+        pricing_parts = set()
+
     else:
-        # record missing sheets as dataset issues (informational)
-        if item_df is None:
-            issues.append(record_issue(
-                vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
-                issue_type="missing_sheet", issue_subtype="item_master_missing",
-                severity="high", detection_method="sheet_presence",
-                expected_or_hint="Item_Master required for cross-reference checks"
-            ))
-        if pricing_df is None:
-            issues.append(record_issue(
-                vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
-                issue_type="missing_sheet", issue_subtype="pricing_missing",
-                severity="high", detection_method="sheet_presence",
-                expected_or_hint="Pricing required for items↔pricing checks"
-            ))
-        if assets_df is None:
-            issues.append(record_issue(
-                vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
-                issue_type="missing_sheet", issue_subtype="digital_assets_missing",
-                severity="medium", detection_method="sheet_presence",
-                expected_or_hint="Digital_Assets required for items↔assets checks"
-            ))
+        pricing_df = profiled.get(TAB_PRICING)
+        pricing_parts = parts_set(pricing_df)
+
+    # -------------------------------
+    # CROSS-REFERENCE (workflow-aware)
+    # -------------------------------
+    if workflow == "products":
+        # Only item ↔ assets
+        if item_df is not None and assets_df is not None:
+            for pn in sorted(item_parts - asset_parts):
+                issues.append(record_issue(
+                    vendor=vendor,
+                    tab="CROSS_REFERENCE",
+                    scope="entity",
+                    issue_type="orphan_entity",
+                    issue_subtype="item_without_assets",
+                    severity="medium",
+                    detection_method="set_diff",
+                    entity_key=pn,
+                    entity_id=sha256(f"{vendor}|{pn}"),
+                    expected_or_hint="present in Digital_Assets",
+                    observed_value="missing"
+                ))
+
+    else:
+        # Full cross reference (pricing workflow)
+        if item_df is not None and pricing_df is not None and assets_df is not None:
+            issues += cross_reference_checks(vendor, item_parts, pricing_parts, asset_parts)
+        else:
+            # record missing sheets as dataset issues (informational)
+            if item_df is None:
+                issues.append(record_issue(
+                    vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
+                    issue_type="missing_sheet", issue_subtype="item_master_missing",
+                    severity="high", detection_method="sheet_presence",
+                    expected_or_hint="Item_Master required for cross-reference checks"
+                ))
+            if pricing_df is None:
+                issues.append(record_issue(
+                    vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
+                    issue_type="missing_sheet", issue_subtype="pricing_missing",
+                    severity="high", detection_method="sheet_presence",
+                    expected_or_hint="Pricing required for items↔pricing checks"
+                ))
+            if assets_df is None:
+                issues.append(record_issue(
+                    vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
+                    issue_type="missing_sheet", issue_subtype="digital_assets_missing",
+                    severity="medium", detection_method="sheet_presence",
+                    expected_or_hint="Digital_Assets required for items↔assets checks"
+                ))
 
     # "At least one ..." rules
     if profiled.get(TAB_DESCRIPTIONS) is not None and item_parts:
@@ -1364,9 +1395,13 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
 
     entity_rows = [
         {"_vendor": vendor, "_metric": "item_master_parts", "_count": int(len(item_parts))},
-        {"_vendor": vendor, "_metric": "pricing_parts", "_count": int(len(pricing_parts))},
         {"_vendor": vendor, "_metric": "digital_assets_parts", "_count": int(len(asset_parts))},
     ]
+
+    if workflow != "products":
+        entity_rows.append(
+            {"_vendor": vendor, "_metric": "pricing_parts", "_count": int(len(pricing_parts))}
+        )
     entity_comp_df = pd.DataFrame(entity_rows)
 
     stats_payload = {
@@ -1458,13 +1493,13 @@ def run_vendor_azure(container, vendor: str, workflow: str, submission_type: str
     )
 
     sheets, source_file = load_mapped_workbook_from_azure(container, vendor, workflow, submission_type, submission_id)
-    issues_df, row_missing_df, col_missing_df, entity_comp_df, payload = profile_vendor(vendor, sheets, source_file)
+    issues_df, row_missing_df, col_missing_df, entity_comp_df, payload = profile_vendor(vendor, sheets, source_file, workflow)
     write_vendor_outputs(container, vendor, workflow, submission_type, submission_id, issues_df, row_missing_df, col_missing_df, entity_comp_df, payload)
 
     print(f"✅ Done: {vendor} | issues={len(issues_df)} | tabs={len(sheets)}")
 
 
-def run_vendor_local(local_xlsx: str, vendor: str) -> None:
+def run_vendor_local(local_xlsx: str, vendor: str, workflow:str) -> None:
     print(f"\n🩺 Local health check (pipeline layout): {local_xlsx}")
 
     # --------------------------------------------------
@@ -1473,8 +1508,7 @@ def run_vendor_local(local_xlsx: str, vendor: str) -> None:
     sheets, source_file = load_mapped_workbook_local(local_xlsx)
 
     issues_df, row_missing_df, col_missing_df, entity_comp_df, payload = profile_vendor(
-        vendor, sheets, source_file
-    )
+        vendor, sheets, source_file, workflow)
 
     # --------------------------------------------------
     # Resolve pipeline-consistent output path
@@ -1605,7 +1639,7 @@ if __name__ == "__main__":
 
         print(f"📄 Using local mapped workbook: {local_path}")
         print(f"📁 Writing profiling outputs to:\n   {local_vendor_root(args.vendor)}/profiling/")
-        run_vendor_local(local_path, args.vendor)
+        run_vendor_local(local_path, args.vendor, args.workflow)
         exit()
 
     # ---------------------------
@@ -1615,7 +1649,7 @@ if __name__ == "__main__":
         if not args.vendor:
             raise SystemExit(" For --local_xlsx, also provide --vendor")
         print(f"📄 Using explicit local workbook: {args.local_xlsx}")
-        run_vendor_local(args.local_xlsx, args.vendor)
+        run_vendor_local(args.local_xlsx, args.vendor, args.workflow)
         exit()
 
     # ---------------------------
