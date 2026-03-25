@@ -713,35 +713,49 @@ const validate = document.getElementById("stage-validate");
 const transform = document.getElementById("stage-transform");
 const ready = document.getElementById("stage-ready");
 
+/* reset */
+[upload, validate, transform, ready].forEach(s=>{
+  s.classList.remove("active","failed");
+});
+
+/* FLOW ON */
+document.querySelectorAll(".pipeline-line").forEach(l=>{
+  l.classList.add("flowing");
+});
+
+/* 🔥 CRITICAL FIX: progressive activation */
+
+if(percent >= 0){
+  upload.classList.add("active");
+}
+
+if(percent >= 25){
+  validate.classList.add("active");
+}
+
+if(percent >= 50){
+  transform.classList.add("active");
+}
+
+if(percent >= 90){
+  ready.classList.add("active");
+
+  /* stop animation at end */
+  document.querySelectorAll(".pipeline-line").forEach(l=>{
+    l.classList.remove("flowing");
+  });
+}
+
+/* fill bars */
+
 const fills = document.querySelectorAll(".pipeline-fill");
 
-upload.classList.add("active");
-
-/* PIPE 1 : Upload -> Validate */
-if(percent < 25){
-fills[0].style.width = (percent/25)*100 + "%";
-}else{
-fills[0].style.width = "100%";
-validate.classList.add("active");
-}
-
-/* PIPE 2 : Validate -> Transform */
-if(percent >= 25 && percent < 50){
-fills[1].style.width = ((percent-25)/25)*100 + "%";
-}else if(percent >= 50){
-fills[1].style.width = "100%";
-transform.classList.add("active");
-}
-
-/* PIPE 3 : Transform -> Ready */
-if(percent >= 50 && percent < 90){
-fills[2].style.width = ((percent-50)/40)*100 + "%";
-}else if(percent >= 90){
-fills[2].style.width = "100%";
-ready.classList.add("active");
-}
+fills[0].style.width = percent >= 25 ? "100%" : (percent/25)*100 + "%";
+fills[1].style.width = percent >= 50 ? "100%" : percent > 25 ? ((percent-25)/25)*100 + "%" : "0%";
+fills[2].style.width = percent >= 90 ? "100%" : percent > 50 ? ((percent-50)/40)*100 + "%" : "0%";
 
 }
+
 
 function setCompleted(message){
 
@@ -910,23 +924,31 @@ try{
 
 const res = await fetch(`/ingestion/api/product-status/${vendor}/${submissionId}`);
 const status = await res.json();
+console.log("STATUS:", status);
 
 if(!status){
 console.error("Empty status response");
 return;
 }
 
+let percent = 0;
+
+if(status.stage === "upload") percent = 10;
+else if(status.stage === "validate") percent = 30;
+else if(status.stage === "transform") percent = 60;
+else if(status.stage === "ready" || status.stage === "complete") percent = 100;
+
 updateStage(
-status.stage,
-status.progress || 0,
-status.message || ""
+  status.stage,
+  status.progress ?? percent,
+  status.message || ""
 );
 
 if(status.current_file){
 currentFile.textContent = "Current file: " + status.current_file;
 }
 
-if(status.stage === "complete"){
+if(status.stage === "complete" || status.stage === "ready"){
 
 clearInterval(statusInterval);
 
@@ -1022,8 +1044,9 @@ progressBar.classList.remove("progress-bar-animated");
 progressBar.classList.add("bg-success");
 progressBar.textContent = "Product file uploaded";
 
-updateStage("Upload complete",10,"Starting product pipeline");
 document.getElementById("pipelineContainer").classList.remove("d-none");
+
+updateStage("Uploading", 5, "Uploading product file...");
 
 const start = await fetch("/ingestion/start-product-etl",{
 method:"POST",

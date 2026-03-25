@@ -19,6 +19,34 @@ Supports:
 import subprocess
 import sys
 
+import os
+import json
+
+
+def write_status(vendor, submission_id, stage, message, progress, status=None):
+    status_path = os.path.join(
+        os.getcwd(),
+        "product-etl",
+        "logs",
+        f"vendor={vendor}",
+        "products",
+        f"submission={submission_id}",
+        "product_etl_status.json"
+    )
+
+    os.makedirs(os.path.dirname(status_path), exist_ok=True)
+
+    data = {
+        "stage": stage,
+        "message": message,
+        "progress": progress
+    }
+
+    if status:
+        data["status"] = status
+
+    with open(status_path, "w") as f:
+        json.dump(data, f)
 
 # ============================================================
 # PIPELINE STEPS (ORDER MATTERS)
@@ -42,6 +70,28 @@ STEPS = [
 def run_step(name, script, vendor, workflow, submission_type, submission_id, local: bool):
     print(f"\n▶️  {name}")
 
+    # 🔥 map step → stage
+    if "Health" in name or "Autofix" in name:
+        stage = "validate"
+        progress = 30
+    elif "Canonicalize" in name or "Integrity" in name:
+        stage = "transform"
+        progress = 60
+    elif "Build Review" in name:
+        stage = "transform"
+        progress = 80
+    else:
+        stage = "transform"
+        progress = 70
+
+    write_status(
+        vendor,
+        submission_id,
+        stage=stage,
+        message=f"{name} running...",
+        progress=progress
+    )
+
     module_name = f"data_ETL.{script.replace('.py','')}"
     cmd = [sys.executable, "-m", module_name]
 
@@ -55,8 +105,6 @@ def run_step(name, script, vendor, workflow, submission_type, submission_id, loc
     if local:
         cmd.append("--local")
 
-    import os
-
     env = os.environ.copy()
     env["PYTHONPATH"] = os.getcwd()
 
@@ -67,6 +115,14 @@ def run_step(name, script, vendor, workflow, submission_type, submission_id, loc
     )
 
     if result.returncode != 0:
+        write_status(
+            vendor,
+            submission_id,
+            stage="failed",
+            message=f"{name} failed",
+            progress=progress,
+            status="failed"
+        )
         print(f"\n❌ Failed at step: {name}")
         sys.exit(1)
 
@@ -127,6 +183,15 @@ def main():
         )
 
     print(f"\n✅ ETL pipeline completed successfully for {vendor}")
+
+    write_status(
+        vendor,
+        submission_id,
+        stage="ready",
+        message="ETL completed successfully",
+        progress=100,
+        status="completed"
+    )
 
 
 # ------------------------------------------------------------

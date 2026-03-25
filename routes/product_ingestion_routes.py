@@ -187,7 +187,30 @@ def get_product_status(vendor, submission_id):
     Returns:
     - precheck status first if ETL has not started yet
     - ETL status if ETL status file exists
+
+    Normalizes stages to:
+    upload → validate → transform → ready
     """
+
+    def normalize_stage(raw_stage: str) -> str:
+        if not raw_stage:
+            return "upload"
+
+        raw_stage = raw_stage.lower()
+
+        if raw_stage in ["upload", "starting"]:
+            return "upload"
+
+        if raw_stage in ["map", "mapping", "validate", "validation", "precheck"]:
+            return "validate"
+
+        if raw_stage in ["transform", "etl", "processing", "running"]:
+            return "transform"
+
+        if raw_stage in ["ready", "complete", "completed", "done"]:
+            return "ready"
+
+        return "transform"  # safe fallback
 
     precheck_status_path = os.path.join(
         current_app.root_path,
@@ -217,9 +240,12 @@ def get_product_status(vendor, submission_id):
             with open(etl_status_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+            raw_stage = data.get("stage", "processing")
+            stage = normalize_stage(raw_stage)
+
             if data.get("status") == "completed":
                 return jsonify({
-                    "stage": "complete",
+                    "stage": "ready",
                     "progress": 100,
                     "message": data.get("message", "Processing complete"),
                     "current_file": data.get("current_file", "")
@@ -234,8 +260,8 @@ def get_product_status(vendor, submission_id):
                 })
 
             return jsonify({
-                "stage": data.get("stage", "processing"),
-                "progress": data.get("progress", 5),
+                "stage": stage,
+                "progress": data.get("progress", 50),
                 "message": data.get("message", "Processing"),
                 "current_file": data.get("current_file", "")
             })
@@ -261,7 +287,7 @@ def get_product_status(vendor, submission_id):
             if data.get("status") == "completed":
                 return jsonify({
                     "stage": "validate",
-                    "progress": data.get("progress", 25),
+                    "progress": 25,
                     "message": data.get(
                         "message",
                         "Basic validation passed. Starting ETL..."
@@ -269,10 +295,16 @@ def get_product_status(vendor, submission_id):
                     "current_file": data.get("current_file", "")
                 })
 
+            raw_stage = data.get("stage", "upload")
+            stage = normalize_stage(raw_stage)
+
             return jsonify({
-                "stage": data.get("stage", "upload"),
+                "stage": stage,
                 "progress": data.get("progress", 10),
-                "message": data.get("message", "Running mapping/basic validation"),
+                "message": data.get(
+                    "message",
+                    "Running mapping/basic validation"
+                ),
                 "current_file": data.get("current_file", "")
             })
 
@@ -280,7 +312,7 @@ def get_product_status(vendor, submission_id):
         # DEFAULT
         # ----------------------------------
         return jsonify({
-            "stage": "starting",
+            "stage": "upload",
             "progress": 5,
             "message": "Initializing pipeline"
         })
@@ -289,11 +321,10 @@ def get_product_status(vendor, submission_id):
         print("PRODUCT STATUS READ ERROR:", e)
 
         return jsonify({
-            "stage": "processing",
+            "stage": "transform",
             "progress": 5,
             "message": "Reading pipeline status"
         })
-
 
 # ---------------------------------------
 # PRODUCT OUTPUTS
