@@ -33,12 +33,48 @@ ERRORS_ALL_FILENAME = "errors_all.xlsx"
 
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 
-SCHEMA_TABS = {
-    "Item_Master": ["Brand Label", "Part Number", "UNSPSC"],
-    "Descriptions": ["Part Number", "Description Code", "Description Value", "Sequence"],
-    "Attributes": ["Part Number", "Attribute Name", "Attribute Value"],
-    "Digital_Assets": ["Part Number", "FileName", "FilePath"],
-    "Pricing": ["Vendor", "Part Number", "List Price"],
+SCHEMA_TABS: Dict[str, List[str]] = {
+    "Item_Master": [
+        "Brand Label", "Part Number", "UNSPSC", "HazmatFlag",
+        "Product Status", "Barcode Type", "Barcode Number",
+        "Quantity UOM", "Quantity Size",
+        "Minimum Order Quantity UOM", "Minimum Order Quantity",
+        "VMRS Code", "Category",
+    ],
+    "Descriptions": [
+        "Part Number", "Description Change Type",
+        "Description Code", "Description Value", "Sequence",
+    ],
+    "Extended_Info": [
+        "Part Number", "Extended Info Change Type",
+        "Extended Info Code", "Extended Info Value",
+    ],
+    "Attributes": [
+        "Part Number", "Attribute Change Type",
+        "Attribute Name", "Attribute Value",
+    ],
+    "Packages": [
+        "Part Number", "Package Change Type",
+        "Package UOM", "Package Quantity of Eaches",
+        "Weight UOM", "Weight",
+        "Dimension UOM",
+        "Merch Length", "Merch Width", "Merch Height",
+        "Ship Length", "Ship Width", "Ship Height",
+        "Package Content",
+    ],
+    "Digital_Assets": [
+        "Part Number", "Digital Change Type",
+        "MediaType", "FileName", "FilePath", "FileType",
+        "Representation", "Orientation", "Height", "Width",
+    ],
+    "Pricing": [
+        "Vendor", "Part Number", "Pricing Method",
+        "Currency", "MOQ Unit", "MOQ",
+        "Pricing Change Type", "Pricing Type",
+        "List Price", "Jobber Price", "Discount %",
+        "Dealer Price", "Net Price",
+        "Category", "POP Code", "Effective Date", "Notes",
+    ],
 }
 
 # =========================================================
@@ -249,6 +285,18 @@ def split_tabs(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
 
         return tabs
 
+def filter_tabs_by_workflow(tabs: Dict[str, pd.DataFrame], workflow: str) -> Dict[str, pd.DataFrame]:
+
+    if workflow == "product":
+        # exclude pricing
+        return {k: v for k, v in tabs.items() if k != "Pricing"}
+
+    if workflow == "pricing":
+        # only item master + pricing
+        return {k: v for k, v in tabs.items() if k in ["Item_Master", "Pricing"]}
+
+    return tabs
+
     # -------------------------------------------------
     # CASE 2: NO SECTION COLUMN → infer from columns
     # -------------------------------------------------
@@ -289,12 +337,24 @@ def _split_tabs_from_autofixed(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         chunk = df[df[section_col] == tab_name].copy()
 
         if chunk.empty:
+            # 🔥 Skip empty pricing tab entirely
+            if tab_name == "Pricing":
+                continue
+
             out[tab_name] = pd.DataFrame(columns=schema_cols)
             continue
 
         # remove internal cols
         drop_cols = [c for c in ["__Section", "_sheet"] if c in chunk.columns]
         chunk = chunk.drop(columns=drop_cols, errors="ignore")
+
+        # -----------------------------------------
+        # SPECIAL CASE: PRICING (flexible schema)
+        # -----------------------------------------
+        if tab_name == "Pricing":
+            # keep everything except internal columns
+            out[tab_name] = chunk.reset_index(drop=True)
+            continue
 
         # ensure schema
         for c in schema_cols:
@@ -326,6 +386,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     # SPLIT INTO TABS 
     # -------------------------------------------------
     tabs = _split_tabs_from_autofixed(df)
+    tabs = filter_tabs_by_workflow(tabs, workflow)
 
     # -------------------------------------------------
     # WRITE PARQUET (flattened for system)
@@ -376,6 +437,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     delta_excel_path = f"{base_out}/delta_mapped.xlsx"
 
     delta_tabs = _split_tabs_from_autofixed(delta)
+    delta_tabs = filter_tabs_by_workflow(delta_tabs, workflow)
 
     delta_buf = BytesIO()
     with pd.ExcelWriter(delta_buf, engine="openpyxl") as writer:
