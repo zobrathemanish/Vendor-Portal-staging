@@ -17,10 +17,10 @@ AZURE_CONN_STR = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 SILVER_CONTAINER = os.getenv("SILVER_CONTAINER", "silver")
 
 IN_REVIEW_ROOT = "in_review"
-PRICING_REVIEW_ROOT = "post_pricing_review"
+PRICING_REVIEW_ROOT = "in_review"
 
 READY_ROOT = "ready"
-READY_PRICING_ROOT = "ready_pricing_review"
+READY_PRICING_ROOT = "ready"
 
 AUTOFIX_DIR = "autofix"
 INTEGRITY_DIR = "integrity"

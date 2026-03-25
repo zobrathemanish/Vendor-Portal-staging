@@ -111,7 +111,6 @@ def start_pricing_etl():
         "--workflow", workflow,
         "--submission-id", submission_id,
         "--submission-type", submission_type,
-        "--blob-path", blob_path
     ], capture_output=True, text=True)
 
     if result.returncode != 0:
