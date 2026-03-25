@@ -25,3 +25,6 @@ mapping_validation/tmp
 mapping_validation/venv
 mapped/
 
+## product etl logs
+product-etl/
+
