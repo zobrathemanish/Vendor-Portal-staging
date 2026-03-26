@@ -509,7 +509,14 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
             else:
                 merged_df = pd.concat([existing_df, df], ignore_index=True)
 
-                # ⚠️ TEMP: simple dedup (upgrade later with business keys / hashes)
+                # --- normalize ---
+                merged_df = merged_df.copy()
+
+                for col in merged_df.columns:
+                    if merged_df[col].dtype == "object":
+                        merged_df[col] = merged_df[col].astype(str).str.strip()
+
+                # --- dedup ---
                 merged_df = merged_df.drop_duplicates()
 
             parquet_data = df_to_bytes(merged_df)
