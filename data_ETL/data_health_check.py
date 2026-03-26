@@ -1204,10 +1204,7 @@ def compute_statistics(vendor: str, tab: str, df: pd.DataFrame) -> Dict[str, Any
 def load_mapped_workbook_from_azure(container, vendor: str, workflow:str, submission_type: str, submission_id: str):
     meta = parse_submission_type(submission_type)
 
-    if meta["is_review"]:
-        root = PRICING_REVIEW_ROOT
-    else:
-        root = IN_REVIEW_ROOT
+    root = IN_REVIEW_ROOT
 
     base = (
         f"{root}/{workflow}_workflow/"
@@ -1522,10 +1519,7 @@ def write_vendor_outputs(
 
     meta = parse_submission_type(submission_type)
 
-    if meta["is_review"]:
-        root = PRICING_REVIEW_ROOT
-    else:
-        root = IN_REVIEW_ROOT
+    root = IN_REVIEW_ROOT
 
     out_base = (
         f"{root}/{workflow}_workflow/"
@@ -1669,7 +1663,7 @@ def run_health_check(vendor: str, workflow:str, submission_type: str, submission
     print("MODE:", mode)
     meta = parse_submission_type(submission_type)
 
-    print("ROOT:", PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT)
+    print(f"[HEALTH CHECK] root={IN_REVIEW_ROOT}, submission_type={submission_type}")
 
     container = get_container()
 

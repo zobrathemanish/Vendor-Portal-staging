@@ -37,7 +37,6 @@ AZURE_CONN_STR = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 SILVER_CONTAINER = os.getenv("SILVER_CONTAINER", "silver")
 
 IN_REVIEW_ROOT = "in_review"
-PRICING_REVIEW_ROOT = "post_pricing_review"
 
 AUTOFIX_DIRNAME = "autofix"
 CANONICAL_DIRNAME = "canonical"
@@ -88,7 +87,7 @@ def enforce_identifier_types(df: pd.DataFrame) -> pd.DataFrame:
 # =========================================================
 def local_vendor_root(vendor: str, workflow: str, submission_type: str, submission_id: str) -> str:
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
+    root = IN_REVIEW_ROOT
 
     return os.path.join(
         PROJECT_ROOT,
@@ -137,7 +136,7 @@ def write_local_bytes(path: str, data: bytes):
 
 def list_vendors_local(workflow: str, submission_type: str, submission_id: str) -> List[str]:
     meta = parse_submission_type(submission_type)
-    root_name = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
+    root_name = IN_REVIEW_ROOT
 
     root = os.path.join(
         PROJECT_ROOT,
@@ -168,7 +167,7 @@ def list_vendors_local(workflow: str, submission_type: str, submission_id: str) 
 
 def list_vendors_azure(container, workflow: str, submission_type: str, submission_id: str) -> List[str]:
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
+    root = IN_REVIEW_ROOT
 
     prefix = f"{root}/{workflow}_workflow/"
 
@@ -324,7 +323,7 @@ def canonicalize_vendor(
     else:
         container = get_container()
         meta = parse_submission_type(submission_type)
-        root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
+        root = IN_REVIEW_ROOT
 
         blob_path = (
             f"{root}/{workflow}_workflow/"
@@ -383,7 +382,7 @@ def canonicalize_vendor(
                           json.dumps(summary, indent=2).encode())
         write_local_parquet(f"{review}/review_changes.parquet", pd.DataFrame())
     else:
-        root = PRICING_REVIEW_ROOT if meta["is_review"] else IN_REVIEW_ROOT
+        root = IN_REVIEW_ROOT
 
         base = (
             f"{root}/{workflow}_workflow/"

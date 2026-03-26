@@ -49,7 +49,6 @@ AZURE_CONN = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 SILVER_CONTAINER = "silver"
 
 IN_REVIEW = "in_review"
-PRICING_REVIEW = "post_pricing_review"
 
 CANONICAL_DIR = "canonical"
 INTEGRITY_DIR = "integrity"
@@ -123,7 +122,7 @@ def list_vendors(
     ensure_supported_workflow(workflow)
 
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root = IN_REVIEW
 
     expected_file = (
         "item_master_canonical.parquet"
@@ -226,7 +225,7 @@ def build_base_path(
     local: bool,
 ) -> str:
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root = IN_REVIEW
 
     if local:
         return os.path.join(
@@ -463,7 +462,7 @@ def snapshot_in_review_to_logs(
         return
 
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root = IN_REVIEW
 
     src_base = (
         f"{root}/{workflow}_workflow/"
@@ -601,7 +600,7 @@ def run_integrity_checks(
     )
 
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root = IN_REVIEW
 
     summary_path = (
         f"{root}/{workflow}_workflow/"

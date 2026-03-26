@@ -134,6 +134,7 @@ def build_base_paths(vendor, submission_type, submission_id, local, workflow_ove
             f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/{REVIEW_DIR}"
         )
 
+
     return base_in, base_out
 
 
@@ -172,7 +173,9 @@ def df_to_bytes(df):
     pq.write_table(pa.Table.from_pandas(df), buf)
     return buf.getvalue()
 
-
+def get_gold_container():
+    svc = BlobServiceClient.from_connection_string(AZURE_CONN_STR)
+    return svc.get_container_client("gold")
 # =========================================================
 # HASH
 # =========================================================
@@ -447,7 +450,87 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         delta,
         local
     )
+    # =========================================================
+    # GOLD WRITE (MINIMAL STRATEGY)
+    # =========================================================
+    if meta["is_review"]:
 
+        gold_container = get_gold_container()
+
+        gold_parquet_path = (
+            f"selected/{workflow}_workflow/"
+            f"{workflow}_etl_mapped.parquet"
+        )
+
+        gold_excel_path = (
+            f"selected/{workflow}_workflow/"
+            f"{workflow}_etl_mapped.xlsx"
+        )
+
+        # -----------------------------------------
+        # FULL REVIEW → overwrite
+        # -----------------------------------------
+        if not meta["is_delta"]:
+
+            print(f"[GOLD] Full review → overwrite {workflow} for {vendor}")
+
+            parquet_data = df_to_bytes(df)
+
+            if local:
+                # reuse already-generated READY excel
+                ready_excel_bytes = buf.getvalue()
+
+                write_local(gold_parquet_path, parquet_data)
+                write_local(gold_excel_path, ready_excel_bytes)
+            else:
+                # reuse already-generated READY excel
+                ready_excel_bytes = buf.getvalue()
+
+                gold_container.upload_blob(gold_parquet_path, parquet_data, overwrite=True)
+                gold_container.upload_blob(gold_excel_path, ready_excel_bytes, overwrite=True)
+
+        # -----------------------------------------
+        # DELTA REVIEW → merge
+        # -----------------------------------------
+        else:
+
+            print(f"[GOLD] Delta review → merge {workflow} for {vendor}")
+
+            # ---- load existing parquet from GOLD
+            try:
+                existing_bytes = gold_container.get_blob_client(gold_parquet_path).download_blob().readall()
+                existing_df = df_from_bytes(existing_bytes)
+            except:
+                existing_df = pd.DataFrame()
+
+            # ---- merge parquet source of truth
+            if existing_df.empty:
+                merged_df = df.copy()
+            else:
+                merged_df = pd.concat([existing_df, df], ignore_index=True)
+
+                # ⚠️ TEMP: simple dedup (upgrade later with business keys / hashes)
+                merged_df = merged_df.drop_duplicates()
+
+            parquet_data = df_to_bytes(merged_df)
+
+            # ---- rebuild multi-tab excel from merged tabs
+            merged_tabs = _split_tabs_from_autofixed(merged_df)
+            merged_tabs = filter_tabs_by_workflow(merged_tabs, workflow)
+
+            merged_excel_buf = BytesIO()
+            with pd.ExcelWriter(merged_excel_buf, engine="openpyxl") as writer:
+                for tab, df_tab in merged_tabs.items():
+                    df_tab.to_excel(writer, sheet_name=tab[:31], index=False)
+
+            merged_excel_bytes = merged_excel_buf.getvalue()
+
+            if local:
+                write_local(gold_parquet_path, parquet_data)
+                write_local(gold_excel_path, merged_excel_bytes)
+            else:
+                gold_container.upload_blob(gold_parquet_path, parquet_data, overwrite=True)
+                gold_container.upload_blob(gold_excel_path, merged_excel_bytes, overwrite=True)
 
 # =========================================================
 # CLI

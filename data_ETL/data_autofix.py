@@ -41,7 +41,6 @@ AZURE_CONN_STR = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 SILVER_CONTAINER = os.getenv("SILVER_CONTAINER", "silver")
 
 IN_REVIEW = "in_review"
-PRICING_REVIEW = "post_pricing_review"
 
 MAPPED_DIRNAME = "mapped"
 PROFILE_DIRNAME = "profiling"
@@ -72,7 +71,7 @@ def parse_submission_type(submission_type: str):
 
 def local_vendor_root(vendor: str, workflow: str, submission_type: str, submission_id: str) -> str:
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root = IN_REVIEW
 
     return os.path.join(
         PROJECT_ROOT,
@@ -86,7 +85,7 @@ def local_vendor_root(vendor: str, workflow: str, submission_type: str, submissi
 
 def list_vendors_local(workflow: str, submission_type: str, submission_id: str) -> List[str]:
     meta = parse_submission_type(submission_type)
-    root_name = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root_name = IN_REVIEW
 
     root = os.path.join(
         PROJECT_ROOT,
@@ -116,7 +115,7 @@ def list_vendors_local(workflow: str, submission_type: str, submission_id: str) 
 
 def list_vendors_azure(container, workflow: str, submission_type: str, submission_id: str) -> List[str]:
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root = IN_REVIEW
 
     prefix = (
         f"{root}/{workflow}_workflow/"
@@ -603,7 +602,7 @@ def run_vendor_azure(
     print(f"\n Autofix (Azure Mode) for vendor: {vendor}")
 
     meta = parse_submission_type(submission_type)
-    root = PRICING_REVIEW if meta["is_review"] else IN_REVIEW
+    root = IN_REVIEW
 
     base = (
         f"{root}/{workflow}_workflow/"
