@@ -65,7 +65,7 @@ def start_asset_etl():
     submission_type = data.get("submission_type")
     blob_paths = data.get("blob_paths", [])
     submission_id = data.get("submission_id")
-    workflow = data.get("workflow")
+    workflow = "assets"
 
     create_submission_manifest(
         vendor,
