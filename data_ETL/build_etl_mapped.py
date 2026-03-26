@@ -217,8 +217,26 @@ def excel_tabs_to_flat(tabs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
 # HASH
 # =========================================================
 def norm(v):
-    if pd.isna(v): return ""
-    return str(v).strip().upper()
+    if pd.isna(v):
+        return ""
+
+    # handle numeric values properly
+    if isinstance(v, (int, float)):
+        # if float but whole number → convert to int
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(v)
+
+    s = str(v).strip()
+
+    # normalize numeric-like strings
+    try:
+        f = float(s)
+        if f.is_integer():
+            return str(int(f))
+        return str(f)
+    except:
+        return s.upper()
 
 
 def hash_row(row, fields):
@@ -255,12 +273,20 @@ def normalize_df(df):
     df = df.copy()
 
     for col in df.columns:
-        if df[col].dtype == "object":
-            df[col] = df[col].astype(str).str.strip()
 
-        # unify empty vs NaN
-        df[col] = df[col].replace({"": None})
-    
+        # Force everything to string safely
+        df[col] = df[col].astype(str)
+
+        # Clean values
+        df[col] = df[col].str.strip()
+
+        # Normalize null-like values
+        df[col] = df[col].replace({
+            "nan": None,
+            "None": None,
+            "": None
+        })
+
     return df
 
 def compute_delta(curr, base, is_delta_review):
@@ -327,7 +353,46 @@ def compute_delta(curr, base, is_delta_review):
     deletes["_delta_type"] = "delete"
     deletes = deletes.drop(columns=["_merge"], errors="ignore")
 
-    return pd.concat([inserts, deletes], ignore_index=True)
+    delta_df = pd.concat([inserts, deletes], ignore_index=True)
+
+    # ----------------------------------------
+    # Convert insert+delete pairs → update
+    # ----------------------------------------
+    if not delta_df.empty and "Part Number" in delta_df.columns:
+
+        key_cols = ["Part Number", "_sheet"]
+
+        inserts_df = delta_df[delta_df["_delta_type"] == "insert"]
+        deletes_df = delta_df[delta_df["_delta_type"] == "delete"]
+
+        common_keys = pd.merge(
+            inserts_df[key_cols],
+            deletes_df[key_cols],
+            on=key_cols
+        )
+
+        if not common_keys.empty:
+            common_keys["_marker"] = 1
+
+            delta_df = delta_df.merge(common_keys, on=key_cols, how="left")
+
+            # insert → update
+            delta_df.loc[
+                (delta_df["_delta_type"] == "insert") & (delta_df["_marker"] == 1),
+                "_delta_type"
+            ] = "update"
+
+            # remove corresponding deletes
+            delta_df = delta_df[
+                ~(
+                    (delta_df["_delta_type"] == "delete") &
+                    (delta_df["_marker"] == 1)
+                )
+            ]
+
+            delta_df = delta_df.drop(columns=["_marker"], errors="ignore")
+
+    return delta_df
 
 
 # =========================================================
@@ -506,28 +571,25 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     # -------------------------------------------------
     # DELTA GENERATION (for BOTH submission + review)
     # -------------------------------------------------
-    base = load_baseline(container, vendor, workflow, local)
-    test_pn = "00211"
+    print("[DELTA] Using GOLD baseline")
 
-    base_row = base[base["Part Number"] == test_pn].head(1)
-    curr_row = flat_df[flat_df["Part Number"] == test_pn].head(1)
+    gold_container = get_gold_container() if not local else None
+    gold_tabs = load_gold_selected(gold_container, workflow, local)
 
-    # print("\n---- BASE ROW ----")
-    # print(base_row.T)
+    gold_flat = excel_tabs_to_flat(gold_tabs) if gold_tabs else pd.DataFrame()
 
-    # print("\n---- CURR ROW ----")
-    # print(curr_row.T)
+    # align section column
+    def align(df):
+        df = df.copy()
+        if "__Section" in df.columns:
+            df["_sheet"] = df["__Section"]
+            df.drop(columns=["__Section"], inplace=True)
+        return df
 
-    delta = compute_delta(flat_df.copy(), base.copy(), meta["is_delta"])
+    curr_flat = align(flat_df)
+    gold_flat = align(gold_flat)
 
-    # print("---- BASE COLS ----")
-    # print(sorted(base.columns))
-
-    # print("---- CURR COLS ----")
-    # print(sorted(flat_df.columns))
-
-    # print("[DEBUG] delta rows:", len(delta))
-    # print(delta[["Part Number", "_delta_type"]].head())
+    delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
 
     if delta.empty:
         print("[DELTA] No changes detected")
@@ -552,6 +614,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
             write_local(delta_path, df_to_bytes(delta))
         else:
             upload_blob(container, delta_excel_path, delta_buf.getvalue())
+            delta = normalize_df(delta)
             upload_blob(container, delta_path, df_to_bytes(delta))
 
     # -------------------------------------------------

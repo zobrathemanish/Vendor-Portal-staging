@@ -380,9 +380,17 @@ def get_product_outputs(vendor, submission_type, submission_id):
         f"profiling/health_issues.xlsx"
     )
 
+    delta_blob = (
+        f"ready/products_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/review/"
+        f"delta_mapped.xlsx"
+    )
+
     add_file("Vendor Action Report", vendor_action_blob)
     add_file("Integrity Report", integrity_blob)
     add_file("Review Output (ETL Mapped)", etl_mapped_blob)
+
+    add_file("Delta vs Current System", delta_blob)
+    
 
     summary = {
         "records_processed": 0,
