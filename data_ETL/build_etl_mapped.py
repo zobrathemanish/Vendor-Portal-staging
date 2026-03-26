@@ -176,6 +176,43 @@ def df_to_bytes(df):
 def get_gold_container():
     svc = BlobServiceClient.from_connection_string(AZURE_CONN_STR)
     return svc.get_container_client("gold")
+
+def load_gold_selected(container, workflow, local):
+    path = (
+        os.path.join(
+            PROJECT_ROOT,
+            "gold",
+            "selected",
+            f"{workflow}_workflow",
+            f"{workflow}_etl_mapped.xlsx"
+        )
+        if local else
+        f"selected/{workflow}_workflow/{workflow}_etl_mapped.xlsx"
+    )
+
+    try:
+        if local:
+            return pd.read_excel(path, sheet_name=None)
+        else:
+            blob = container.get_blob_client(path).download_blob().readall()
+            return pd.read_excel(BytesIO(blob), sheet_name=None)
+    except:
+        return {}
+
+
+def excel_tabs_to_flat(tabs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    dfs = []
+    for tab, df in tabs.items():
+        if df.empty:
+            continue
+        tmp = df.copy()
+        tmp["_sheet"] = tab
+        dfs.append(tmp)
+
+    if not dfs:
+        return pd.DataFrame()
+
+    return pd.concat(dfs, ignore_index=True)
 # =========================================================
 # HASH
 # =========================================================
@@ -265,9 +302,9 @@ def compute_delta(curr, base, is_delta_review):
     curr["_hash"] = curr.apply(lambda r: hash_row(r, hash_cols), axis=1)
     base["_hash"] = base.apply(lambda r: hash_row(r, hash_cols), axis=1)
 
-    print("\n---- HASH INPUT SAMPLE ----")
-    print(curr[hash_cols].head(3).T)
-    print(base[hash_cols].head(3).T)
+    # print("\n---- HASH INPUT SAMPLE ----")
+    # print(curr[hash_cols].head(3).T)
+    # print(base[hash_cols].head(3).T)
 
     merged = curr.merge(base[["_hash"]], on="_hash", how="left", indicator=True)
 
@@ -475,24 +512,26 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     base_row = base[base["Part Number"] == test_pn].head(1)
     curr_row = flat_df[flat_df["Part Number"] == test_pn].head(1)
 
-    print("\n---- BASE ROW ----")
-    print(base_row.T)
+    # print("\n---- BASE ROW ----")
+    # print(base_row.T)
 
-    print("\n---- CURR ROW ----")
-    print(curr_row.T)
+    # print("\n---- CURR ROW ----")
+    # print(curr_row.T)
 
     delta = compute_delta(flat_df.copy(), base.copy(), meta["is_delta"])
 
-    print("---- BASE COLS ----")
-    print(sorted(base.columns))
+    # print("---- BASE COLS ----")
+    # print(sorted(base.columns))
 
-    print("---- CURR COLS ----")
-    print(sorted(flat_df.columns))
+    # print("---- CURR COLS ----")
+    # print(sorted(flat_df.columns))
 
-    print("[DEBUG] delta rows:", len(delta))
-    print(delta[["Part Number", "_delta_type"]].head())
+    # print("[DEBUG] delta rows:", len(delta))
+    # print(delta[["Part Number", "_delta_type"]].head())
 
     if delta.empty:
+        print("[DELTA] No changes detected")
+
         if not meta["is_review"]:
             return
     else:
@@ -532,9 +571,17 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
 
     delta_buf = BytesIO()
     with pd.ExcelWriter(delta_buf, engine="openpyxl") as writer:
-        for tab, df_tab in delta_tabs.items():
-            if not df_tab.empty:
-                df_tab.to_excel(writer, sheet_name=tab[:31], index=False)
+                    written = False
+
+                    for tab, df_tab in delta_tabs.items():
+                        if not df_tab.empty:
+                            df_tab.to_excel(writer, sheet_name=tab[:31], index=False)
+                            written = True
+
+                    if not written:
+                        pd.DataFrame({"info": ["No delta changes"]}).to_excel(
+                            writer, sheet_name="Summary", index=False
+                         )
 
     if local:
         write_local(delta_excel_path, delta_buf.getvalue())
@@ -556,6 +603,107 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         delta,
         local
     )
+
+    # =========================================================
+    # GOLD SELECTED DELTA (FULL vs DELTA REVIEW)
+    # =========================================================
+    if meta["is_review"] and workflow == "products":
+
+        print("[GOLD DELTA] Processing vs selected")
+
+        gold_container = get_gold_container() if not local else None
+
+        gold_tabs = load_gold_selected(gold_container, workflow, local)
+
+        if gold_tabs:
+
+            gold_flat = excel_tabs_to_flat(gold_tabs)
+
+            # Align section columns
+            def align(df):
+                df = df.copy()
+                if "__Section" in df.columns:
+                    df["_sheet"] = df["__Section"]
+                    df.drop(columns=["__Section"], inplace=True)
+                return df
+
+            curr_flat = align(flat_df)
+            gold_flat = align(gold_flat)
+
+            # -------------------------------
+            # FULL PRODUCT REVIEW
+            # -------------------------------
+            if not meta["is_delta"]:
+                print("[GOLD DELTA] FULL → compute delta")
+
+                gold_delta = compute_delta(
+                    curr_flat.copy(),
+                    gold_flat.copy(),
+                    is_delta_review=False
+                )
+
+            # -------------------------------
+            # DELTA PRODUCT REVIEW
+            # -------------------------------
+            else:
+                print("[GOLD DELTA] DELTA → validate")
+
+                expected_delta = compute_delta(
+                    curr_flat.copy(),
+                    gold_flat.copy(),
+                    is_delta_review=False
+                )
+
+                curr_hash = set(curr_flat.get("_hash", pd.Series()).dropna())
+                expected_hash = set(expected_delta.get("_hash", pd.Series()).dropna())
+
+                missing = expected_hash - curr_hash
+                extra = curr_hash - expected_hash
+
+                print(f"[GOLD DELTA CHECK] Missing={len(missing)}, Extra={len(extra)}")
+
+                # still pass vendor delta forward
+                gold_delta = curr_flat.copy()
+
+            # -------------------------------
+            # SAVE
+            # -------------------------------
+
+                gold_delta_tabs = _split_tabs_from_autofixed(gold_delta)
+                gold_delta_tabs = filter_tabs_by_workflow(gold_delta_tabs, workflow)
+
+                buf_gold = BytesIO()
+                with pd.ExcelWriter(buf_gold, engine="openpyxl") as writer:
+                    written = False
+
+                    for tab, df_tab in gold_delta_tabs.items():
+                        if not df_tab.empty:
+                            df_tab.to_excel(writer, sheet_name=tab[:31], index=False)
+                            written = True
+
+                    if not written:
+                        pd.DataFrame({"info": ["No delta vs gold"]}).to_excel(
+                            writer, sheet_name="Summary", index=False
+                        )
+
+                gold_out_path = (
+                    os.path.join(
+                        PROJECT_ROOT,
+                        "silver",
+                        "approved",
+                        f"{workflow}_workflow",
+                        f"delta_{workflow}_etl_mapped.xlsx"
+                    )
+                    if local else
+                    f"approved/{workflow}_workflow/delta_{workflow}_etl_mapped.xlsx"
+                )
+
+                if local:
+                    write_local(gold_out_path, buf_gold.getvalue())
+                else:
+                    container.upload_blob(gold_out_path, buf_gold.getvalue(), overwrite=True)
+
+                print("[GOLD DELTA] Saved")
     # =========================================================
     # SILVER APPROVED WRITE (MINIMAL STRATEGY)
     # =========================================================
