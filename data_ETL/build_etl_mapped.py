@@ -81,7 +81,7 @@ SCHEMA_TABS: Dict[str, List[str]] = {
 # SUBMISSION TYPE
 # =========================================================
 def parse_submission_type(submission_type: str, workflow_override: str = None):
-    derived = "pricing" if "pricing" in submission_type else "product"
+    derived = "pricing" if "pricing" in submission_type else "products"
 
     return {
         "is_review": "review" in submission_type,
@@ -191,12 +191,17 @@ def hash_row(row, fields):
 # =========================================================
 # BASELINE
 # =========================================================
-def load_baseline(container, vendor, local):
+def load_baseline(container, vendor, workflow, local):
     path = (
-        os.path.join(PROJECT_ROOT, "silver", "approved", "current_state",
-                     f"vendor={vendor}", "etl_mapped.parquet")
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            "approved",
+            f"{workflow}_workflow",
+            f"{workflow}_etl_mapped.parquet"
+        )
         if local else
-        f"approved/current_state/vendor={vendor}/etl_mapped.parquet"
+        f"approved/{workflow}_workflow/{workflow}_etl_mapped.parquet"
     )
 
     try:
@@ -209,14 +214,60 @@ def load_baseline(container, vendor, local):
 # =========================================================
 # DELTA ENGINE
 # =========================================================
+def normalize_df(df):
+    df = df.copy()
+
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].astype(str).str.strip()
+
+        # unify empty vs NaN
+        df[col] = df[col].replace({"": None})
+    
+    return df
+
 def compute_delta(curr, base, is_delta_review):
+
+    curr = normalize_df(curr)
+    base = normalize_df(base)
 
     if base.empty:
         curr["_delta_type"] = "insert"
         return curr
 
-    curr["_hash"] = curr.apply(lambda r: hash_row(r, curr.columns), axis=1)
-    base["_hash"] = base.apply(lambda r: hash_row(r, base.columns), axis=1)
+    # Align columns between current and baseline
+    all_cols = sorted(set(curr.columns) | set(base.columns))
+
+    for col in all_cols:
+        if col not in curr.columns:
+            curr[col] = pd.NA
+        if col not in base.columns:
+            base[col] = pd.NA
+
+    curr = curr[all_cols]
+    base = base[all_cols]
+
+    for df in [curr, base]:
+        if "__Section" in df.columns:
+            df["_sheet"] = df["__Section"]
+            df.drop(columns=["__Section"], inplace=True)
+
+    # Exclude technical delta fields from hashing
+    EXCLUDE_COLS = {
+        "_delta_type", "_merge", "__Section", "_sheet",
+        "_entity_key", "_entity_id", "_row_id",
+        "_vendor", "_autofix_run_id", "_autofix_timestamp",
+        "_transformation_applied"
+    }
+
+    hash_cols = [c for c in all_cols if c not in EXCLUDE_COLS]
+
+    curr["_hash"] = curr.apply(lambda r: hash_row(r, hash_cols), axis=1)
+    base["_hash"] = base.apply(lambda r: hash_row(r, hash_cols), axis=1)
+
+    print("\n---- HASH INPUT SAMPLE ----")
+    print(curr[hash_cols].head(3).T)
+    print(base[hash_cols].head(3).T)
 
     merged = curr.merge(base[["_hash"]], on="_hash", how="left", indicator=True)
 
@@ -225,19 +276,21 @@ def compute_delta(curr, base, is_delta_review):
             "left_only": "insert",
             "both": None
         })
-        return merged[merged["_delta_type"].notna()]
+        return merged[merged["_delta_type"].notna()].drop(columns=["_merge"], errors="ignore")
 
-    # full review
+    # full submission/review: inserts + deletes relative to approved
     merged["_delta_type"] = merged["_merge"].map({
         "left_only": "insert",
         "both": None
     })
+    inserts = merged[merged["_delta_type"].notna()].drop(columns=["_merge"], errors="ignore")
 
     deletes = base.merge(curr[["_hash"]], on="_hash", how="left", indicator=True)
-    deletes = deletes[deletes["_merge"] == "left_only"]
+    deletes = deletes[deletes["_merge"] == "left_only"].copy()
     deletes["_delta_type"] = "delete"
+    deletes = deletes.drop(columns=["_merge"], errors="ignore")
 
-    return pd.concat([merged, deletes])
+    return pd.concat([inserts, deletes], ignore_index=True)
 
 
 # =========================================================
@@ -322,34 +375,31 @@ def _split_tabs_from_autofixed(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         chunk = df[df[section_col] == tab_name].copy()
 
         if chunk.empty:
-            # 🔥 Skip empty pricing tab entirely
             if tab_name == "Pricing":
                 continue
-
             out[tab_name] = pd.DataFrame(columns=schema_cols)
             continue
 
-        # remove internal cols
         drop_cols = [c for c in ["__Section", "_sheet"] if c in chunk.columns]
         chunk = chunk.drop(columns=drop_cols, errors="ignore")
 
-        # -----------------------------------------
-        # SPECIAL CASE: PRICING (flexible schema)
-        # -----------------------------------------
+        extra_cols = []
+        if "_delta_type" in chunk.columns:
+            chunk["Delta Type"] = chunk["_delta_type"]
+            extra_cols.append("Delta Type")
+
         if tab_name == "Pricing":
-            # keep everything except internal columns
-            out[tab_name] = chunk.reset_index(drop=True)
+            keep_cols = [c for c in chunk.columns if c != "_delta_type"]
+            out[tab_name] = chunk[keep_cols].reset_index(drop=True)
             continue
 
-        # ensure schema
         for c in schema_cols:
             if c not in chunk.columns:
                 chunk[c] = pd.NA
 
-        # drop empty rows
         chunk = chunk.dropna(how="all", subset=schema_cols)
 
-        out[tab_name] = chunk[schema_cols].reset_index(drop=True)
+        out[tab_name] = chunk[schema_cols + extra_cols].reset_index(drop=True)
 
     return out
 # =========================================================
@@ -380,6 +430,18 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         [t.assign(__Section=name) for name, t in tabs.items()],
         ignore_index=True
     )
+    # --- remove system columns ---
+    SYSTEM_COLS = [
+        "_entity_key",
+        "_entity_id",
+        "_vendor",
+        "_row_id",
+        "_autofix_run_id",
+        "_autofix_timestamp",
+        "_transformation_applied"
+    ]
+
+    flat_df = flat_df.drop(columns=[c for c in SYSTEM_COLS if c in flat_df.columns], errors="ignore")
 
     out_path = f"{base_out}/etl_mapped.parquet"
     data = df_to_bytes(flat_df)
@@ -404,22 +466,66 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     else:
         upload_blob(container, excel_path, buf.getvalue())
 
-    # skip if submission
-    if not meta["is_review"]:
-        return
+    # -------------------------------------------------
+    # DELTA GENERATION (for BOTH submission + review)
+    # -------------------------------------------------
+    base = load_baseline(container, vendor, workflow, local)
+    test_pn = "00211"
 
-    # baseline
-    base = load_baseline(container, vendor, local)
+    base_row = base[base["Part Number"] == test_pn].head(1)
+    curr_row = flat_df[flat_df["Part Number"] == test_pn].head(1)
 
-    # delta
-    delta = compute_delta(df.copy(), base.copy(), meta["is_delta"])
+    print("\n---- BASE ROW ----")
+    print(base_row.T)
+
+    print("\n---- CURR ROW ----")
+    print(curr_row.T)
+
+    delta = compute_delta(flat_df.copy(), base.copy(), meta["is_delta"])
+
+    print("---- BASE COLS ----")
+    print(sorted(base.columns))
+
+    print("---- CURR COLS ----")
+    print(sorted(flat_df.columns))
+
+    print("[DEBUG] delta rows:", len(delta))
+    print(delta[["Part Number", "_delta_type"]].head())
 
     if delta.empty:
+        if not meta["is_review"]:
+            return
+    else:
+        delta_path = f"{base_out}/delta_mapped.parquet"
+        delta_excel_path = f"{base_out}/delta_mapped.xlsx"
+
+        delta_tabs = _split_tabs_from_autofixed(delta)
+        delta_tabs = filter_tabs_by_workflow(delta_tabs, workflow)
+
+        delta_buf = BytesIO()
+        with pd.ExcelWriter(delta_buf, engine="openpyxl") as writer:
+            for tab, df_tab in delta_tabs.items():
+                if not df_tab.empty:
+                    df_tab.to_excel(writer, sheet_name=tab[:31], index=False)
+
+        if local:
+            write_local(delta_excel_path, delta_buf.getvalue())
+            write_local(delta_path, df_to_bytes(delta))
+        else:
+            upload_blob(container, delta_excel_path, delta_buf.getvalue())
+            upload_blob(container, delta_path, df_to_bytes(delta))
+
+    # -------------------------------------------------
+    # ONLY REVIEW → queue + approved write
+    # -------------------------------------------------
+    if not meta["is_review"]:
         return
 
     delta_path = f"{base_out}/delta_mapped.parquet"
 
     delta_excel_path = f"{base_out}/delta_mapped.xlsx"
+
+    delta = delta.drop(columns=["_hash"], errors="ignore")
 
     delta_tabs = _split_tabs_from_autofixed(delta)
     delta_tabs = filter_tabs_by_workflow(delta_tabs, workflow)
@@ -451,19 +557,19 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         local
     )
     # =========================================================
-    # GOLD WRITE (MINIMAL STRATEGY)
+    # SILVER APPROVED WRITE (MINIMAL STRATEGY)
     # =========================================================
     if meta["is_review"]:
 
-        gold_container = get_gold_container()
+        approved_container = container
 
-        gold_parquet_path = (
-            f"selected/{workflow}_workflow/"
+        approved_parquet_path = (
+            f"approved/{workflow}_workflow/"
             f"{workflow}_etl_mapped.parquet"
         )
 
-        gold_excel_path = (
-            f"selected/{workflow}_workflow/"
+        approved_excel_path = (
+            f"approved/{workflow}_workflow/"
             f"{workflow}_etl_mapped.xlsx"
         )
 
@@ -472,56 +578,46 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         # -----------------------------------------
         if not meta["is_delta"]:
 
-            print(f"[GOLD] Full review → overwrite {workflow} for {vendor}")
+            print(f"[APPROVED] Full review → overwrite {workflow} for {vendor}")
 
-            parquet_data = df_to_bytes(df)
+            parquet_data = df_to_bytes(flat_df)
 
             if local:
-                # reuse already-generated READY excel
                 ready_excel_bytes = buf.getvalue()
-
-                write_local(gold_parquet_path, parquet_data)
-                write_local(gold_excel_path, ready_excel_bytes)
+                write_local(approved_parquet_path, parquet_data)
+                write_local(approved_excel_path, ready_excel_bytes)
             else:
-                # reuse already-generated READY excel
                 ready_excel_bytes = buf.getvalue()
-
-                gold_container.upload_blob(gold_parquet_path, parquet_data, overwrite=True)
-                gold_container.upload_blob(gold_excel_path, ready_excel_bytes, overwrite=True)
+                approved_container.upload_blob(approved_parquet_path, parquet_data, overwrite=True)
+                approved_container.upload_blob(approved_excel_path, ready_excel_bytes, overwrite=True)
 
         # -----------------------------------------
         # DELTA REVIEW → merge
         # -----------------------------------------
         else:
 
-            print(f"[GOLD] Delta review → merge {workflow} for {vendor}")
+            print(f"[APPROVED] Delta review → merge {workflow} for {vendor}")
 
-            # ---- load existing parquet from GOLD
             try:
-                existing_bytes = gold_container.get_blob_client(gold_parquet_path).download_blob().readall()
+                existing_bytes = approved_container.get_blob_client(approved_parquet_path).download_blob().readall()
                 existing_df = df_from_bytes(existing_bytes)
             except:
                 existing_df = pd.DataFrame()
 
-            # ---- merge parquet source of truth
             if existing_df.empty:
-                merged_df = df.copy()
+                merged_df = flat_df.copy()
             else:
-                merged_df = pd.concat([existing_df, df], ignore_index=True)
+                merged_df = pd.concat([existing_df, flat_df], ignore_index=True)
 
-                # --- normalize ---
                 merged_df = merged_df.copy()
-
                 for col in merged_df.columns:
                     if merged_df[col].dtype == "object":
                         merged_df[col] = merged_df[col].astype(str).str.strip()
 
-                # --- dedup ---
                 merged_df = merged_df.drop_duplicates()
 
             parquet_data = df_to_bytes(merged_df)
 
-            # ---- rebuild multi-tab excel from merged tabs
             merged_tabs = _split_tabs_from_autofixed(merged_df)
             merged_tabs = filter_tabs_by_workflow(merged_tabs, workflow)
 
@@ -533,11 +629,11 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
             merged_excel_bytes = merged_excel_buf.getvalue()
 
             if local:
-                write_local(gold_parquet_path, parquet_data)
-                write_local(gold_excel_path, merged_excel_bytes)
+                write_local(approved_parquet_path, parquet_data)
+                write_local(approved_excel_path, merged_excel_bytes)
             else:
-                gold_container.upload_blob(gold_parquet_path, parquet_data, overwrite=True)
-                gold_container.upload_blob(gold_excel_path, merged_excel_bytes, overwrite=True)
+                approved_container.upload_blob(approved_parquet_path, parquet_data, overwrite=True)
+                approved_container.upload_blob(approved_excel_path, merged_excel_bytes, overwrite=True)
 
 # =========================================================
 # CLI
