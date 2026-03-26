@@ -460,6 +460,8 @@ def create_submission_manifest(vendor, workflow, submission_id, submission_type,
 
     container_client = blob_service.get_container_client("bronze")
 
+    print("vendor , workflow, submission_id, submission_type, files: ", vendor , workflow, submission_id, submission_type, files )
+
     manifest = {
         "vendor": vendor,
         "submission_id": submission_id,

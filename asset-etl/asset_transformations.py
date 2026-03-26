@@ -189,7 +189,7 @@ def load_media_canonical(vendor: str, submission_type: str, submission_id: str) 
 
     path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/"
         f"canonical/media_canonical.parquet"
     )
 
@@ -232,7 +232,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 
     health_path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/logs/health_report.xlsx"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/health_report.xlsx"
     )
 
     try:
@@ -251,7 +251,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 
     autofix_path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/logs/autofix_report.xlsx"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/autofix_report.xlsx"
     )
 
     try:
@@ -280,7 +280,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 
     integrity_path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/reports/asset_integrity_issues.json"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/asset_integrity_issues.json"
     )
     try:
 
@@ -298,7 +298,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 
     transform_log_path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/reports/asset_transform_log.json"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/asset_transform_log.json"
     )
 
     try:
@@ -395,7 +395,7 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
 
     report_path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/reports/asset_submission_summary.xlsx"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/asset_submission_summary.xlsx"
     )
 
     container.upload_blob(report_path, buf.getvalue(), overwrite=True)
@@ -431,7 +431,7 @@ def promote_assets_to_gold(vendor, submission_type, submission_id):
 
         relative = src_path.replace(prefix, "")
 
-        gold_path = f"selected/asset_workflow/{vendor}/{relative}"
+        gold_path = f"selected/asset_workflow/vendor={vendor}/{relative}"
 
         data = container.get_blob_client(src_path).download_blob().readall()
         
@@ -771,7 +771,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 
         log_path = (
             f"in_review/assets_workflow/"
-            f"{vendor}/{submission_type}/{submission_id}/reports/asset_transform_log.json"
+            f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/asset_transform_log.json"
         )
                 
         log_data["finished_at"] = datetime.utcnow().isoformat()
@@ -841,7 +841,7 @@ def create_assets_zip(vendor, submission_type, submission_id, assets):
 
             log_blob = (
                 f"in_review/assets_workflow/"
-                f"{vendor}/{submission_type}/{submission_id}/reports/asset_transform_log.json"
+                f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/asset_transform_log.json"
             )
 
             log_data = container.get_blob_client(log_blob).download_blob().readall()
@@ -853,7 +853,7 @@ def create_assets_zip(vendor, submission_type, submission_id, assets):
 
     zip_path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/reports/transformed_assets.zip"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/transformed_assets.zip"
     )
 
     container.upload_blob(zip_path, zip_buffer.getvalue(), overwrite=True)

@@ -44,6 +44,9 @@ def get_asset_upload_sas():
     vendor = data.get("vendor")
     filename = data.get("filename")
     submission_id = data["submission_id"]
+    submission_type = data["submission_type"]
+    
+    print("The submission type here in get-asset-upload-sas api routes is : ", submission_type)
 
     if not vendor or not filename:
         return {"error": "Missing vendor or filename"}, 400
@@ -52,9 +55,12 @@ def get_asset_upload_sas():
     # vendor_clean = vendor.lower().replace(" ", "-")
 
     blob_path = (
-    f"raw/vendor={vendor}/assets/"
-    f"submission={submission_id}/original_zip/{filename}"
-)
+        f"raw/vendor={vendor}/"
+        f"workflow=assets/"
+        f"submission_type={submission_type}/"   # or pass dynamically
+        f"submission={submission_id}/"
+        f"original_zip/{filename}"
+    )
 
     sas_url = generate_upload_sas(
         container=current_app.config["AZURE_CONTAINER_NAME"],

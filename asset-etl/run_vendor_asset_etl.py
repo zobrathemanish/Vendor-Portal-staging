@@ -129,7 +129,7 @@ def run_step(name, script, vendor, submission_type, submission_id):
         raise RuntimeError(error_message)
 
     
-def update_manifest_step(vendor, submission_id, step, started_at, finished_at):
+def update_manifest_step(vendor, submission_type, submission_id, step, started_at, finished_at):
 
     import os
     from services.azure_service import read_json_blob_from_azure, upload_json_blob
@@ -137,8 +137,11 @@ def update_manifest_step(vendor, submission_id, step, started_at, finished_at):
     container = "bronze"
 
     blob_path = (
-        f"raw/vendor={vendor}/assets/"
-        f"submission={submission_id}/manifest.json"
+        f"raw/vendor={vendor}/"
+        f"workflow=assets/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"manifest.json"
     )
 
     manifest = read_json_blob_from_azure(blob_path, container)
@@ -170,7 +173,7 @@ def canonical_exists(vendor, submission_type, submission_id):
 
     path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/canonical/media_canonical.parquet"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/canonical/media_canonical.parquet"
     )
 
     try:
@@ -257,7 +260,7 @@ def main():
 
             end_time = datetime.utcnow()
 
-            update_manifest_step(vendor, submission_id, name, start_time, end_time)
+            update_manifest_step(vendor, submission_type, submission_id, name, start_time, end_time)
 
             # -----------------------------------------------------
             # STOP PIPELINE IF NO CANONICAL GENERATED

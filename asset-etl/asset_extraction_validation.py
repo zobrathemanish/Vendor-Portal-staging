@@ -133,13 +133,13 @@ def upload_json(payload: dict, blob_path: str):
 
 def vendor_paths(vendor: str, submission_type: str, submission_id: str) -> Dict[str, str]:
 
-    base = f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}"
+    base = f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}"
 
     staging_prefix = f"{base}/assets_staging/"
     log_prefix = f"{base}/logs/"
 
     return {
-        "asset_prefix": f"raw/vendor={vendor}/assets/submission={submission_id}/original_zip/",
+        "asset_prefix": f"raw/vendor={vendor}/workflow=assets/submission_type={submission_type}/submission={submission_id}/original_zip/",
         "staging_prefix": staging_prefix,
         "log_prefix": log_prefix,
         "zip_hash_log": f"{log_prefix}zip_hashes.json",
@@ -159,7 +159,7 @@ def build_staging_path(vendor: str, submission_type: str, submission_id: str, fi
 
     return (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/"
         f"assets_staging/{filename}"
     )
 
@@ -737,6 +737,10 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     }
 
     log("  Writing validation logs...")
+
+    # -------------------------------------------------
+    # WRITE RAW MANIFEST (for downstream compatibility)
+    # -------------------------------------------------
 
     upload_json(
         asset_manifest,

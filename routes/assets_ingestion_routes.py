@@ -164,8 +164,8 @@ def get_asset_outputs(vendor, submission_type, submission_id):
     container = blob_service.get_container_client("silver")
 
     prefixes = [
-        f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/reports/",
-        f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
+        f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/",
+        f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/"
     ]
 
     files = []
@@ -211,7 +211,7 @@ def get_asset_outputs(vendor, submission_type, submission_id):
     try:
 
         health_blob = (
-            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
+            f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/"
             f"health_report.xlsx"
         )
 
@@ -229,7 +229,7 @@ def get_asset_outputs(vendor, submission_type, submission_id):
     try:
 
         report_blob = (
-            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/reports/"
+            f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/reports/"
             f"asset_submission_summary.xlsx"
         )
 
@@ -252,7 +252,7 @@ def get_asset_outputs(vendor, submission_type, submission_id):
         try:
 
             validation_blob = (
-                f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/"
+                f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/"
                 f"validation_report.xlsx"
             )
 

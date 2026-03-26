@@ -114,7 +114,7 @@ def load_asset_manifest(vendor: str, submission_type: str, submission_id: str) -
 
     path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/"
         f"assets_staging/_asset_manifest.json"
     )
 
@@ -406,7 +406,7 @@ def build_media_canonical(vendor: str, submission_type: str, submission_id: str)
 
         path = (
             f"in_review/assets_workflow/"
-            f"{vendor}/{submission_type}/{submission_id}/"
+            f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/"
             f"reports/asset_integrity_issues.json"
         )
 
@@ -426,7 +426,7 @@ def write_media_canonical(vendor: str, df: pd.DataFrame, submission_type:str, su
 
     base_path = (
         f"in_review/assets_workflow/"
-        f"{vendor}/{submission_type}/{submission_id}/"
+        f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/"
         f"canonical/media_canonical"
     )
 
@@ -503,7 +503,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
         }
 
         container.upload_blob(
-            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/canonical_error.json",
+            f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/canonical_error.json",
             json.dumps(error_log, indent=2),
             overwrite=True
         )
@@ -528,7 +528,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
             autofix_df.to_excel(writer, index=False)
 
         container.upload_blob(
-            f"in_review/assets_workflow/{vendor}/{submission_type}/{submission_id}/logs/autofix_report.xlsx",
+            f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/autofix_report.xlsx",
             buf.getvalue(),
             overwrite=True
         )
