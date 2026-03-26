@@ -163,15 +163,15 @@ PACKAGE_REQUIRED_FIELDS = [
     "Ship Width",
 ]
 
-# -----------------------------
-# Outliers (row-level, informational)
-# -----------------------------
-OUTLIER_FIELDS = {
-    "Net Price": {"severity": "low"},
-    "Weight": {"severity": "low"},
-    "Minimum Order Quantity": {"severity": "low"},
-    "Shipping Volume": {"severity": "medium"},  # computed if L/W/H exist
-}
+# # -----------------------------
+# # Outliers (row-level, informational)
+# # -----------------------------
+# OUTLIER_FIELDS = {
+#     "Net Price": {"severity": "low"},
+#     "Weight": {"severity": "low"},
+#     "Minimum Order Quantity": {"severity": "low"},
+#     "Shipping Volume": {"severity": "medium"},  # computed if L/W/H exist
+# }
 
 # -----------------------------
 # Conversions (row-level candidates)
@@ -1133,46 +1133,46 @@ def duplicate_checks(vendor: str, tab: str, df: pd.DataFrame) -> List[Dict[str, 
     return issues
 
 
-def outlier_iqr_checks(vendor: str, tab: str, df: pd.DataFrame) -> List[Dict[str, Any]]:
-    issues: List[Dict[str, Any]] = []
+# def outlier_iqr_checks(vendor: str, tab: str, df: pd.DataFrame) -> List[Dict[str, Any]]:
+#     issues: List[Dict[str, Any]] = []
 
-    # compute Shipping Volume if dims exist
-    Lc = find_col(df, ["Ship Length"])
-    Wc = find_col(df, ["Ship Width"])
-    Hc = find_col(df, ["Ship Height"])
-    df2 = df
-    if Lc and Wc and Hc:
-        L = pd.to_numeric(df[Lc], errors="coerce")
-        W = pd.to_numeric(df[Wc], errors="coerce")
-        H = pd.to_numeric(df[Hc], errors="coerce")
-        df2 = df.copy()
-        df2["Shipping Volume"] = L * W * H
+#     # compute Shipping Volume if dims exist
+#     Lc = find_col(df, ["Ship Length"])
+#     Wc = find_col(df, ["Ship Width"])
+#     Hc = find_col(df, ["Ship Height"])
+#     df2 = df
+#     if Lc and Wc and Hc:
+#         L = pd.to_numeric(df[Lc], errors="coerce")
+#         W = pd.to_numeric(df[Wc], errors="coerce")
+#         H = pd.to_numeric(df[Hc], errors="coerce")
+#         df2 = df.copy()
+#         df2["Shipping Volume"] = L * W * H
 
-    for field, cfg in OUTLIER_FIELDS.items():
-        exists, actual = ensure_col(df2, field)
-        if not exists:
-            continue
-        s = pd.to_numeric(df2[actual], errors="coerce")
-        if s.dropna().empty:
-            continue
-        q1, q3 = s.quantile([0.25, 0.75])
-        iqr = q3 - q1
-        if pd.isna(iqr) or iqr == 0:
-            continue
-        lower = q1 - 1.5 * iqr
-        upper = q3 + 1.5 * iqr
-        out = (s < lower) | (s > upper)
-        for _, row in df2[out.fillna(False)].iterrows():
-            issues.append(record_issue(
-                vendor=vendor, tab=tab, scope="row",
-                issue_type="outlier_iqr", issue_subtype="iqr_outlier",
-                severity=cfg["severity"], detection_method="iqr",
-                row_id=row.get("_row_id"), entity_key=row.get("_entity_key"), entity_id=row.get("_entity_id"),
-                field=field, observed_value=str(row.get(actual)),
-                expected_or_hint=f"{lower:.4g} – {upper:.4g}",
-                fixable_by_code=False, confidence=0.8
-            ))
-    return issues
+#     for field, cfg in OUTLIER_FIELDS.items():
+#         exists, actual = ensure_col(df2, field)
+#         if not exists:
+#             continue
+#         s = pd.to_numeric(df2[actual], errors="coerce")
+#         if s.dropna().empty:
+#             continue
+#         q1, q3 = s.quantile([0.25, 0.75])
+#         iqr = q3 - q1
+#         if pd.isna(iqr) or iqr == 0:
+#             continue
+#         lower = q1 - 1.5 * iqr
+#         upper = q3 + 1.5 * iqr
+#         out = (s < lower) | (s > upper)
+#         for _, row in df2[out.fillna(False)].iterrows():
+#             issues.append(record_issue(
+#                 vendor=vendor, tab=tab, scope="row",
+#                 issue_type="outlier_iqr", issue_subtype="iqr_outlier",
+#                 severity=cfg["severity"], detection_method="iqr",
+#                 row_id=row.get("_row_id"), entity_key=row.get("_entity_key"), entity_id=row.get("_entity_id"),
+#                 field=field, observed_value=str(row.get(actual)),
+#                 expected_or_hint=f"{lower:.4g} – {upper:.4g}",
+#                 fixable_by_code=False, confidence=0.8
+#             ))
+#     return issues
 
 
 # =========================================================
@@ -1302,7 +1302,7 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
         issues += date_format_checks(vendor, sheet_name, df2)
         issues += numeric_sanity_checks(vendor, sheet_name, df2)
         issues += duplicate_checks(vendor, sheet_name, df2)
-        issues += outlier_iqr_checks(vendor, sheet_name, df2)
+        # issues += outlier_iqr_checks(vendor, sheet_name, df2)
 
     # Cross-tab + completeness rules use Item_Master as universe if present
     item_df = profiled.get(TAB_ITEM_MASTER)
