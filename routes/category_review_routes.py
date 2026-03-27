@@ -548,7 +548,7 @@ def apply_delta_to_current_state(container, vendor: str):
 @category_review_bp.route("/review/category")
 @login_required
 def category_review_page():
-    if current_user.role != "category":
+    if current_user.role != "category_team":
         abort(403)
 
     return render_template("category_review.html")
@@ -561,7 +561,7 @@ def category_review_page():
 @login_required
 def api_category_review_vendors():
 
-    if current_user.role != "category":
+    if current_user.role != "category_team":
         abort(403)
 
     container = _container()
@@ -584,7 +584,7 @@ def api_category_review_vendors():
 @login_required
 def api_category_review():
 
-    if current_user.role != "category":
+    if current_user.role != "category_team":
         abort(403)
 
     vendor = request.args.get("vendor")
@@ -676,7 +676,7 @@ def api_category_review():
 @login_required
 def api_category_review_decision():
 
-    if current_user.role != "category":
+    if current_user.role != "category_team":
         abort(403)
 
     body = request.get_json(force=True) or {}
@@ -757,7 +757,7 @@ def api_category_review_decision():
 @login_required
 def api_category_review_work_queue():
 
-    if current_user.role != "category":
+    if current_user.role != "category_team":
         abort(403)
 
     container = _container()
@@ -857,7 +857,7 @@ def api_category_review_work_queue():
 @login_required
 def api_part_intelligence():
 
-    if current_user.role != "category":
+    if current_user.role != "category_team":
         abort(403)
 
     vendor = request.args.get("vendor")
@@ -875,6 +875,10 @@ def api_part_intelligence():
 
     if df.empty:
         return jsonify({"error": "No delta found"}), 404
+
+    # Normalize section column
+    if "__Section" not in df.columns and "_sheet" in df.columns:
+        df["__Section"] = df["_sheet"]
 
     df_part = df[
         df["Part Number"].astype(str) == str(part)
@@ -1065,10 +1069,12 @@ def api_part_intelligence():
             "image_preview_url": image_preview_url
         }))
 
-
-
     print("DELTA ROWS FOR PART:", part)
-    print(df_part[["Part Number", "__Section"]])
+    cols = ["Part Number"]
+    if "__Section" in df_part.columns:
+        cols.append("__Section")
+
+    print(df_part[cols])
 
 
     if df_part.empty:
@@ -1292,7 +1298,7 @@ def api_part_intelligence():
 @login_required
 def api_asset_preview():
 
-    if current_user.role != "category":
+    if current_user.role != "category_team":
         abort(403)
 
     vendor = request.args.get("vendor")

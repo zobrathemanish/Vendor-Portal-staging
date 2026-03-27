@@ -69,7 +69,7 @@ def _role_redirect(user):
         return redirect(url_for("upload.upload_page"))
 
     # Category Review Team
-    if user.role == "category":
+    if user.role == "category_team":
         return redirect(url_for("category_review.category_review_page"))
 
     # Pricing Team → Pricing Ingestion

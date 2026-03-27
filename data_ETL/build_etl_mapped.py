@@ -291,6 +291,10 @@ def normalize_df(df):
 
 def compute_delta(curr, base, is_delta_review):
 
+    for df in [curr, base]:
+        if "__Section" not in df.columns and "_sheet" in df.columns:
+            df["__Section"] = df["_sheet"]
+
     curr = normalize_df(curr)
     base = normalize_df(base)
 
@@ -313,7 +317,7 @@ def compute_delta(curr, base, is_delta_review):
     for df in [curr, base]:
         if "__Section" in df.columns:
             df["_sheet"] = df["__Section"]
-            df.drop(columns=["__Section"], inplace=True)
+            # df.drop(columns=["__Section"], inplace=True)
 
     # Exclude technical delta fields from hashing
     EXCLUDE_COLS = {
@@ -394,54 +398,127 @@ def compute_delta(curr, base, is_delta_review):
 
     return delta_df
 
-
 # =========================================================
-# CATEGORY QUEUE
+# CATEGORY QUEUE (UNIFIED PRODUCT + PRICING)
 # =========================================================
-def publish_category_queue(container, vendor, workflow, submission_type, submission_id, df, local):
-
-    if df.empty:
-        return
-
-    df["_review_decision"] = pd.NA
-    df["_review_comment"] = pd.NA
-
+def load_approved_workflow_delta(container, vendor, workflow, local) -> pd.DataFrame:
     path = (
-        os.path.join(PROJECT_ROOT, "silver", CATEGORY_QUEUE_ROOT,
-                     f"{workflow}_workflow", f"vendor={vendor}", CATEGORY_ACTIVE_DIR, "queue.parquet")
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            "approved",
+            f"{workflow}_workflow",
+            f"vendor={vendor}",
+            f"{workflow}_delta.parquet"
+        )
         if local else
-        f"{CATEGORY_QUEUE_ROOT}/{workflow}_workflow/vendor={vendor}/{CATEGORY_ACTIVE_DIR}/queue.parquet"
+        f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
     )
 
-    data = df_to_bytes(df)
+    try:
+        if local:
+            return read_parquet_local(path)
+        return df_from_bytes(download_blob(container, path))
+    except:
+        return pd.DataFrame()
+
+
+def build_unified_category_queue(container, vendor, local):
+    product_delta = load_approved_workflow_delta(container, vendor, "products", local)
+    pricing_delta = load_approved_workflow_delta(container, vendor, "pricing", local)
+
+    if not product_delta.empty:
+        product_delta = product_delta.copy()
+        product_delta["_domain"] = "product"
+
+    if not pricing_delta.empty:
+        pricing_delta = pricing_delta.copy()
+        pricing_delta["_domain"] = "pricing"
+
+    frames = [df for df in [product_delta, pricing_delta] if not df.empty]
+
+    if not frames:
+        print("[QUEUE] No approved deltas found for products or pricing")
+        return
+
+    unified_delta = pd.concat(frames, ignore_index=True)
+
+    unified_delta["_review_decision"] = pd.NA
+    unified_delta["_review_comment"] = pd.NA
+
+    path = (
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            CATEGORY_QUEUE_ROOT,
+            f"vendor={vendor}",
+            CATEGORY_ACTIVE_DIR,
+            "delta_mapped.parquet"
+        )
+        if local else
+        f"{CATEGORY_QUEUE_ROOT}/vendor={vendor}/{CATEGORY_ACTIVE_DIR}/delta_mapped.parquet"
+    )
+
+    if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
+        unified_delta["__Section"] = unified_delta["_sheet"]
+
+    data = df_to_bytes(unified_delta)
 
     if local:
         write_local(path, data)
     else:
         upload_blob(container, path, data)
 
-##HELPERS
-def split_tabs(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+    print(f"[QUEUE] Unified queue written for vendor={vendor} rows={len(unified_delta)}")
 
-    tabs = {}
 
-    # -------------------------------------------------
-    # CASE 1: Section column exists
-    # -------------------------------------------------
-    if "__Section" in df.columns or "_sheet" in df.columns:
-        section_col = "__Section" if "__Section" in df.columns else "_sheet"
+# # =========================================================
+# # CATEGORY QUEUE
+# # =========================================================
+# def publish_category_queue(container, vendor, workflow, submission_type, submission_id, df, local):
 
-        for tab, cols in SCHEMA_TABS.items():
-            chunk = df[df[section_col] == tab].copy()
-            chunk = chunk.drop(columns=[section_col], errors="ignore")
+#     if df.empty:
+#         return
 
-            for c in cols:
-                if c not in chunk.columns:
-                    chunk[c] = pd.NA
+#     df["_review_decision"] = pd.NA
+#     df["_review_comment"] = pd.NA
 
-            tabs[tab] = chunk[cols].reset_index(drop=True)
+#     path = (
+#         os.path.join(PROJECT_ROOT, "silver", CATEGORY_QUEUE_ROOT,
+#                      f"{workflow}_workflow", f"vendor={vendor}", CATEGORY_ACTIVE_DIR, "queue.parquet")
+#         if local else
+#         f"{CATEGORY_QUEUE_ROOT}/{workflow}_workflow/vendor={vendor}/{CATEGORY_ACTIVE_DIR}/queue.parquet"
+#     )
 
-        return tabs
+#     data = df_to_bytes(df)
+
+#     if local:
+#         write_local(path, data)
+#     else:
+#         upload_blob(container, path, data)
+
+# ##HELPERS
+# def split_tabs(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+
+#     tabs = {}
+
+#     # -------------------------------------------------
+#     # CASE 1: Section column exists
+#     # -------------------------------------------------
+#     if "__Section" in df.columns or "_sheet" in df.columns:
+#         section_col = "__Section" if "__Section" in df.columns else "_sheet"
+
+#         for tab, cols in SCHEMA_TABS.items():
+#             chunk = df[df[section_col] == tab].copy()
+#             chunk = chunk.drop(columns=[section_col], errors="ignore")
+
+#             for c in cols:
+#                 if c not in chunk.columns:
+#                     chunk[c] = pd.NA
+
+#             tabs[tab] = chunk[cols].reset_index(drop=True)
+
+#         return tabs
 
 def filter_tabs_by_workflow(tabs: Dict[str, pd.DataFrame], workflow: str) -> Dict[str, pd.DataFrame]:
 
@@ -583,7 +660,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         df = df.copy()
         if "__Section" in df.columns:
             df["_sheet"] = df["__Section"]
-            df.drop(columns=["__Section"], inplace=True)
+            # df.drop(columns=["__Section"], inplace=True)
         return df
 
     curr_flat = align(flat_df)
@@ -656,16 +733,40 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     else:
         upload_blob(container, delta_path, df_to_bytes(delta))
 
-    # queue
-    publish_category_queue(
-        container,
-        vendor,
-        workflow,
-        submission_type,
-        submission_id,
-        delta,
-        local
-    )
+    # if meta["is_review"]:
+
+    #     print("[QUEUE] Publishing reviewed delta to category queue")
+
+    #     # ------------------------------------------
+    #     # Read already generated delta from ready
+    #     # ------------------------------------------
+    #     delta_path_ready = (
+    #         f"{READY_ROOT}/{workflow}_workflow/vendor={vendor}/"
+    #         f"submission_type={submission_type}/submission={submission_id}/review/delta_mapped.parquet"
+    #     )
+
+    #     print("[QUEUE LOAD PATH]", delta_path_ready)
+
+    #     try:
+    #         delta_bytes = container.get_blob_client(delta_path_ready).download_blob().readall()
+    #         delta_df = pq.read_table(BytesIO(delta_bytes)).to_pandas()
+    #         print("[QUEUE LOAD SIZE]", len(delta_bytes))
+    #     except Exception as e:
+    #         print("[QUEUE] Failed to load delta:", e)
+    #         delta_df = pd.DataFrame()
+
+    #     # ------------------------------------------
+    #     # Publish to category queue
+    #     # ------------------------------------------
+    #     publish_category_queue(
+    #         container,
+    #         vendor,
+    #         workflow,
+    #         submission_type,
+    #         submission_id,
+    #         delta_df,
+    #         local
+    #     )
 
     # =========================================================
     # GOLD SELECTED DELTA (FULL vs DELTA REVIEW)
@@ -687,7 +788,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
                 df = df.copy()
                 if "__Section" in df.columns:
                     df["_sheet"] = df["__Section"]
-                    df.drop(columns=["__Section"], inplace=True)
+                    # df.drop(columns=["__Section"], inplace=True)
                 return df
 
             curr_flat = align(flat_df)
@@ -776,13 +877,45 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
 
         approved_parquet_path = (
             f"approved/{workflow}_workflow/"
+            f"vendor={vendor}/"
             f"{workflow}_etl_mapped.parquet"
         )
 
         approved_excel_path = (
             f"approved/{workflow}_workflow/"
+            f"vendor={vendor}/"
             f"{workflow}_etl_mapped.xlsx"
         )
+
+        # =========================================================
+        # SAVE PRODUCT DELTA TO APPROVED
+        # =========================================================
+        approved_delta_path = (
+            f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
+        )
+
+        approved_delta_bytes = df_to_bytes(delta)
+
+        if local:
+            write_local(
+                os.path.join(
+                    PROJECT_ROOT,
+                    "silver",
+                    "approved",
+                    f"{workflow}_workflow",
+                    f"vendor={vendor}",
+                    f"{workflow}_delta.parquet"
+                ),
+                approved_delta_bytes
+            )
+        else:
+            approved_container.upload_blob(
+                approved_delta_path,
+                approved_delta_bytes,
+                overwrite=True
+            )
+
+        print("[APPROVED] Product delta saved")
 
         # -----------------------------------------
         # FULL REVIEW → overwrite
@@ -845,6 +978,15 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
             else:
                 approved_container.upload_blob(approved_parquet_path, parquet_data, overwrite=True)
                 approved_container.upload_blob(approved_excel_path, merged_excel_bytes, overwrite=True)
+
+        # -------------------------------------------------
+        # REBUILD UNIFIED CATEGORY QUEUE FROM APPROVED DELTAS
+        # -------------------------------------------------
+        build_unified_category_queue(
+            container=approved_container,
+            vendor=vendor,
+            local=local
+        )
 
 # =========================================================
 # CLI
