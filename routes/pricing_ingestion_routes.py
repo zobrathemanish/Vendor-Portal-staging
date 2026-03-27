@@ -242,20 +242,130 @@ def get_pricing_outputs(vendor, submission_type, submission_id):
     blob_service = BlobServiceClient.from_connection_string(conn)
     container = blob_service.get_container_client("silver")
 
-    prefix = f"in_review/pricing_workflow/{vendor}/{submission_type}/{submission_id}/"
-
     files = []
 
-    try:
-        for blob in container.list_blobs(name_starts_with=prefix):
+    def add_file(label, blob_path):
+        blob_client = container.get_blob_client(blob_path)
+        if blob_client.exists():
             files.append({
-                "name": blob.name.split("/")[-1],
-                "path": blob.name
+                "name": label,
+                "path": blob_path
             })
-    except Exception as e:
-        print("PRICING OUTPUT ERROR:", e)
 
-    return jsonify({"files": files})
+    # ----------------------------------
+    # MATCH PRODUCT STRUCTURE (pricing version)
+    # ----------------------------------
+
+    vendor_action_blob = (
+        f"in_review/pricing_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"profiling/vendor_action_report.xlsx"
+    )
+
+    integrity_blob = (
+        f"in_review/pricing_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"integrity/integrity_report.xlsx"
+    )
+
+    etl_mapped_blob = (
+        f"ready/pricing_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"review/etl_mapped.xlsx"
+    )
+
+    delta_blob = (
+        f"ready/pricing_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"review/delta_mapped.xlsx"
+    )
+
+    full_health_blob = (
+        f"in_review/pricing_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={submission_type}/"
+        f"submission={submission_id}/"
+        f"profiling/health_issues.xlsx"
+    )
+
+    # ----------------------------------
+    # ADD FILES (same as product)
+    # ----------------------------------
+
+    add_file("Vendor Action Report", vendor_action_blob)
+    add_file("Integrity Report", integrity_blob)
+    add_file("Review Output (ETL Mapped)", etl_mapped_blob)
+    add_file("Delta vs Current System", delta_blob)
+
+    # ----------------------------------
+    # SUMMARY (same logic as product)
+    # ----------------------------------
+
+    summary = {
+        "records_processed": 0,
+        "total_issues": 0,
+        "autofixed_issues": 0,
+        "remaining_issues": 0,
+    }
+
+    try:
+        # ---- health report → issues
+        full_blob_client = container.get_blob_client(full_health_blob)
+        if full_blob_client.exists():
+            raw_full = full_blob_client.download_blob().readall()
+            df_full = pd.read_excel(BytesIO(raw_full), dtype=str)
+
+            summary["total_issues"] = len(df_full)
+
+            if "_fixable_by_code" in df_full.columns:
+                vals = (
+                    df_full["_fixable_by_code"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                )
+                summary["autofixed_issues"] = int(
+                    vals.isin(["true", "1", "yes"]).sum()
+                )
+
+            summary["remaining_issues"] = (
+                summary["total_issues"] - summary["autofixed_issues"]
+            )
+
+        # ---- vendor report → records processed
+        vendor_blob_client = container.get_blob_client(vendor_action_blob)
+        if vendor_blob_client.exists():
+            raw_vendor = vendor_blob_client.download_blob().readall()
+            df_vendor = pd.read_excel(BytesIO(raw_vendor), dtype=str)
+
+            if "part number (_entity_key)" in df_vendor.columns:
+                part_col = (
+                    df_vendor["part number (_entity_key)"]
+                    .astype(str)
+                    .str.strip()
+                    .replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+                    .dropna()
+                )
+
+                summary["records_processed"] = part_col.nunique()
+            else:
+                summary["records_processed"] = len(df_vendor)
+
+    except Exception as e:
+        print("PRICING OUTPUT SUMMARY ERROR:", e)
+
+    return jsonify({
+        "files": files,
+        "summary": summary
+    })
 
 # ---------------------------------------
 # PRICING REPORT DOWNLOAD

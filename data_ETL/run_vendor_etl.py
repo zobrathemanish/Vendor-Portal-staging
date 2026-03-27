@@ -23,15 +23,23 @@ import os
 import json
 
 
-def write_status(vendor, submission_id, stage, message, progress, status=None):
+def write_status(vendor, submission_id, workflow, stage, message, progress, status=None):
+    workflow_folder = "products" if workflow == "products" else "pricing"
+
+    status_filename = (
+        "product_etl_status.json"
+        if workflow == "products"
+        else "pricing_etl_status.json"
+    )
+
     status_path = os.path.join(
         os.getcwd(),
         "product-etl",
         "logs",
         f"vendor={vendor}",
-        "products",
+        workflow_folder,
         f"submission={submission_id}",
-        "product_etl_status.json"
+        status_filename
     )
 
     os.makedirs(os.path.dirname(status_path), exist_ok=True)
@@ -87,6 +95,7 @@ def run_step(name, script, vendor, workflow, submission_type, submission_id, loc
     write_status(
         vendor,
         submission_id,
+        workflow,
         stage=stage,
         message=f"{name} running...",
         progress=progress
@@ -118,6 +127,7 @@ def run_step(name, script, vendor, workflow, submission_type, submission_id, loc
         write_status(
             vendor,
             submission_id,
+            workflow,
             stage="failed",
             message=f"{name} failed",
             progress=progress,
@@ -161,6 +171,15 @@ def main():
         f"\n🚀 Running full ETL | vendor={vendor} | submission={submission_id}"
     )
 
+    write_status(
+        vendor,
+        submission_id,
+        workflow,
+        stage="upload",
+        message="Upload complete, starting pipeline...",
+        progress=10
+    )
+
 
     for name, script, flags in STEPS:
 
@@ -187,6 +206,7 @@ def main():
     write_status(
         vendor,
         submission_id,
+        workflow,
         stage="ready",
         message="ETL completed successfully",
         progress=100,
