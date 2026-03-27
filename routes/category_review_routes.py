@@ -890,9 +890,10 @@ def api_part_intelligence():
 
     primary_filename = f"{part}_P04_01.jpg"
 
+    #debug here
     blob_path = (
-        f"ready/vendor={vendor}/"
-        f"assets/part_number={part}/"
+        f"approved/assets_workflow/vendor={vendor}/"
+        f"part_number={part}/"
         f"images/{primary_filename}"
     )
 
@@ -1148,7 +1149,7 @@ def api_part_intelligence():
 
 
     # =====================================================
-    # ASSET QUALITY (Metadata for scoring only)
+    # ASSET QUALITY (fallback to Digital_Assets)
     # =====================================================
 
     asset_meta = load_asset_quality(container, vendor)
@@ -1156,15 +1157,40 @@ def api_part_intelligence():
     asset_part = pd.DataFrame()
 
     if not asset_meta.empty and "part_number" in asset_meta.columns:
-        asset_meta["part_number"] = (
-            asset_meta["part_number"]
-            .astype(str)
-            .str.strip()
-        )
+        asset_meta["part_number"] = asset_meta["part_number"].astype(str).str.strip()
 
         asset_part = asset_meta[
             asset_meta["part_number"] == str(part).strip()
         ]
+
+    # =====================================================
+    # FALLBACK → Digital_Assets
+    # =====================================================
+
+    if asset_part.empty:
+        print("⚠️ Using Digital_Assets fallback")
+
+        jpg_count = len(asset_df)
+
+        # minimal assumptions (until metadata exists)
+        valid_resolution = jpg_count > 0
+        avg_size_ok = True
+
+    else:
+        jpg_count = len(asset_part)
+
+        valid_resolution = False
+        avg_size_ok = False
+
+        if "final_resolution" in asset_part.columns:
+            valid_resolution = any(
+                asset_part["final_resolution"] == "1000x1000"
+            )
+
+        if "file_size_bytes" in asset_part.columns:
+            avg_size = asset_part["file_size_bytes"].mean()
+            if avg_size and avg_size < 5_000_000:
+                avg_size_ok = True
 
     # -----------------------------------------------------
     # Default values
@@ -1311,8 +1337,8 @@ def api_asset_preview():
     container = _container()
 
     blob_path = (
-        f"ready/vendor={vendor}/"
-        f"assets/part_number={part}/"
+        f"approved/assets_workflow/vendor={vendor}/"
+        f"part_number={part}/"
         f"images/{filename}"
     )
 

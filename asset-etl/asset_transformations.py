@@ -403,52 +403,164 @@ def create_vendor_action_report(vendor: str, submission_type:str, submission_id:
     log("Vendor action report created", 2)
 
 
-#Promote to gold
-def promote_assets_to_gold(vendor, submission_type, submission_id):
+#Promote to approved and gold
+def promote_assets(vendor, submission_type, submission_id):
 
-    prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
+    if submission_type not in ["asset_review", "delta_asset_review"]:
+        log(f"Skipping promotion (pre-review): {submission_type}", 2)
+        return
 
-    log(f"PROMOTION PREFIX: {prefix}", 2)
+    log("Starting promotion (approved + gold)", 2)
 
-    blobs = list(container.list_blobs(name_starts_with=prefix))
+    ready_prefix = (
+        f"ready/assets_workflow/vendor={vendor}/"
+        f"submission_type={submission_type}/submission={submission_id}/assets/"
+    )
 
-    log(f"BLOBS FOUND: {len(blobs)}", 2)
+    approved_base = f"approved/assets_workflow/vendor={vendor}/"
+    # gold_base = f"selected/asset_workflow/vendor={vendor}/"
+
+    blobs = list(container.list_blobs(name_starts_with=ready_prefix))
+
+    if not blobs:
+        log("No assets found in ready layer", 2)
+        return
+
+    log(f"Found {len(blobs)} ready assets", 2)
+
+    # =========================================================
+    # Extract part_numbers
+    # =========================================================
+    parts_in_submission = set()
+
+    for blob in blobs:
+        path = blob.name
+        if "part_number=" in path:
+            part = path.split("part_number=")[1].split("/")[0]
+            parts_in_submission.add(part)
+
+    log(f"Parts in submission: {list(parts_in_submission)}", 2)
+
+    # =========================================================
+    # APPROVED LAYER LOGIC
+    # =========================================================
+
+    if submission_type == "asset_review":
+
+        log("APPROVED → Full replace", 2)
+
+        existing = list(container.list_blobs(name_starts_with=approved_base))
+
+        for blob in existing:
+            container.delete_blob(blob.name)
+
+        log(f"Deleted {len(existing)} approved assets", 2)
+
+    elif submission_type == "delta_asset_review":
+
+        log("APPROVED → Delta replace", 2)
+
+        for part in parts_in_submission:
+
+            prefix = f"{approved_base}part_number={part}/"
+
+            existing = list(container.list_blobs(name_starts_with=prefix))
+
+            for blob in existing:
+                container.delete_blob(blob.name)
+
+            log(f"Cleared approved for part {part}", 4)
+
+    # =========================================================
+    # PROMOTE READY → APPROVED + GOLD
+    # =========================================================
 
     promoted = 0
 
     for blob in blobs:
-        log(f"FOUND BLOB: {blob.name}", 4)
 
         src_path = blob.name
 
-        # skip folder markers
         if src_path.endswith("/"):
             continue
 
-        filename = os.path.basename(src_path)
-        if "." not in filename:
-            continue
+        relative = src_path.replace(ready_prefix, "")
 
-        relative = src_path.replace(prefix, "")
-
-        gold_path = f"selected/asset_workflow/vendor={vendor}/{relative}"
+        approved_path = f"{approved_base}{relative}"
+        # gold_path = f"{gold_base}{relative}"
 
         data = container.get_blob_client(src_path).download_blob().readall()
-        
 
-        gold_container.upload_blob(
-            gold_path,
+        # APPROVED
+        container.upload_blob(
+            approved_path,
             data,
             overwrite=True
         )
+
+        # # GOLD
+        # gold_container.upload_blob(
+        #     gold_path,
+        #     data,
+        #     overwrite=True
+        # )
+
         promoted += 1
 
-        log(f"PROMOTED → {gold_path}", 4)
+    log(f"Promoted {promoted} assets → APPROVED + GOLD", 2)
 
-    if promoted == 0:
-        log("No assets found for promotion", 2)
+    #after category we need to use this for gold:
+    def promote_approved_to_gold(vendor, approved_parts: list):
 
-    log(f"Promoted {promoted} assets to GOLD", 2)
+        log("Promoting approved assets → GOLD (category-approved only)", 2)
+
+        approved_base = f"approved/assets_workflow/vendor={vendor}/"
+        gold_base = f"selected/asset_workflow/vendor={vendor}/"
+
+        promoted = 0
+
+        for part in approved_parts:
+
+            prefix = f"{approved_base}part_number={part}/"
+
+            blobs = list(container.list_blobs(name_starts_with=prefix))
+
+            if not blobs:
+                log(f"No approved assets for part {part}", 4)
+                continue
+
+            # ❗ optional: clear gold for this part first
+            existing = list(gold_container.list_blobs(
+                name_starts_with=f"{gold_base}part_number={part}/"
+            ))
+
+            for blob in existing:
+                gold_container.delete_blob(blob.name)
+
+            for blob in blobs:
+
+                src_path = blob.name
+
+                if src_path.endswith("/"):
+                    continue
+
+                relative = src_path.replace(approved_base, "")
+
+                gold_path = f"{gold_base}{relative}"
+
+                data = container.get_blob_client(src_path).download_blob().readall()
+
+                gold_container.upload_blob(
+                    gold_path,
+                    data,
+                    overwrite=True
+                )
+
+                promoted += 1
+
+            log(f"Promoted part {part} → GOLD", 4)
+
+        log(f"Total promoted to GOLD: {promoted}", 2)
 
 # =========================================================
 # CACHE
@@ -569,7 +681,7 @@ def normalize_image_to_square(data: bytes):
 # PROCESS SINGLE ASSET
 # =========================================================
 
-def process_asset(row, vendor, output_root, file_map, submission_id):
+def process_asset(row, vendor, output_root, file_map, submission_id, submission_type):
 
     part = str(row["part_number"]).strip()
     media_category = row["media_category"]
@@ -588,7 +700,7 @@ def process_asset(row, vendor, output_root, file_map, submission_id):
     with open(local_path, "rb") as f:
         data = f.read()
 
-    base_out = f"{output_root}/vendor={vendor}/submission={submission_id}/assets/part_number={part}"
+    base_out = f"{output_root}/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/assets/part_number={part}"
 
     try:
 
@@ -711,7 +823,8 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
                     vendor,
                     output_root,
                     file_map,
-                    submission_id
+                    submission_id,
+                    submission_type
                 )
                 for _, row in rows
             ]
@@ -782,7 +895,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
 
         create_vendor_action_report(vendor,submission_type, submission_id)
 
-        promote_assets_to_gold(vendor, submission_type, submission_id)
+        promote_assets(vendor, submission_type, submission_id)
 
 
         if log_data["errors"]:
@@ -822,8 +935,7 @@ from io import BytesIO
 
 def create_assets_zip(vendor, submission_type, submission_id, assets):
 
-    prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
-
+    prefix = f"ready/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/assets/"
     zip_buffer = BytesIO()
 
     asset_count = 0

@@ -575,8 +575,8 @@ def validate_assets(vendor, submission_type, submission_id):
 
 def reconcile_declared_vs_actual(vendor: str, submission_id: str, validation: Dict[str, List[Dict[str, Any]]]):
 
-    parquet_path = f"in_review/vendor={vendor}/mapped/mapped.parquet"
-    excel_path = f"in_review/vendor={vendor}/mapped/mapped.xlsx"
+    parquet_path = f"approved/products_workflow/vendor={vendor}/products_etl_mapped.parquet"
+    excel_path = f"approved/products_workflow/vendor={vendor}/products_etl_mapped.xlsx"
 
     try:
         blob = silver_container.get_blob_client(parquet_path)
@@ -606,17 +606,40 @@ def reconcile_declared_vs_actual(vendor: str, submission_id: str, validation: Di
                 "present_but_failed": []
             }
 
+    # =========================================================
+    # 🔍 DEBUG: RAW DECLARED DATA
+    # =========================================================
+    log("---- DECLARED RAW SAMPLE ----")
+    if "FileName" not in df.columns:
+        log(f"⚠ FileName column missing. Columns: {list(df.columns)}")
+    else:
+        log(str(df["FileName"].head(10).tolist()))
+
     # ------------------------------------------
     # Normalize declared filenames
     # ------------------------------------------
-
-    declared = set(
+    declared_series = (
         df["FileName"]
         .astype(str)
         .str.lower()
         .str.strip()
         .str.replace(" ", "", regex=False)
     )
+
+    # 🔍 DEBUG: BEFORE FILTERING
+    log(f"Declared total rows: {len(declared_series)}")
+
+    # ⚠️ IMPORTANT: remove invalid entries
+    declared_series = declared_series[
+        (declared_series != "") &
+        (declared_series != "nan") &
+        (declared_series.notna())
+    ]
+
+    declared = set(declared_series)
+
+    log(f"Declared unique (clean): {len(declared)}")
+    log(f"Declared sample: {list(declared)[:10]}")
 
     # ------------------------------------------
     # Normalize actual filenames
@@ -625,17 +648,35 @@ def reconcile_declared_vs_actual(vendor: str, submission_id: str, validation: Di
     passed = validation["passed"]
     failed = validation["failed"]
 
+    # 🔍 DEBUG
+    log(f"Validation passed count: {len(passed)}")
+    log(f"Validation failed count: {len(failed)}")
+
     actual_pass = set(
         os.path.basename(r["filename"]).lower().replace(" ", "")
-        for r in passed
+        for r in passed if r.get("filename")
     )
 
     actual_fail = set(
         os.path.basename(r["filename"]).lower().replace(" ", "")
-        for r in failed
+        for r in failed if r.get("filename")
     )
 
     actual_all = actual_pass | actual_fail
+
+    log(f"Actual PASS unique: {len(actual_pass)}")
+    log(f"Actual FAIL unique: {len(actual_fail)}")
+    log(f"Actual ALL unique: {len(actual_all)}")
+    log(f"Actual sample: {list(actual_all)[:10]}")
+
+    # =========================================================
+    # 🔍 DEBUG: DIFFERENCE ANALYSIS
+    # =========================================================
+    debug_missing = list(declared - actual_all)[:10]
+    debug_extra = list(actual_all - declared)[:10]
+
+    log(f"Sample missing (declared - actual): {debug_missing}")
+    log(f"Sample extra (actual - declared): {debug_extra}")
 
     # ------------------------------------------
     # Compute reconciliation
@@ -645,11 +686,17 @@ def reconcile_declared_vs_actual(vendor: str, submission_id: str, validation: Di
     extra_assets = actual_all - declared
     present_but_failed = declared & actual_fail
 
+    # 🔍 FINAL DEBUG
+    log(f"FINAL missing_assets count: {len(missing_assets)}")
+    log(f"FINAL extra_assets count: {len(extra_assets)}")
+    log(f"FINAL present_but_failed count: {len(present_but_failed)}")
+
     return {
         "missing_assets": list(missing_assets),
         "extra_assets": list(extra_assets),
         "present_but_failed": list(present_but_failed)
     }
+
 
 # =========================================================
 # STEP 3 — MAIN ORCHESTRATION

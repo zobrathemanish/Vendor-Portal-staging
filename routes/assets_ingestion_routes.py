@@ -339,7 +339,7 @@ def list_transformed_assets(vendor, submission_type, submission_id):
 
     container = blob_service.get_container_client("silver")
 
-    prefix = f"ready/vendor={vendor}/submission={submission_id}/assets/"
+    prefix = f"ready/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/assets/"
 
     images = []
 
