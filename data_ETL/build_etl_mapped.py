@@ -177,7 +177,7 @@ def get_gold_container():
     svc = BlobServiceClient.from_connection_string(AZURE_CONN_STR)
     return svc.get_container_client("gold")
 
-def load_gold_selected(container, workflow, local):
+def load_gold_selected(container, workflow, local,vendor):
     path = (
         os.path.join(
             PROJECT_ROOT,
@@ -187,7 +187,7 @@ def load_gold_selected(container, workflow, local):
             f"{workflow}_etl_mapped.xlsx"
         )
         if local else
-        f"selected/{workflow}_workflow/{workflow}_etl_mapped.xlsx"
+        f"selected/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.xlsx"
     )
 
     try:
@@ -468,6 +468,42 @@ def build_unified_category_queue(container, vendor, local):
         write_local(path, data)
     else:
         upload_blob(container, path, data)
+    
+    # =========================================================
+    # SAVE EXCEL (NEW)
+    # =========================================================
+    excel_path = path.replace(".parquet", ".xlsx")
+
+    # ensure __Section exists
+    if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
+        unified_delta["__Section"] = unified_delta["_sheet"]
+
+    buf = BytesIO()
+
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+
+        written = False
+
+        for section, df_sec in unified_delta.groupby("__Section"):
+
+            if df_sec.empty:
+                continue
+
+            df_sec.to_excel(writer, sheet_name=section[:31], index=False)
+            written = True
+
+        # fallback if empty
+        if not written:
+            pd.DataFrame({"info": ["No delta changes"]}).to_excel(
+                writer, sheet_name="Summary", index=False
+            )
+
+    if local:
+        write_local(excel_path, buf.getvalue())
+    else:
+        upload_blob(container, excel_path, buf.getvalue())
+
+    print(f"[QUEUE] Excel written → {excel_path}")
 
     print(f"[QUEUE] Unified queue written for vendor={vendor} rows={len(unified_delta)}")
 
@@ -531,8 +567,8 @@ def filter_tabs_by_workflow(tabs: Dict[str, pd.DataFrame], workflow: str) -> Dic
             return {k: v for k, v in tabs.items() if k != "Pricing"}
 
         if workflow == "pricing":
-            print("[REVIEW] Pricing workflow → keeping Item_Master + Pricing")
-            return {k: v for k, v in tabs.items() if k in ["Item_Master", "Pricing"]}
+            print("[REVIEW] Pricing workflow → keeping only Pricing tab")
+            return {k: v for k, v in tabs.items() if k == "Pricing"}
 
         return tabs
 
@@ -568,9 +604,14 @@ def _split_tabs_from_autofixed(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
             extra_cols.append("Delta Type")
 
         if tab_name == "Pricing":
-            keep_cols = [c for c in chunk.columns if c != "_delta_type"]
-            out[tab_name] = chunk[keep_cols].reset_index(drop=True)
-            continue
+            pricing_cols = SCHEMA_TABS["Pricing"]
+
+            keep_cols = [
+                c for c in chunk.columns
+                if c in pricing_cols or c in ["_delta_type"]
+            ]
+
+            out[tab_name] = chunk[keep_cols]
 
         for c in schema_cols:
             if c not in chunk.columns:
@@ -651,7 +692,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     print("[DELTA] Using GOLD baseline")
 
     gold_container = get_gold_container() if not local else None
-    gold_tabs = load_gold_selected(gold_container, workflow, local)
+    gold_tabs = load_gold_selected(gold_container, workflow, local, vendor)
 
     gold_flat = excel_tabs_to_flat(gold_tabs) if gold_tabs else pd.DataFrame()
 
@@ -667,6 +708,13 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     gold_flat = align(gold_flat)
 
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
+
+    delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
+
+    # 🔍 DEBUG HERE
+    print("\n===== DEBUG DELTA FOR 00211 =====")
+    print(delta[delta["Part Number"] == "00211"].T)
+    print("=================================\n")
 
     if delta.empty:
         print("[DELTA] No changes detected")
@@ -691,7 +739,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
             write_local(delta_path, df_to_bytes(delta))
         else:
             upload_blob(container, delta_excel_path, delta_buf.getvalue())
-            delta = normalize_df(delta)
+            delta = normalize_df(delta.copy())
             upload_blob(container, delta_path, df_to_bytes(delta))
 
     # -------------------------------------------------
@@ -777,7 +825,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
 
         gold_container = get_gold_container() if not local else None
 
-        gold_tabs = load_gold_selected(gold_container, workflow, local)
+        gold_tabs = load_gold_selected(gold_container, workflow, local, vendor)
 
         if gold_tabs:
 
@@ -785,6 +833,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
 
             # Align section columns
             def align(df):
+
                 df = df.copy()
                 if "__Section" in df.columns:
                     df["_sheet"] = df["__Section"]
@@ -894,7 +943,13 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
             f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
         )
 
+        approved_delta_excel_path = (
+            f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.xlsx"
+        )
+
         approved_delta_bytes = df_to_bytes(delta)
+
+        approved_delta_excel_bytes = delta_buf.getvalue()
 
         if local:
             write_local(
@@ -908,10 +963,29 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
                 ),
                 approved_delta_bytes
             )
+
+            write_local(
+                os.path.join(
+                    PROJECT_ROOT,
+                    "silver",
+                    "approved",
+                    f"{workflow}_workflow",
+                    f"vendor={vendor}",
+                    f"{workflow}_delta.xlsx"
+                ),
+                approved_delta_excel_bytes
+            )
         else:
             approved_container.upload_blob(
                 approved_delta_path,
                 approved_delta_bytes,
+                overwrite=True
+            )
+
+            # ✅ ADD THIS
+            approved_container.upload_blob(
+                approved_delta_excel_path,
+                approved_delta_excel_bytes,
                 overwrite=True
             )
 

@@ -1,7 +1,7 @@
 vendor: "Grote Lighting"
 
 validation:
-  enabled: true
+  enabled: false
 
   ####################################################
   # ITEM MASTER VALIDATION
