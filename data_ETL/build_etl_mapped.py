@@ -415,12 +415,62 @@ def load_approved_workflow_delta(container, vendor, workflow, local) -> pd.DataF
         f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
     )
 
+def enrich_with_product_context(container, vendor, unified, local):
+
+    if unified.empty:
+        return unified
+
+    if "__Section" not in unified.columns:
+        return unified
+
+    # Identify parts missing Item_Master
+    missing_parts = []
+
+    for part in unified["Part Number"].dropna().astype(str).unique():
+        part_rows = unified[unified["Part Number"].astype(str) == part]
+
+        if "Item_Master" not in part_rows["__Section"].values:
+            missing_parts.append(part)
+
+    if not missing_parts:
+        return unified
+
+    print(f"[ENRICH] Missing Item_Master for {len(missing_parts)} parts")
+
+    # Load approved baseline
+    baseline_path = (
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            "approved",
+            "products_workflow",
+            f"vendor={vendor}",
+            "products_etl_mapped.parquet"
+        )
+        if local else
+        f"approved/products_workflow/vendor={vendor}/products_etl_mapped.parquet"
+    )
+
     try:
         if local:
-            return read_parquet_local(path)
-        return df_from_bytes(download_blob(container, path))
+            baseline = read_parquet_local(baseline_path)
+        else:
+            baseline = df_from_bytes(download_blob(container, baseline_path))
     except:
-        return pd.DataFrame()
+        print("[ENRICH] Failed to load baseline")
+        return unified
+
+    baseline["Part Number"] = baseline["Part Number"].astype(str)
+
+    enrich_rows = baseline[
+        baseline["Part Number"].isin(missing_parts)
+    ]
+
+    print(f"[ENRICH] Adding {len(enrich_rows)} rows from baseline")
+
+    unified = pd.concat([unified, enrich_rows], ignore_index=True)
+
+    return unified
 
 
 def build_unified_category_queue(container, vendor, local):
@@ -442,6 +492,15 @@ def build_unified_category_queue(container, vendor, local):
         return
 
     unified_delta = pd.concat(frames, ignore_index=True)
+    # --------------------------------------------------
+    # ENRICH WITH PRODUCT CONTEXT (CRITICAL FIX)
+    # --------------------------------------------------
+    unified_delta = enrich_with_product_context(
+        container,
+        vendor,
+        unified_delta,
+        local
+    )
 
     unified_delta["_review_decision"] = pd.NA
     unified_delta["_review_comment"] = pd.NA
@@ -461,6 +520,10 @@ def build_unified_category_queue(container, vendor, local):
 
     if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
         unified_delta["__Section"] = unified_delta["_sheet"]
+
+    # Ensure string types (avoid UI bugs like 00210 → 210)
+    unified_delta["Part Number"] = unified_delta["Part Number"].astype(str)
+    unified_delta["__Section"] = unified_delta["__Section"].astype(str)
 
     data = df_to_bytes(unified_delta)
 

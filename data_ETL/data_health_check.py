@@ -851,47 +851,47 @@ def assets_min_one_required_type(vendor: str, df_assets: pd.DataFrame, universe_
     return issues
 
 
-# =========================================================
-# Cross-reference checks
-# =========================================================
-def cross_reference_checks(vendor: str, item_parts: set, pricing_parts: set, asset_parts: set) -> List[Dict[str, Any]]:
-    issues: List[Dict[str, Any]] = []
-    tab = "CROSS_REFERENCE"
+# # =========================================================
+# # Cross-reference checks
+# # =========================================================
+# def cross_reference_checks(vendor: str, item_parts: set, pricing_parts: set, asset_parts: set) -> List[Dict[str, Any]]:
+#     issues: List[Dict[str, Any]] = []
+#     tab = "CROSS_REFERENCE"
 
-    for pn in sorted(item_parts - pricing_parts):
-        issues.append(record_issue(
-            vendor=vendor, tab=tab, scope="entity",
-            issue_type="orphan_entity", issue_subtype="item_without_pricing",
-            severity="high", detection_method="set_diff",
-            entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
-            expected_or_hint="present in Pricing", observed_value="missing"
-        ))
-    for pn in sorted(pricing_parts - item_parts):
-        issues.append(record_issue(
-            vendor=vendor, tab=tab, scope="entity",
-            issue_type="orphan_entity", issue_subtype="pricing_without_item",
-            severity="high", detection_method="set_diff",
-            entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
-            expected_or_hint="present in Item_Master", observed_value="missing"
-        ))
-    for pn in sorted(item_parts - asset_parts):
-        issues.append(record_issue(
-            vendor=vendor, tab=tab, scope="entity",
-            issue_type="orphan_entity", issue_subtype="item_without_assets",
-            severity="medium", detection_method="set_diff",
-            entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
-            expected_or_hint="present in Digital_Assets", observed_value="missing"
-        ))
-    for pn in sorted(asset_parts - item_parts):
-        issues.append(record_issue(
-            vendor=vendor, tab=tab, scope="entity",
-            issue_type="orphan_entity", issue_subtype="assets_without_item",
-            severity="medium", detection_method="set_diff",
-            entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
-            expected_or_hint="present in Item_Master", observed_value="missing"
-        ))
+#     for pn in sorted(item_parts - pricing_parts):
+#         issues.append(record_issue(
+#             vendor=vendor, tab=tab, scope="entity",
+#             issue_type="orphan_entity", issue_subtype="item_without_pricing",
+#             severity="high", detection_method="set_diff",
+#             entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
+#             expected_or_hint="present in Pricing", observed_value="missing"
+#         ))
+#     for pn in sorted(pricing_parts - item_parts):
+#         issues.append(record_issue(
+#             vendor=vendor, tab=tab, scope="entity",
+#             issue_type="orphan_entity", issue_subtype="pricing_without_item",
+#             severity="high", detection_method="set_diff",
+#             entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
+#             expected_or_hint="present in Item_Master", observed_value="missing"
+#         ))
+#     for pn in sorted(item_parts - asset_parts):
+#         issues.append(record_issue(
+#             vendor=vendor, tab=tab, scope="entity",
+#             issue_type="orphan_entity", issue_subtype="item_without_assets",
+#             severity="medium", detection_method="set_diff",
+#             entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
+#             expected_or_hint="present in Digital_Assets", observed_value="missing"
+#         ))
+#     for pn in sorted(asset_parts - item_parts):
+#         issues.append(record_issue(
+#             vendor=vendor, tab=tab, scope="entity",
+#             issue_type="orphan_entity", issue_subtype="assets_without_item",
+#             severity="medium", detection_method="set_diff",
+#             entity_key=pn, entity_id=sha256(f"{vendor}|{pn}"),
+#             expected_or_hint="present in Item_Master", observed_value="missing"
+#         ))
 
-    return issues
+#     return issues
 
 
 # =========================================================
@@ -1318,54 +1318,54 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
         pricing_df = profiled.get(TAB_PRICING)
         pricing_parts = parts_set(pricing_df)
 
-    # -------------------------------
-    # CROSS-REFERENCE (workflow-aware)
-    # -------------------------------
-    if workflow == "products":
-        # Only item ↔ assets
-        if item_df is not None and assets_df is not None:
-            for pn in sorted(item_parts - asset_parts):
-                issues.append(record_issue(
-                    vendor=vendor,
-                    tab="CROSS_REFERENCE",
-                    scope="entity",
-                    issue_type="orphan_entity",
-                    issue_subtype="item_without_assets",
-                    severity="medium",
-                    detection_method="set_diff",
-                    entity_key=pn,
-                    entity_id=sha256(f"{vendor}|{pn}"),
-                    expected_or_hint="present in Digital_Assets",
-                    observed_value="missing"
-                ))
+    # # -------------------------------
+    # # CROSS-REFERENCE (workflow-aware)
+    # # -------------------------------
+    # if workflow == "products":
+    #     # Only item ↔ assets
+    #     if item_df is not None and assets_df is not None:
+    #         for pn in sorted(item_parts - asset_parts):
+    #             issues.append(record_issue(
+    #                 vendor=vendor,
+    #                 tab="CROSS_REFERENCE",
+    #                 scope="entity",
+    #                 issue_type="orphan_entity",
+    #                 issue_subtype="item_without_assets",
+    #                 severity="medium",
+    #                 detection_method="set_diff",
+    #                 entity_key=pn,
+    #                 entity_id=sha256(f"{vendor}|{pn}"),
+    #                 expected_or_hint="present in Digital_Assets",
+    #                 observed_value="missing"
+    #             ))
 
-    else:
-        # Full cross reference (pricing workflow)
-        if item_df is not None and pricing_df is not None and assets_df is not None:
-            issues += cross_reference_checks(vendor, item_parts, pricing_parts, asset_parts)
-        else:
-            # record missing sheets as dataset issues (informational)
-            if item_df is None:
-                issues.append(record_issue(
-                    vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
-                    issue_type="missing_sheet", issue_subtype="item_master_missing",
-                    severity="high", detection_method="sheet_presence",
-                    expected_or_hint="Item_Master required for cross-reference checks"
-                ))
-            if pricing_df is None:
-                issues.append(record_issue(
-                    vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
-                    issue_type="missing_sheet", issue_subtype="pricing_missing",
-                    severity="high", detection_method="sheet_presence",
-                    expected_or_hint="Pricing required for items↔pricing checks"
-                ))
-            if assets_df is None:
-                issues.append(record_issue(
-                    vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
-                    issue_type="missing_sheet", issue_subtype="digital_assets_missing",
-                    severity="medium", detection_method="sheet_presence",
-                    expected_or_hint="Digital_Assets required for items↔assets checks"
-                ))
+    # else:
+    #     # Full cross reference (pricing workflow)
+    #     if item_df is not None and pricing_df is not None and assets_df is not None:
+    #         issues += cross_reference_checks(vendor, item_parts, pricing_parts, asset_parts)
+    #     else:
+    #         # record missing sheets as dataset issues (informational)
+    #         if item_df is None:
+    #             issues.append(record_issue(
+    #                 vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
+    #                 issue_type="missing_sheet", issue_subtype="item_master_missing",
+    #                 severity="high", detection_method="sheet_presence",
+    #                 expected_or_hint="Item_Master required for cross-reference checks"
+    #             ))
+    #         if pricing_df is None:
+    #             issues.append(record_issue(
+    #                 vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
+    #                 issue_type="missing_sheet", issue_subtype="pricing_missing",
+    #                 severity="high", detection_method="sheet_presence",
+    #                 expected_or_hint="Pricing required for items↔pricing checks"
+    #             ))
+    #         if assets_df is None:
+    #             issues.append(record_issue(
+    #                 vendor=vendor, tab="CROSS_REFERENCE", scope="dataset",
+    #                 issue_type="missing_sheet", issue_subtype="digital_assets_missing",
+    #                 severity="medium", detection_method="sheet_presence",
+    #                 expected_or_hint="Digital_Assets required for items↔assets checks"
+    #             ))
 
     # "At least one ..." rules
     if profiled.get(TAB_DESCRIPTIONS) is not None and item_parts:
