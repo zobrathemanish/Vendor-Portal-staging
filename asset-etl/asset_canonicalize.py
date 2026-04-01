@@ -78,7 +78,7 @@ def normalize_filename(name: str) -> str:
 
 def load_mapped_excel(vendor: str, submission_id: str) -> pd.DataFrame:
 
-    path = f"in_review/vendor={vendor}/mapped/mapped.xlsx"
+    path = f"approved/products_workflow/vendor={vendor}/products_etl_mapped.xlsx"
 
     raw = container.get_blob_client(path).download_blob().readall()
 
@@ -530,6 +530,7 @@ def run_for_vendor(vendor: str, submission_type: str, submission_id: str):
         container.upload_blob(
             f"in_review/assets_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/logs/autofix_report.xlsx",
             buf.getvalue(),
+          
             overwrite=True
         )
 

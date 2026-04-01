@@ -155,8 +155,12 @@ def upload_blob(container, path, data):
 
 
 def read_parquet_local(path):
-    return pd.read_parquet(path)
+    df = pd.read_parquet(path)
 
+    if "Part Number" in df.columns:
+        df["Part Number"] = df["Part Number"].astype("string").str.strip()
+
+    return df
 
 def write_local(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -165,7 +169,13 @@ def write_local(path, data):
 
 
 def df_from_bytes(b):
-    return pq.read_table(BytesIO(b)).to_pandas()
+    df = pq.read_table(BytesIO(b)).to_pandas()
+
+    # 🔥 CRITICAL: enforce string dtype for identifiers
+    if "Part Number" in df.columns:
+        df["Part Number"] = df["Part Number"].astype("string").str.strip()
+
+    return df
 
 
 def df_to_bytes(df):
@@ -217,26 +227,21 @@ def excel_tabs_to_flat(tabs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
 # HASH
 # =========================================================
 def norm(v):
+
     if pd.isna(v):
         return ""
 
-    # handle numeric values properly
+    # 🔥 CRITICAL: do NOT coerce identifiers
+    if isinstance(v, str):
+        return v.strip()
+
+    # handle numeric values safely
     if isinstance(v, (int, float)):
-        # if float but whole number → convert to int
         if isinstance(v, float) and v.is_integer():
             return str(int(v))
         return str(v)
 
-    s = str(v).strip()
-
-    # normalize numeric-like strings
-    try:
-        f = float(s)
-        if f.is_integer():
-            return str(int(f))
-        return str(f)
-    except:
-        return s.upper()
+    return str(v).strip()
 
 
 def hash_row(row, fields):
@@ -274,13 +279,14 @@ def normalize_df(df):
 
     for col in df.columns:
 
-        # Force everything to string safely
-        df[col] = df[col].astype(str)
+        # 🔥 DO NOT TOUCH identifiers
+        if col == "Part Number":
+            df[col] = df[col].astype("string").str.strip()
+            continue
 
-        # Clean values
+        df[col] = df[col].astype(str)
         df[col] = df[col].str.strip()
 
-        # Normalize null-like values
         df[col] = df[col].replace({
             "nan": None,
             "None": None,
@@ -402,6 +408,7 @@ def compute_delta(curr, base, is_delta_review):
 # CATEGORY QUEUE (UNIFIED PRODUCT + PRICING)
 # =========================================================
 def load_approved_workflow_delta(container, vendor, workflow, local) -> pd.DataFrame:
+
     path = (
         os.path.join(
             PROJECT_ROOT,
@@ -414,6 +421,21 @@ def load_approved_workflow_delta(container, vendor, workflow, local) -> pd.DataF
         if local else
         f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
     )
+
+    try:
+        if local:
+            df = read_parquet_local(path)
+        else:
+            df = df_from_bytes(download_blob(container, path))
+
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        return df
+
+    except Exception as e:
+        print(f"[QUEUE LOAD FAIL] {workflow} delta not found →", e)
+        return pd.DataFrame()
 
 def enrich_with_product_context(container, vendor, unified, local):
 
@@ -437,7 +459,9 @@ def enrich_with_product_context(container, vendor, unified, local):
 
     print(f"[ENRICH] Missing Item_Master for {len(missing_parts)} parts")
 
-    # Load approved baseline
+    # --------------------------------------------------
+    # Load approved baseline (SAFE)
+    # --------------------------------------------------
     baseline_path = (
         os.path.join(
             PROJECT_ROOT,
@@ -456,18 +480,40 @@ def enrich_with_product_context(container, vendor, unified, local):
             baseline = read_parquet_local(baseline_path)
         else:
             baseline = df_from_bytes(download_blob(container, baseline_path))
-    except:
-        print("[ENRICH] Failed to load baseline")
+
+        if baseline is None or baseline.empty:
+            print("[ENRICH] Baseline empty → skipping enrichment")
+            return unified
+
+    except Exception as e:
+        print("[ENRICH] Baseline not available → first run, skipping enrichment")
         return unified
 
-    baseline["Part Number"] = baseline["Part Number"].astype(str)
+    # --------------------------------------------------
+    # Normalize baseline
+    # --------------------------------------------------
+    if "Part Number" not in baseline.columns:
+        print("[ENRICH] Baseline missing Part Number → skipping")
+        return unified
 
+    baseline["Part Number"] = baseline["Part Number"].astype("string").str.strip()
+
+    # --------------------------------------------------
+    # Extract rows for missing parts
+    # --------------------------------------------------
     enrich_rows = baseline[
         baseline["Part Number"].isin(missing_parts)
     ]
 
+    if enrich_rows.empty:
+        print("[ENRICH] No matching baseline rows found")
+        return unified
+
     print(f"[ENRICH] Adding {len(enrich_rows)} rows from baseline")
 
+    # --------------------------------------------------
+    # Merge
+    # --------------------------------------------------
     unified = pd.concat([unified, enrich_rows], ignore_index=True)
 
     return unified
@@ -476,6 +522,36 @@ def enrich_with_product_context(container, vendor, unified, local):
 def build_unified_category_queue(container, vendor, local):
     product_delta = load_approved_workflow_delta(container, vendor, "products", local)
     pricing_delta = load_approved_workflow_delta(container, vendor, "pricing", local)
+
+    # --------------------------------------------------
+    # FIRST-RUN GUARD: require product baseline
+    # --------------------------------------------------
+    baseline_path = (
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            "approved",
+            "products_workflow",
+            f"vendor={vendor}",
+            "products_etl_mapped.parquet"
+        )
+        if local else
+        f"approved/products_workflow/vendor={vendor}/products_etl_mapped.parquet"
+    )
+
+    baseline_exists = True
+
+    try:
+        if local:
+            _ = read_parquet_local(baseline_path)
+        else:
+            _ = download_blob(container, baseline_path)
+    except:
+        baseline_exists = False
+
+    if not baseline_exists:
+        print("[QUEUE] Skipping → product baseline not available yet")
+        return
 
     if not product_delta.empty:
         product_delta = product_delta.copy()
@@ -491,6 +567,11 @@ def build_unified_category_queue(container, vendor, local):
         print("[QUEUE] No approved deltas found for products or pricing")
         return
 
+    # Ensure dtype consistency BEFORE concat
+    for df in [product_delta, pricing_delta]:
+        if not df.empty and "Part Number" in df.columns:
+            df["Part Number"] = df["Part Number"].astype("string").str.strip()
+            
     unified_delta = pd.concat(frames, ignore_index=True)
     # --------------------------------------------------
     # ENRICH WITH PRODUCT CONTEXT (CRITICAL FIX)
@@ -522,7 +603,7 @@ def build_unified_category_queue(container, vendor, local):
         unified_delta["__Section"] = unified_delta["_sheet"]
 
     # Ensure string types (avoid UI bugs like 00210 → 210)
-    unified_delta["Part Number"] = unified_delta["Part Number"].astype(str)
+    unified_delta["Part Number"] = unified_delta["Part Number"].astype("string").str.strip()
     unified_delta["__Section"] = unified_delta["__Section"].astype(str)
 
     data = df_to_bytes(unified_delta)
@@ -699,6 +780,20 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     path = f"{base_in}/{AUTOFIX_DIR}/data_autofixed.parquet"
     df = read_parquet_local(path) if local else df_from_bytes(download_blob(container, path))
 
+    # --------------------------------------------------
+    # FORCE STRING TYPES (CRITICAL)
+    # --------------------------------------------------
+    STRING_COLS = [
+        "Part Number",
+        "Barcode Number",
+        "VMRS Code",
+        "PartTerminologyID"
+    ]
+
+    for col in STRING_COLS:
+        if col in df.columns:
+            df[col] = df[col].astype("string").str.strip()
+
     # write mapped
     # -------------------------------------------------
     # SPLIT INTO TABS 
@@ -770,14 +865,17 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     curr_flat = align(flat_df)
     gold_flat = align(gold_flat)
 
+    print(curr_flat["Part Number"].head(10))
+    print(curr_flat["Part Number"].dtype)
+    
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
 
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
 
-    # 🔍 DEBUG HERE
-    print("\n===== DEBUG DELTA FOR 00211 =====")
-    print(delta[delta["Part Number"] == "00211"].T)
-    print("=================================\n")
+    # # 🔍 DEBUG HERE
+    # print("\n===== DEBUG DELTA FOR 00211 =====")
+    # print(delta[delta["Part Number"] == "00211"].T)
+    # print("=================================\n")
 
     if delta.empty:
         print("[DELTA] No changes detected")
