@@ -240,14 +240,14 @@ def norm(v):
     if pd.isna(v):
         return ""
 
-    # 🔥 CRITICAL: do NOT coerce identifiers
+    if str(v).startswith("002"):
+        print("🔥 NORM INPUT:", v, type(v))
+
     if isinstance(v, str):
         return v.strip()
 
-    # handle numeric values safely
     if isinstance(v, (int, float)):
-        if isinstance(v, float) and v.is_integer():
-            return str(int(v))
+        print("❌ NUMERIC DETECTED:", v, type(v))
         return str(v)
 
     return str(v).strip()
@@ -317,6 +317,14 @@ def compute_delta(curr, base, is_delta_review):
     curr = normalize_df(curr)
     base = normalize_df(base)
 
+    print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - CURR]")
+    print(curr["Part Number"].head(10))
+    print(curr["Part Number"].dtype)
+
+    print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - BASE]")
+    print(base["Part Number"].head(10))
+    print(base["Part Number"].dtype)
+
     if base.empty:
         curr["_delta_type"] = "insert"
         return curr
@@ -347,6 +355,10 @@ def compute_delta(curr, base, is_delta_review):
     }
 
     hash_cols = [c for c in all_cols if c not in EXCLUDE_COLS]
+
+    print("\n[DEBUG BEFORE HASH]")
+    print(curr["Part Number"].head(10))
+    print(curr["Part Number"].apply(lambda x: type(x)).value_counts())
 
     curr["_hash"] = curr.apply(lambda r: hash_row(r, hash_cols), axis=1)
     base["_hash"] = base.apply(lambda r: hash_row(r, hash_cols), axis=1)
@@ -422,6 +434,7 @@ def compute_delta(curr, base, is_delta_review):
 # =========================================================
 def load_approved_workflow_delta(container, vendor, workflow, local) -> pd.DataFrame:
 
+
     path = (
         os.path.join(
             PROJECT_ROOT,
@@ -438,8 +451,14 @@ def load_approved_workflow_delta(container, vendor, workflow, local) -> pd.DataF
     try:
         if local:
             df = read_parquet_local(path)
+            print("\n[DEBUG LOAD APPROVED DELTA]")
+            print(df["Part Number"].head(20))
+            print(df["Part Number"].dtype)
         else:
             df = df_from_bytes(download_blob(container, path))
+            print("\n[DEBUG LOAD APPROVED DELTA]")
+            print(df["Part Number"].head(20))
+            print(df["Part Number"].dtype)
 
         if df is None or df.empty:
             return pd.DataFrame()
@@ -897,8 +916,9 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         print("\n[DEBUG BEFORE DELTA - GOLD] Part Number column missing")
     
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
-
-    delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
+    print("\n[DEBUG AFTER DELTA]")
+    print(delta["Part Number"].head(20))
+    print(delta["Part Number"].dtype)
 
     # # 🔍 DEBUG HERE
     # print("\n===== DEBUG DELTA FOR 00211 =====")

@@ -254,31 +254,34 @@ def parquet_bytes_from_df(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+from io import BytesIO
+from typing import Dict
+import pandas as pd
+
+
 def excel_bytes_from_sheets(sheets: Dict[str, pd.DataFrame]) -> bytes:
-    """
-    Writes multiple sheets into a single xlsx bytes.
-    Forces cells to text format so values like 00211 stay as 00211.
-    """
     buf = BytesIO()
+
+    TEXT_COLS = {"_entity_key", "part number (_entity_key)", "Part Number"}
 
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         for name, df in sheets.items():
-            safe_name = name[:31]  # Excel sheet name limit
+            safe_name = name[:31]
             safe_df = df.copy()
 
-            # Preserve values as strings and avoid literal "nan"/"None"
             for col in safe_df.columns:
-                safe_df[col] = safe_df[col].astype(str)
-                safe_df[col] = safe_df[col].replace({"nan": "", "None": ""})
-                
+                if col in TEXT_COLS:
+                    safe_df[col] = safe_df[col].apply(
+                        lambda x: f"'{str(x).strip()}" if pd.notna(x) else ""
+                    )
+                else:
+                    safe_df[col] = (
+                        safe_df[col]
+                        .astype(str)
+                        .replace({"nan": "", "None": ""})
+                    )
+
             safe_df.to_excel(writer, sheet_name=safe_name, index=False)
-
-            ws = writer.book[safe_name]
-
-            # Force all body cells to text format
-            for row in ws.iter_rows(min_row=2):
-                for cell in row:
-                    cell.number_format = "@"
 
     buf.seek(0)
     return buf.getvalue()
@@ -1398,7 +1401,16 @@ def profile_vendor(vendor: str, sheets: Dict[str, pd.DataFrame], source_file: st
     if "_fixable_by_code" in issues_df.columns:
         issues_df.loc[issues_df["_fixable_by_code"] == True, "_severity"] = "low"
 
+    print("\n[DEBUG 1 - BEFORE SANITIZE]")
+    print(issues_df["_entity_key"].head(10))
+    print(issues_df["_entity_key"].dtype)
+    print(issues_df["_entity_key"].apply(lambda x: type(x)).value_counts())
+
     issues_df = sanitize_issue_df_for_parquet(issues_df)
+
+    print("\n[DEBUG 2 - AFTER SANITIZE]")
+    print(issues_df["_entity_key"].head(10))
+    print(issues_df["_entity_key"].dtype)
 
 
     row_missing_df = pd.concat(row_missing_all, ignore_index=True) if row_missing_all else pd.DataFrame(
@@ -1457,10 +1469,18 @@ def build_vendor_action_df(issues_df: pd.DataFrame) -> pd.DataFrame:
         "_fixable_by_code",
     ]
 
+
     if issues_df is None or issues_df.empty:
         return pd.DataFrame(columns=final_cols)
 
     df = issues_df.copy()
+
+    df = issues_df.copy()
+
+    print("\n[DEBUG 4 - INPUT TO VENDOR ACTION]")
+    print(df["_entity_key"].head(10))
+    print(df["_entity_key"].dtype)
+    print(df["_entity_key"].apply(lambda x: type(x)).value_counts())
 
     # keep only vendor-actionable rows
     if "_fixable_by_code" in df.columns:
@@ -1531,6 +1551,15 @@ def write_vendor_outputs(
 
     # Parquet outputs
     upload_blob_bytes(container, f"{out_base}/health_issues.parquet", parquet_bytes_from_df(issues_df))
+    # DEBUG READ BACK
+    test_bytes = parquet_bytes_from_df(issues_df)
+    test_df = df_from_parquet_bytes(test_bytes)
+
+    print("\n[DEBUG 3 - AFTER PARQUET ROUNDTRIP]")
+    print(test_df["_entity_key"].head(10))
+    print(test_df["_entity_key"].dtype)
+    print(test_df["_entity_key"].apply(lambda x: type(x)).value_counts())
+
     upload_blob_bytes(container, f"{out_base}/row_missingness.parquet", parquet_bytes_from_df(row_missing_df))
     upload_blob_bytes(container, f"{out_base}/column_missingness.parquet", parquet_bytes_from_df(col_missing_df))
     upload_blob_bytes(container, f"{out_base}/entity_completeness.parquet", parquet_bytes_from_df(entity_comp_df))

@@ -106,6 +106,7 @@ def load_delta(container, vendor: str) -> pd.DataFrame:
 
         if "Part Number" in df.columns:
             df["Part Number"] = df["Part Number"].astype("string")
+            print ("partnumber here is", df["Part Number"])
 
         if "__Section" in df.columns:
             df["__Section"] = df["__Section"].astype("string")
@@ -1409,7 +1410,7 @@ def clear_category_queue(container, vendor: str):
         print("[QUEUE] Excel deleted")
     except ResourceNotFoundError:
         print("[QUEUE] Excel already empty")
-        
+
 @category_review_bp.route("/api/category-review/publish-gold", methods=["POST"])
 @login_required
 def api_publish_gold():
