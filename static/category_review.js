@@ -5,6 +5,8 @@
     search: document.getElementById("search"),
     filterDecision: document.getElementById("filterDecision"),
 
+    publishGoldBtn: document.getElementById("publishGoldBtn"),
+
     badgeVendors: document.getElementById("badge-vendors"),
     badgeTotal: document.getElementById("badge-total"),
     badgePending: document.getElementById("badge-pending"),
@@ -92,6 +94,7 @@
   function decisionBadge(decision) {
     if (decision === "approve") return `<span class="badge text-bg-success">Approved</span>`;
     if (decision === "reject") return `<span class="badge text-bg-danger">Rejected</span>`;
+    if (decision === "auto_delete") return `<span class="badge text-bg-warning">Discontinued</span>`;
     return `<span class="badge text-bg-secondary">Pending</span>`;
   }
 
@@ -101,6 +104,25 @@
     el.badgePending.textContent = `pending: ${state.summary.pending || 0}`;
     el.badgeApproved.textContent = `approved: ${state.summary.approved || 0}`;
     el.badgeRejected.textContent = `rejected: ${state.summary.rejected || 0}`;
+  }
+
+  function togglePublishButton() {
+    if (!el.publishGoldBtn) return;
+
+    // 🔥 Count only actionable items
+    const actionable = state.items.filter(i =>
+      !(Number(i.row_deletes) > 0 &&
+        Number(i.row_inserts) === 0 &&
+        Number(i.row_updates) === 0)
+    );
+
+    const pendingActionable = actionable.filter(i => i.decision === "pending");
+
+    if (pendingActionable.length === 0 && actionable.length > 0) {
+      el.publishGoldBtn.style.display = "inline-block";
+    } else {
+      el.publishGoldBtn.style.display = "none";
+    }
   }
 
   function render() {
@@ -444,6 +466,7 @@ if (data.mode === "update") {
       console.log("📊 Updated summary:", state.summary);
 
       renderSummary();
+      togglePublishButton();   // ✅ ADD THIS LINE
       render();
 
     } catch (err) {
@@ -490,5 +513,53 @@ if (data.mode === "update") {
   el.search.addEventListener("input", render);
   el.filterDecision.addEventListener("change", render);
   loadQueue();
+
+  if (el.publishGoldBtn) {
+    el.publishGoldBtn.onclick = async function () {
+
+      if (!state.items.length) return;
+
+      // 🔥 Get vendor (since queue is per vendor batch)
+      const vendor = state.items[0].vendor;
+
+      const res = await fetch("/api/category-review/publish-gold", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ vendor })
+      });
+
+      const data = await res.json();
+
+      alert(data.message || "Gold updated");
+
+      // Refresh UI
+      await loadQueue();
+    };
+  }if (el.publishGoldBtn) {
+    el.publishGoldBtn.onclick = async function () {
+
+      if (!state.items.length) return;
+
+      // 🔥 Get vendor (since queue is per vendor batch)
+      const vendor = state.items[0].vendor;
+
+      const res = await fetch("/api/category-review/publish-gold", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ vendor })
+      });
+
+      const data = await res.json();
+
+      alert(data.message || "Gold updated");
+
+      // Refresh UI
+      await loadQueue();
+    };
+  }
 
 })();

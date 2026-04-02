@@ -241,6 +241,34 @@ def write_promotion_log(
 APPROVED_CURRENT_ROOT = "approved/current_state"
 APPROVED_HISTORY_ROOT = "approved/history"
 
+def publish_to_gold(container, vendor: str, workflow: str):
+
+    current_path = f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.parquet"
+    current_xlsx = f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.xlsx"
+    current_delta = f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
+
+    try:
+        parquet_bytes = _download_bytes(container, current_path)
+        xlsx_bytes = _download_bytes(container, current_xlsx)
+        delta_bytes = _download_bytes(container, current_delta)
+    except Exception as e:
+        print("❌ Failed to load current state:", e)
+        return False
+
+    gold = _gold_container()
+
+    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.parquet"
+    gold_xlsx_path    = f"{GOLD_SELECTED_ROOT}/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.xlsx"
+    gold_delta_path   = f"{GOLD_SELECTED_ROOT}/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
+
+    _upload_bytes(gold, gold_parquet_path, parquet_bytes)
+    _upload_bytes(gold, gold_xlsx_path, xlsx_bytes)
+    _upload_bytes(gold, gold_delta_path, delta_bytes)
+
+    print("✅ GOLD published manually")
+
+    return True
+
 def apply_delta_to_current_state(container, vendor: str):
 
     metadata = load_metadata(container, vendor)
@@ -827,11 +855,19 @@ def api_category_review_work_queue():
                 delta["Part Number"].astype(str) == pn
             ]
 
+            is_delete_only = (
+                int((pn_rows[DELTA_TYPE_COL] == "delete").sum()) > 0 and
+                int((pn_rows[DELTA_TYPE_COL] == "insert").sum()) == 0 and
+                int((pn_rows[DELTA_TYPE_COL] == "update").sum()) == 0
+            )
+
+            decision = "auto_delete" if is_delete_only else decisions_map.get(pn, "pending")
+
             items.append({
                 "vendor": vendor,
                 "submission_id": submission_id,
                 "part_number": pn,
-                "decision": decisions_map.get(pn, "pending"),
+                "decision": decision,
                 "row_inserts": int((pn_rows[DELTA_TYPE_COL] == "insert").sum()),
                 "row_updates": int((pn_rows[DELTA_TYPE_COL] == "update").sum()),
                 "row_deletes": int((pn_rows[DELTA_TYPE_COL] == "delete").sum()),
@@ -1354,3 +1390,69 @@ def api_asset_preview():
         mimetype="image/jpeg"
     )
 
+from azure.core.exceptions import ResourceNotFoundError
+
+def clear_category_queue(container, vendor: str):
+    path = f"category_queue/vendor={vendor}/active/delta_mapped.parquet"
+    excel_path = path.replace(".parquet", ".xlsx")
+
+    print(f"[QUEUE] Clearing category queue for vendor={vendor}")
+
+    try:
+        container.delete_blob(path)
+        print("[QUEUE] Parquet deleted")
+    except ResourceNotFoundError:
+        print("[QUEUE] Parquet already empty")
+
+    try:
+        container.delete_blob(excel_path)
+        print("[QUEUE] Excel deleted")
+    except ResourceNotFoundError:
+        print("[QUEUE] Excel already empty")
+        
+@category_review_bp.route("/api/category-review/publish-gold", methods=["POST"])
+@login_required
+def api_publish_gold():
+
+    if current_user.role != "category_team":
+        abort(403)
+
+    body = request.get_json(force=True) or {}
+    vendor = body.get("vendor")
+
+    if not vendor:
+        return jsonify({"error": "Missing vendor"}), 400
+
+    container = _container()
+
+    # -----------------------------------------------------
+    # Resolve workflow FROM QUEUE (authoritative)
+    # -----------------------------------------------------
+    delta = load_delta(container, vendor)
+
+    if delta.empty or "_workflow" not in delta.columns:
+        return jsonify({"error": "No workflow info found in queue"}), 400
+
+    workflows = (
+        delta["_workflow"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+
+    print("[PUBLISH] Workflows detected:", workflows)
+
+    success = True
+
+    for wf in workflows:
+        print(f"[PUBLISH] Publishing workflow={wf}")
+        ok = publish_to_gold(container, vendor, wf)
+        success = success and ok
+
+    clear_category_queue(container, vendor)
+
+    return jsonify({
+        "success": success,
+        "message": "Gold updated successfully" if success else "Failed"
+    })

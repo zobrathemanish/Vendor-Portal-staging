@@ -187,7 +187,7 @@ def get_gold_container():
     svc = BlobServiceClient.from_connection_string(AZURE_CONN_STR)
     return svc.get_container_client("gold")
 
-def load_gold_selected(container, workflow, local,vendor):
+def load_gold_selected(container, workflow, local, vendor):
     path = (
         os.path.join(
             PROJECT_ROOT,
@@ -202,11 +202,20 @@ def load_gold_selected(container, workflow, local,vendor):
 
     try:
         if local:
-            return pd.read_excel(path, sheet_name=None)
+            tabs = pd.read_excel(path, sheet_name=None, dtype=str)
         else:
             blob = container.get_blob_client(path).download_blob().readall()
-            return pd.read_excel(BytesIO(blob), sheet_name=None)
-    except:
+            tabs = pd.read_excel(BytesIO(blob), sheet_name=None, dtype=str)
+
+        # 🔥 CRITICAL: enforce string + strip
+        for tab, df in tabs.items():
+            if "Part Number" in df.columns:
+                df["Part Number"] = df["Part Number"].astype("string").str.strip()
+
+        return tabs
+
+    except Exception as e:
+        print("[GOLD LOAD ERROR]", e)
         return {}
 
 
@@ -266,6 +275,10 @@ def load_baseline(container, vendor, workflow, local):
 
     try:
         df = read_parquet_local(path) if local else df_from_bytes(download_blob(container, path))
+        print("\n[DEBUG RAW INPUT]")
+        print(df["Part Number"].head(10))
+        print(df["Part Number"].dtype)
+        print(df["Part Number"].apply(lambda x: type(x)).value_counts())
         return df
     except:
         return pd.DataFrame()
@@ -556,10 +569,12 @@ def build_unified_category_queue(container, vendor, local):
     if not product_delta.empty:
         product_delta = product_delta.copy()
         product_delta["_domain"] = "product"
+        product_delta["_workflow"] = "products"
 
     if not pricing_delta.empty:
         pricing_delta = pricing_delta.copy()
         pricing_delta["_domain"] = "pricing"
+        pricing_delta["_workflow"] = "pricing"
 
     frames = [df for df in [product_delta, pricing_delta] if not df.empty]
 
@@ -793,6 +808,10 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     for col in STRING_COLS:
         if col in df.columns:
             df[col] = df[col].astype("string").str.strip()
+    
+    print("\n[DEBUG AFTER STRING CAST]")
+    print(df["Part Number"].head(10))
+    print(df["Part Number"].dtype)
 
     # write mapped
     # -------------------------------------------------
@@ -865,8 +884,17 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     curr_flat = align(flat_df)
     gold_flat = align(gold_flat)
 
+    print("\n[DEBUG BEFORE DELTA - CURRENT]")
     print(curr_flat["Part Number"].head(10))
     print(curr_flat["Part Number"].dtype)
+
+    print("\n[DEBUG BEFORE DELTA - GOLD]")
+    if "Part Number" in gold_flat.columns:
+        print("\n[DEBUG BEFORE DELTA - GOLD]")
+        print(gold_flat["Part Number"].head(10))
+        print(gold_flat["Part Number"].dtype)
+    else:
+        print("\n[DEBUG BEFORE DELTA - GOLD] Part Number column missing")
     
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
 
