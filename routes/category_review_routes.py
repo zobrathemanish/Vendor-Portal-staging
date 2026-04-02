@@ -1393,23 +1393,43 @@ def api_asset_preview():
 
 from azure.core.exceptions import ResourceNotFoundError
 
+from azure.core.exceptions import ResourceNotFoundError
+
 def clear_category_queue(container, vendor: str):
-    path = f"category_queue/vendor={vendor}/active/delta_mapped.parquet"
-    excel_path = path.replace(".parquet", ".xlsx")
+    base_path = f"category_queue/vendor={vendor}/active"
+
+    delta_parquet = f"{base_path}/delta_mapped.parquet"
+    delta_excel = f"{base_path}/delta_mapped.xlsx"
+    decisions_path = f"{base_path}/decisions.parquet"   # 🔥 ADD THIS
 
     print(f"[QUEUE] Clearing category queue for vendor={vendor}")
 
+    # -----------------------------------
+    # Delete delta parquet
+    # -----------------------------------
     try:
-        container.delete_blob(path)
-        print("[QUEUE] Parquet deleted")
+        container.delete_blob(delta_parquet)
+        print("[QUEUE] Delta parquet deleted")
     except ResourceNotFoundError:
-        print("[QUEUE] Parquet already empty")
+        print("[QUEUE] Delta parquet already empty")
 
+    # -----------------------------------
+    # Delete delta excel
+    # -----------------------------------
     try:
-        container.delete_blob(excel_path)
-        print("[QUEUE] Excel deleted")
+        container.delete_blob(delta_excel)
+        print("[QUEUE] Delta excel deleted")
     except ResourceNotFoundError:
-        print("[QUEUE] Excel already empty")
+        print("[QUEUE] Delta excel already empty")
+
+    # -----------------------------------
+    # 🔥 Delete decisions
+    # -----------------------------------
+    try:
+        container.delete_blob(decisions_path)
+        print("[QUEUE] Decisions cleared")
+    except ResourceNotFoundError:
+        print("[QUEUE] Decisions already empty")
 
 @category_review_bp.route("/api/category-review/publish-gold", methods=["POST"])
 @login_required

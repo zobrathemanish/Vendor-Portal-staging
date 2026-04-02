@@ -410,7 +410,7 @@ def preview_pricing_report():
     container = blob_service.get_container_client("silver")
     raw = container.get_blob_client(blob_path).download_blob().readall()
 
-    df = pd.read_excel(BytesIO(raw))
+    df = pd.read_excel(BytesIO(raw), dtype=str)
 
     return jsonify({
         "columns": list(df.columns),
