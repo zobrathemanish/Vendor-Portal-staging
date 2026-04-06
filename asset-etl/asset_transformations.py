@@ -509,58 +509,6 @@ def promote_assets(vendor, submission_type, submission_id):
 
     log(f"Promoted {promoted} assets → APPROVED + GOLD", 2)
 
-#after category we need to use this for gold:
-def promote_approved_to_gold(vendor, approved_parts: list):
-
-        log("Promoting approved assets → GOLD (category-approved only)", 2)
-
-        approved_base = f"approved/assets_workflow/vendor={vendor}/"
-        gold_base = f"selected/asset_workflow/vendor={vendor}/"
-
-        promoted = 0
-
-        for part in approved_parts:
-
-            prefix = f"{approved_base}part_number={part}/"
-
-            blobs = list(container.list_blobs(name_starts_with=prefix))
-
-            if not blobs:
-                log(f"No approved assets for part {part}", 4)
-                continue
-
-            # ❗ optional: clear gold for this part first
-            existing = list(gold_container.list_blobs(
-                name_starts_with=f"{gold_base}part_number={part}/"
-            ))
-
-            for blob in existing:
-                gold_container.delete_blob(blob.name)
-
-            for blob in blobs:
-
-                src_path = blob.name
-
-                if src_path.endswith("/"):
-                    continue
-
-                relative = src_path.replace(approved_base, "")
-
-                gold_path = f"{gold_base}{relative}"
-
-                data = container.get_blob_client(src_path).download_blob().readall()
-
-                gold_container.upload_blob(
-                    gold_path,
-                    data,
-                    overwrite=True
-                )
-
-                promoted += 1
-
-            log(f"Promoted part {part} → GOLD", 4)
-
-        log(f"Total promoted to GOLD: {promoted}", 2)
 
 # =========================================================
 # CACHE

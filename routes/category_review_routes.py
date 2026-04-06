@@ -243,8 +243,12 @@ APPROVED_CURRENT_ROOT = "approved/unified_workflow"
 APPROVED_HISTORY_ROOT = "approved/history"
 GOLD_CURRENT_ROOT = "selected/unified_workflow"
 
-def publish_to_gold(container, vendor: str, workflow: str):
 
+def publish_to_gold(container, vendor: str, workflow: str, approved_parts: list = None):
+
+    # ------------------------------------------------------
+    # Load workflow-level approved state (optional but kept)
+    # ------------------------------------------------------
     current_path = f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.parquet"
     current_xlsx = f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.xlsx"
     current_delta = f"approved/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
@@ -259,9 +263,9 @@ def publish_to_gold(container, vendor: str, workflow: str):
 
     gold = _gold_container()
 
-    # ======================================================
-    # 🔥 LOAD UNIFIED APPROVED (NOT WORKFLOW)
-    # ======================================================
+    # ------------------------------------------------------
+    # 🔥 LOAD UNIFIED APPROVED
+    # ------------------------------------------------------
     unified_parquet_path = (
         f"approved/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
     )
@@ -280,9 +284,9 @@ def publish_to_gold(container, vendor: str, workflow: str):
         print("❌ Failed to load unified approved state:", e)
         return False
 
-    # ======================================================
-    # 🔥 WRITE TO GOLD (UNIFIED)
-    # ======================================================
+    # ------------------------------------------------------
+    # 🔥 WRITE UNIFIED TO GOLD
+    # ------------------------------------------------------
     gold_unified_parquet_path = (
         f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
     )
@@ -297,31 +301,50 @@ def publish_to_gold(container, vendor: str, workflow: str):
     _upload_bytes(gold, gold_unified_xlsx_path, unified_xlsx_bytes)
     _upload_bytes(gold, gold_unified_delta_path, unified_delta_bytes)
 
-    # ======================================================
-    # COPY ASSETS TO GOLD (ADD THIS BLOCK HERE)
-    # ======================================================
+    print("✅ Unified data pushed to GOLD")
+
+    # ------------------------------------------------------
+    # 🔥 HARD SYNC ASSETS (CLEAR + COPY)
+    # ------------------------------------------------------
+    silver = container
 
     silver_assets_prefix = f"approved/assets_workflow/vendor={vendor}/"
     gold_assets_prefix   = f"{GOLD_SELECTED_ROOT}/assets_workflow/vendor={vendor}/"
 
-    silver = container
-    gold = _gold_container()
+    print("📦 Syncing assets → GOLD (FULL REPLACE MODE)")
 
-    print("📦 Syncing assets to GOLD...")
+    # 🔴 STEP 1 — DELETE existing GOLD assets for vendor
+    existing_gold = list(gold.list_blobs(name_starts_with=gold_assets_prefix))
 
-    for blob in silver.list_blobs(name_starts_with=silver_assets_prefix):
-        relative_path = blob.name.replace(silver_assets_prefix, "")
-        gold_path = f"{gold_assets_prefix}{relative_path}"
+    print(f"🧹 Deleting {len(existing_gold)} existing GOLD assets")
 
+    for blob in existing_gold:
         try:
-            data = _download_bytes(silver, blob.name)
-            _upload_bytes(gold, gold_path, data)
+            gold.delete_blob(blob.name)
         except Exception as e:
-            print("⚠️ Failed copying asset:", blob.name, e)
+            print("⚠️ Failed deleting:", blob.name, e)
 
-    print("✅ Assets synced to GOLD")
+    # 🔴 STEP 2 — COPY ALL approved assets
+    blobs = list(silver.list_blobs(name_starts_with=silver_assets_prefix))
 
-    print("✅ GOLD published manually")
+    print(f"📂 Found {len(blobs)} approved asset blobs")
+
+    if not blobs:
+        print("❌ No approved assets found — nothing copied")
+    else:
+        for blob in blobs:
+            relative_path = blob.name.replace(silver_assets_prefix, "")
+            gold_path = f"{gold_assets_prefix}{relative_path}"
+
+            try:
+                data = _download_bytes(silver, blob.name)
+                _upload_bytes(gold, gold_path, data)
+            except Exception as e:
+                print("⚠️ Failed copying:", blob.name, e)
+
+        print(f"✅ Copied {len(blobs)} assets to GOLD")
+
+    print("✅ GOLD publish complete")
 
     return True
 
@@ -580,15 +603,23 @@ def apply_delta_to_current_state(container, vendor: str):
     # -----------------------------------------------------
     gold = _gold_container()
 
-    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/etl_mapped.parquet"
-    gold_xlsx_path    = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/etl_mapped.xlsx"
-    gold_delta_path   = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/delta_mapped.parquet"
+    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
+    gold_xlsx_path    = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_etl_mapped.xlsx"
+    gold_delta_path   = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_delta.parquet"
 
     _upload_bytes(gold, gold_parquet_path, parquet_bytes)
     _upload_bytes(gold, gold_xlsx_path, xlsx_bytes)
     _upload_bytes(gold, gold_delta_path, latest_delta_bytes)
 
     print("✅ GOLD selected mirrored from SILVER current_state (etl_mapped + delta)")
+
+    # ======================================================
+    # COPY ASSETS TO GOLD 
+    # ======================================================
+
+    silver = container
+    gold = _gold_container()
+ 
     # -----------------------------------------------------
     # Archive history snapshot (Parquet + XLSX)
     # -----------------------------------------------------
@@ -602,7 +633,6 @@ def apply_delta_to_current_state(container, vendor: str):
     _upload_bytes(container, history_base + "etl_mapped.xlsx", xlsx_bytes)
 
     print("🗂 History snapshot written")
-
 
     print(f"✅ Baseline updated for vendor {vendor}")
     write_promotion_log(
@@ -622,6 +652,15 @@ def apply_delta_to_current_state(container, vendor: str):
 
     print("🧹 Category queue cleared")
 
+    # ======================================================
+    # 🔥 FINAL GOLD PUBLISH (WITH APPROVED PARTS)
+    # ======================================================
+
+    workflows = ["products", "pricing"]  # or detect dynamically if needed
+
+    for wf in workflows:
+        print(f"[AUTO PUBLISH] workflow={wf}")
+        publish_to_gold(container, vendor, wf, approved_parts=approved_parts)
 
     return True
 
@@ -834,6 +873,7 @@ def api_category_review_decision():
     # -----------------------------------------------------
     if all(decisions_map.get(p) in {"approve", "reject"} for p in review_required_parts):
         print("✅ All review-required parts decided. Triggering promotion.")
+        print("🔥 TRIGGERING APPLY DELTA")
         apply_delta_to_current_state(container, vendor)
     else:
         print("⏳ Waiting on remaining decisions.")
@@ -1083,7 +1123,7 @@ def api_part_intelligence():
             return jsonify({"error": "Baseline not found"}), 404
 
         ready_path = (
-            f"category_queue/vendor={vendor}/active/etl_mapped.parquet"
+            f"category_queue/vendor={vendor}/active/unified_etl_mapped.parquet"
         )
 
         ready_bytes = _download_bytes(container, ready_path)
@@ -1436,8 +1476,10 @@ def api_asset_preview():
 
     container = _container()
 
+    gold = _gold_container()
+
     blob_path = (
-        f"approved/assets_workflow/vendor={vendor}/"
+        f"{GOLD_SELECTED_ROOT}/assets_workflow/vendor={vendor}/"
         f"part_number={part}/"
         f"images/{filename}"
     )
@@ -1445,16 +1487,21 @@ def api_asset_preview():
     print("ASSET PREVIEW PATH:", blob_path)
 
     try:
-        data = _download_bytes(container, blob_path)
+        data = _download_bytes(gold, blob_path)
     except Exception:
-        abort(404)
+        try:
+            blob_path = (
+                f"approved/assets_workflow/vendor={vendor}/"
+                f"part_number={part}/images/{filename}"
+            )
+            data = _download_bytes(container, blob_path)
+        except Exception:
+            abort(404)
 
     return current_app.response_class(
         data,
         mimetype="image/jpeg"
     )
-
-from azure.core.exceptions import ResourceNotFoundError
 
 from azure.core.exceptions import ResourceNotFoundError
 
@@ -1534,7 +1581,7 @@ def api_publish_gold():
         ok = publish_to_gold(container, vendor, wf)
         success = success and ok
 
-    clear_category_queue(container, vendor)
+    # clear_category_queue(container, vendor)
 
     return jsonify({
         "success": success,
