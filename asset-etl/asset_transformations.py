@@ -509,8 +509,8 @@ def promote_assets(vendor, submission_type, submission_id):
 
     log(f"Promoted {promoted} assets → APPROVED + GOLD", 2)
 
-    #after category we need to use this for gold:
-    def promote_approved_to_gold(vendor, approved_parts: list):
+#after category we need to use this for gold:
+def promote_approved_to_gold(vendor, approved_parts: list):
 
         log("Promoting approved assets → GOLD (category-approved only)", 2)
 

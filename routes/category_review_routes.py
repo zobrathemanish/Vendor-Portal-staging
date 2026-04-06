@@ -239,8 +239,9 @@ def write_promotion_log(
 # DELTA MERGE ENGINE (Minimal + Logging)
 # =========================================================
 
-APPROVED_CURRENT_ROOT = "approved/current_state"
+APPROVED_CURRENT_ROOT = "approved/unified_workflow"
 APPROVED_HISTORY_ROOT = "approved/history"
+GOLD_CURRENT_ROOT = "selected/unified_workflow"
 
 def publish_to_gold(container, vendor: str, workflow: str):
 
@@ -258,13 +259,67 @@ def publish_to_gold(container, vendor: str, workflow: str):
 
     gold = _gold_container()
 
-    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.parquet"
-    gold_xlsx_path    = f"{GOLD_SELECTED_ROOT}/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.xlsx"
-    gold_delta_path   = f"{GOLD_SELECTED_ROOT}/{workflow}_workflow/vendor={vendor}/{workflow}_delta.parquet"
+    # ======================================================
+    # 🔥 LOAD UNIFIED APPROVED (NOT WORKFLOW)
+    # ======================================================
+    unified_parquet_path = (
+        f"approved/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+    )
+    unified_xlsx_path = (
+        f"approved/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
+    )
+    unified_delta_path = (
+        f"approved/unified_workflow/vendor={vendor}/unified_delta.parquet"
+    )
 
-    _upload_bytes(gold, gold_parquet_path, parquet_bytes)
-    _upload_bytes(gold, gold_xlsx_path, xlsx_bytes)
-    _upload_bytes(gold, gold_delta_path, delta_bytes)
+    try:
+        unified_parquet_bytes = _download_bytes(container, unified_parquet_path)
+        unified_xlsx_bytes = _download_bytes(container, unified_xlsx_path)
+        unified_delta_bytes = _download_bytes(container, unified_delta_path)
+    except Exception as e:
+        print("❌ Failed to load unified approved state:", e)
+        return False
+
+    # ======================================================
+    # 🔥 WRITE TO GOLD (UNIFIED)
+    # ======================================================
+    gold_unified_parquet_path = (
+        f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+    )
+    gold_unified_xlsx_path = (
+        f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
+    )
+    gold_unified_delta_path = (
+        f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_delta.parquet"
+    )
+
+    _upload_bytes(gold, gold_unified_parquet_path, unified_parquet_bytes)
+    _upload_bytes(gold, gold_unified_xlsx_path, unified_xlsx_bytes)
+    _upload_bytes(gold, gold_unified_delta_path, unified_delta_bytes)
+
+    # ======================================================
+    # COPY ASSETS TO GOLD (ADD THIS BLOCK HERE)
+    # ======================================================
+
+    silver_assets_prefix = f"approved/assets_workflow/vendor={vendor}/"
+    gold_assets_prefix   = f"{GOLD_SELECTED_ROOT}/assets_workflow/vendor={vendor}/"
+
+    silver = container
+    gold = _gold_container()
+
+    print("📦 Syncing assets to GOLD...")
+
+    for blob in silver.list_blobs(name_starts_with=silver_assets_prefix):
+        relative_path = blob.name.replace(silver_assets_prefix, "")
+        gold_path = f"{gold_assets_prefix}{relative_path}"
+
+        try:
+            data = _download_bytes(silver, blob.name)
+            _upload_bytes(gold, gold_path, data)
+        except Exception as e:
+            print("⚠️ Failed copying asset:", blob.name, e)
+
+    print("✅ Assets synced to GOLD")
 
     print("✅ GOLD published manually")
 
@@ -300,7 +355,7 @@ def apply_delta_to_current_state(container, vendor: str):
     # -----------------------------------------------------
     # Load current baseline (if exists)
     # -----------------------------------------------------
-    current_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
+    current_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
 
     try:
         current_bytes = _download_bytes(container, current_path)
@@ -321,7 +376,7 @@ def apply_delta_to_current_state(container, vendor: str):
     # -----------------------------------------------------
     ready_path = (
         f"category_queue/vendor={vendor}/"
-        f"active/etl_mapped.parquet"
+        f"active/unified_etl_mapped.parquet"
     )
     ready_bytes = _download_bytes(container, ready_path)
     df_ready = _df_from_parquet_bytes(ready_bytes)
@@ -507,8 +562,8 @@ def apply_delta_to_current_state(container, vendor: str):
     # -----------------------------------------------------
     # Write SILVER approved/current_state (single source)
     # -----------------------------------------------------
-    current_parquet_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
-    current_xlsx_path    = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.xlsx"
+    current_parquet_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
+    current_xlsx_path    = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.xlsx"
 
     _upload_bytes(container, current_parquet_path, parquet_bytes)
     _upload_bytes(container, current_xlsx_path, xlsx_bytes)
@@ -517,7 +572,7 @@ def apply_delta_to_current_state(container, vendor: str):
     # Persist latest reviewed delta into SILVER approved/current_state
     # -----------------------------------------------------
     latest_delta_bytes = _download_bytes(container, delta_path(vendor))
-    silver_latest_delta_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/delta_mapped.parquet"
+    silver_latest_delta_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_delta.parquet"
     _upload_bytes(container, silver_latest_delta_path, latest_delta_bytes)
 
     # -----------------------------------------------------
@@ -570,6 +625,12 @@ def apply_delta_to_current_state(container, vendor: str):
 
     return True
 
+def split_unified_to_workflows(unified_df):
+
+    products = unified_df[unified_df["__Section"] != "Pricing"].copy()
+    pricing  = unified_df[unified_df["__Section"] == "Pricing"].copy()
+
+    return products, pricing
 # =========================================================
 # PAGE ROUTE
 # =========================================================
@@ -958,15 +1019,17 @@ def api_part_intelligence():
     # =====================================================
     if delta_types == {"delete"}:
 
+        gold = _gold_container()
+
         baseline_path = (
-            f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
+            f"{GOLD_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
         )
 
         try:
-            baseline_bytes = _download_bytes(container, baseline_path)
+            baseline_bytes = _download_bytes(gold, baseline_path)
             df_baseline = _df_from_parquet_bytes(baseline_bytes)
         except:
-            return jsonify({"error": "Baseline not found"}), 404
+            return jsonify({"error": "Gold Baseline not found"}), 404
 
         df_part = df_baseline[
             df_baseline["Part Number"].astype(str) == str(part)
@@ -1010,7 +1073,7 @@ def api_part_intelligence():
     if "update" in delta_types:
 
         baseline_path = (
-            f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/etl_mapped.parquet"
+            f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
         )
 
         try:

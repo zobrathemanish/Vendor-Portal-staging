@@ -820,18 +820,32 @@ def run_asset_etl_for_vendor(vendor: str, submission_type: str, submission_id: s
     # Add missing asset records (only for FULL submissions)
     # ------------------------------------------
 
+    IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".tiff")
+
+    def is_image(filename):
+        return str(filename).lower().endswith(IMAGE_EXTENSIONS)
+
+
     if is_full_submission:
 
         for filename in missing_assets:
+
+            if is_image(filename):
+                severity = "blocking"
+                status = "fail"
+            else:
+                severity = "warning"
+                status = "warning"
+
             health_rows.append({
                 "filename": filename,
-                "status": "fail",
+                "status": status,
                 "issue_type": "missing_asset",
-                "severity": "blocking",
+                "severity": severity,
                 "autofixable": False,
                 "details": "Declared in Product File but not found in your submission"
             })
-    # ------------------------------------------
+        # ------------------------------------------
     # Add extra asset records
     # ------------------------------------------
 

@@ -193,11 +193,12 @@ def load_gold_selected(container, workflow, local, vendor):
             PROJECT_ROOT,
             "gold",
             "selected",
-            f"{workflow}_workflow",
-            f"{workflow}_etl_mapped.xlsx"
+            "unified_workflow",
+            f"vendor={vendor}",
+            "unified_etl_mapped.xlsx"
         )
         if local else
-        f"selected/{workflow}_workflow/vendor={vendor}/{workflow}_etl_mapped.xlsx"
+        f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
     )
 
     try:
@@ -317,13 +318,13 @@ def compute_delta(curr, base, is_delta_review):
     curr = normalize_df(curr)
     base = normalize_df(base)
 
-    print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - CURR]")
-    print(curr["Part Number"].head(10))
-    print(curr["Part Number"].dtype)
+    # print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - CURR]")
+    # print(curr["Part Number"].head(10))
+    # print(curr["Part Number"].dtype)
 
-    print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - BASE]")
-    print(base["Part Number"].head(10))
-    print(base["Part Number"].dtype)
+    # print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - BASE]")
+    # print(base["Part Number"].head(10))
+    # print(base["Part Number"].dtype)
 
     if base.empty:
         curr["_delta_type"] = "insert"
@@ -474,8 +475,8 @@ def enrich_with_product_context(container, vendor, unified, local):
     if unified.empty:
         return unified
 
-    if "__Section" not in unified.columns:
-        return unified
+    if "__Section" not in unified.columns and "_sheet" in unified.columns:
+        unified["__Section"] = unified["_sheet"]
 
     # Identify parts missing Item_Master
     missing_parts = []
@@ -547,6 +548,8 @@ def enrich_with_product_context(container, vendor, unified, local):
     # Merge
     # --------------------------------------------------
     unified = pd.concat([unified, enrich_rows], ignore_index=True)
+
+    unified = unified.drop_duplicates()
 
     return unified
 
@@ -624,13 +627,13 @@ def build_unified_category_queue(container, vendor, local):
         os.path.join(
             PROJECT_ROOT,
             "silver",
-            CATEGORY_QUEUE_ROOT,
+            "approved",
+            "unified_workflow",
             f"vendor={vendor}",
-            CATEGORY_ACTIVE_DIR,
-            "delta_mapped.parquet"
+            "unified_delta.parquet"
         )
         if local else
-        f"{CATEGORY_QUEUE_ROOT}/vendor={vendor}/{CATEGORY_ACTIVE_DIR}/delta_mapped.parquet"
+        f"approved/unified_workflow/vendor={vendor}/unified_delta.parquet"
     )
 
     if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
@@ -646,6 +649,30 @@ def build_unified_category_queue(container, vendor, local):
         write_local(path, data)
     else:
         upload_blob(container, path, data)
+
+    # =========================================================
+    # 🔥 ALSO WRITE TO category_queue (REQUIRED FOR UI)
+    # =========================================================
+
+    queue_parquet_path = (
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            "category_queue",
+            f"vendor={vendor}",
+            "active",
+            "delta_mapped.parquet"
+        )
+        if local else
+        f"category_queue/vendor={vendor}/active/delta_mapped.parquet"
+    )
+
+    if local:
+        write_local(queue_parquet_path, data)
+    else:
+        upload_blob(container, queue_parquet_path, data)
+
+    print(f"[QUEUE] Synced unified_delta → category_queue")
     
     # =========================================================
     # SAVE EXCEL (NEW)
@@ -680,6 +707,15 @@ def build_unified_category_queue(container, vendor, local):
         write_local(excel_path, buf.getvalue())
     else:
         upload_blob(container, excel_path, buf.getvalue())
+
+    queue_excel_path = queue_parquet_path.replace(".parquet", ".xlsx")
+
+    if local:
+        write_local(queue_excel_path, buf.getvalue())
+    else:
+        upload_blob(container, queue_excel_path, buf.getvalue())
+
+    print(f"[QUEUE] Excel synced → category_queue")
 
     print(f"[QUEUE] Excel written → {excel_path}")
 
@@ -800,6 +836,122 @@ def _split_tabs_from_autofixed(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         out[tab_name] = chunk[schema_cols + extra_cols].reset_index(drop=True)
 
     return out
+
+def build_unified_approved_state(container, vendor, local):
+
+    def load(path):
+        try:
+            if local:
+                return read_parquet_local(path)
+            else:
+                return df_from_bytes(download_blob(container, path))
+        except:
+            return pd.DataFrame()
+
+    base_path = (
+        os.path.join(PROJECT_ROOT, "silver", "approved")
+        if local else "approved"
+    )
+
+    products = load(f"{base_path}/products_workflow/vendor={vendor}/products_etl_mapped.parquet")
+    pricing  = load(f"{base_path}/pricing_workflow/vendor={vendor}/pricing_etl_mapped.parquet")
+
+    frames = [df for df in [products, pricing] if not df.empty]
+
+    if not frames:
+        print("[UNIFIED] No data to merge")
+        return
+
+    unified = pd.concat(frames, ignore_index=True)
+
+    # REQUIRED
+    unified = enrich_with_product_context(
+        container,
+        vendor,
+        unified,
+        local
+    )
+
+    # ENSURE SECTION
+    if "__Section" not in unified.columns and "_sheet" in unified.columns:
+        unified["__Section"] = unified["_sheet"]
+
+    # CLEAN
+    unified = unified.drop_duplicates()
+
+    if "Part Number" in unified.columns:
+        unified["Part Number"] = unified["Part Number"].astype("string").str.strip()
+
+    # --------------------------
+    # SAVE PATHS
+    # --------------------------
+    out_parquet = f"{base_path}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+    out_excel   = f"{base_path}/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
+
+    queue_parquet = (
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            "category_queue",
+            f"vendor={vendor}",
+            "active",
+            "unified_etl_mapped.parquet"
+        )
+        if local else
+        f"category_queue/vendor={vendor}/active/unified_etl_mapped.parquet"
+    )
+
+    queue_excel = (
+        os.path.join(
+            PROJECT_ROOT,
+            "silver",
+            "category_queue",
+            f"vendor={vendor}",
+            "active",
+            "unified_etl_mapped.xlsx"
+        )
+        if local else
+        f"category_queue/vendor={vendor}/active/unified_etl_mapped.xlsx"
+    )
+
+    # --------------------------
+    # SAVE PARQUET
+    # --------------------------
+    data = df_to_bytes(unified)
+
+    if local:
+        write_local(out_parquet, data)
+        write_local(queue_parquet, data)
+    else:
+        upload_blob(container, out_parquet, data)
+        upload_blob(container, queue_parquet, data)
+
+    print("[UNIFIED] Approved unified_etl_mapped parquet saved")
+    print("[QUEUE] unified_etl_mapped parquet synced")
+
+    # --------------------------
+    # SAVE EXCEL
+    # --------------------------
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for section, df_sec in unified.groupby("__Section"):
+            if df_sec.empty:
+                continue
+            df_sec.to_excel(writer, sheet_name=section[:31], index=False)
+
+    excel_bytes = buf.getvalue()
+
+    if local:
+        write_local(out_excel, excel_bytes)
+        write_local(queue_excel, excel_bytes)
+    else:
+        upload_blob(container, out_excel, excel_bytes)
+        upload_blob(container, queue_excel, excel_bytes)
+
+    print("[UNIFIED] Approved unified_etl_mapped excel saved")
+    print("[QUEUE] unified_etl_mapped excel synced")
+
+    
 # =========================================================
 # MAIN
 # =========================================================
@@ -887,10 +1039,35 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     # -------------------------------------------------
     print("[DELTA] Using GOLD baseline")
 
-    gold_container = get_gold_container() if not local else None
-    gold_tabs = load_gold_selected(gold_container, workflow, local, vendor)
+    # -------------------------------------------------
+    # 🔥 LOAD UNIFIED GOLD BASELINE (NEW)
+    # -------------------------------------------------
 
-    gold_flat = excel_tabs_to_flat(gold_tabs) if gold_tabs else pd.DataFrame()
+    gold_path = (
+        os.path.join(
+            PROJECT_ROOT,
+            "gold",
+            "selected",
+            "unified_workflow",
+            f"vendor={vendor}",
+            "unified_etl_mapped.parquet"
+        )
+        if local else
+        f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+    )
+
+    try:
+        if local:
+            gold_flat = read_parquet_local(gold_path)
+        else:
+            gold_flat = df_from_bytes(download_blob(get_gold_container(), gold_path))
+
+        print("✅ GOLD UNIFIED LOADED:", gold_path)
+        print("🔍 GOLD SHAPE:", gold_flat.shape)
+
+    except Exception as e:
+        print("❌ GOLD UNIFIED NOT FOUND:", e)
+        gold_flat = pd.DataFrame()
 
     # align section column
     def align(df):
@@ -938,10 +1115,29 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         delta_tabs = filter_tabs_by_workflow(delta_tabs, workflow)
 
         delta_buf = BytesIO()
+        if not delta_tabs or all(df.empty for df in delta_tabs.values()):
+            print("[DELTA] No data to write → skipping Excel generation")
+
+            # OPTIONAL: write empty placeholder
+            delta_tabs = {
+                "No_Data": pd.DataFrame({"message": ["No delta rows found"]})
+            }
+
         with pd.ExcelWriter(delta_buf, engine="openpyxl") as writer:
-            for tab, df_tab in delta_tabs.items():
-                if not df_tab.empty:
-                    df_tab.to_excel(writer, sheet_name=tab[:31], index=False)
+            written = False
+            for sheet, df in delta_tabs.items():
+                if df is None or df.empty:
+                    continue
+
+                df.to_excel(writer, sheet_name=sheet[:31], index=False)
+                written = True
+
+            if not written:
+                pd.DataFrame({"message": ["No delta rows"]}).to_excel(
+                    writer,
+                    sheet_name="No_Data",
+                    index=False
+                )
 
         if local:
             write_local(delta_excel_path, delta_buf.getvalue())
@@ -967,18 +1163,31 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     delta_tabs = filter_tabs_by_workflow(delta_tabs, workflow)
 
     delta_buf = BytesIO()
+
+    if not delta_tabs or all(df.empty for df in delta_tabs.values()):
+        print("[DELTA] No data to write → skipping Excel generation")
+
+        # OPTIONAL: write empty placeholder
+        delta_tabs = {
+            "No_Data": pd.DataFrame({"message": ["No delta rows found"]})
+        }
+
     with pd.ExcelWriter(delta_buf, engine="openpyxl") as writer:
-                    written = False
+            written = False
 
-                    for tab, df_tab in delta_tabs.items():
-                        if not df_tab.empty:
-                            df_tab.to_excel(writer, sheet_name=tab[:31], index=False)
-                            written = True
+            for sheet, df in delta_tabs.items():
+                if df is None or df.empty:
+                    continue
 
-                    if not written:
-                        pd.DataFrame({"info": ["No delta changes"]}).to_excel(
-                            writer, sheet_name="Summary", index=False
-                         )
+                df.to_excel(writer, sheet_name=sheet[:31], index=False)
+                written = True
+
+            if not written:
+                pd.DataFrame({"message": ["No delta rows"]}).to_excel(
+                    writer,
+                    sheet_name="No_Data",
+                    index=False
+                )
 
     if local:
         write_local(delta_excel_path, delta_buf.getvalue())
@@ -1266,6 +1475,12 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         # REBUILD UNIFIED CATEGORY QUEUE FROM APPROVED DELTAS
         # -------------------------------------------------
         build_unified_category_queue(
+            container=approved_container,
+            vendor=vendor,
+            local=local
+        )
+
+        build_unified_approved_state(
             container=approved_container,
             vendor=vendor,
             local=local

@@ -38,7 +38,7 @@ def load_parquet(blob_path):
 # File Paths
 # -----------------------------------------------------
 baseline_path = f"approved/current_state/vendor={VENDOR}/etl_mapped.parquet"
-ready_path = f"category_queue/vendor={VENDOR}/active/etl_mapped.parquet"
+ready_path = f"category_queue/vendor={VENDOR}/active/unified_etl_mapped.parquet"
 
 # -----------------------------------------------------
 # Load Files
