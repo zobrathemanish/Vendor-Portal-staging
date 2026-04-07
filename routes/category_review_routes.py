@@ -724,22 +724,43 @@ def get_row_key(row):
     section = row.get("__Section")
 
     if section == "Descriptions":
-        return (row.get("Part Number"), row.get("Description Code"), row.get("Sequence"))
+        return (
+            row.get("Part Number"),
+            row.get("Description Code"),
+            row.get("Sequence"),
+        )
 
     if section == "Extended_Info":
-        return (row.get("Part Number"), row.get("Extended Info Code"))
+        return (
+            row.get("Part Number"),
+            row.get("Extended Info Code"),
+        )
 
     if section == "Attributes":
-        return (row.get("Part Number"), row.get("Attribute Name"))
+        return (
+            row.get("Part Number"),
+            row.get("Attribute Name"),
+        )
 
     if section == "Packages":
-        return (row.get("Part Number"), row.get("Package UOM"), row.get("Package Quantity of Eaches"))
+        return (
+            row.get("Part Number"),
+            row.get("Package UOM"),
+            row.get("Package Quantity of Eaches"),
+        )
 
     if section == "Digital_Assets":
-        return (row.get("Part Number"), row.get("FileName"))
+        return (
+            row.get("Part Number"),
+            row.get("FileName"),
+        )
 
     if section == "Pricing":
-        return (row.get("Part Number"), row.get("Pricing Type"), row.get("Currency"))
+        return (
+            row.get("Part Number"),
+            row.get("Pricing Type"),
+            row.get("Currency"),
+        )
 
     return (row.get("Part Number"), section)
 
@@ -836,9 +857,47 @@ def api_category_review_work_queue():
 
             common_keys = set(insert_map.keys()) & set(delete_map.keys())
 
-            real_update_count = len(common_keys)
+            print("\n===== DEBUG ROW MATCHING =====")
+
+            for key in common_keys:
+                before = delete_map[key]
+                after  = insert_map[key]
+
+                print("\n--- MATCHED KEY ---")
+                print("KEY:", key)
+
+                print("BEFORE (sample):")
+                print(before.to_dict())
+
+                print("AFTER (sample):")
+                print(after.to_dict())
+
+                break  # just inspect 1 first
+
+            real_update_count = 0
+
+            for key in common_keys:
+                before = delete_map[key]
+                after  = insert_map[key]
+
+                all_cols = set(before.index).union(set(after.index))
+
+                for col in all_cols:
+                    if col.startswith("_") or col in ["__Section", "_sheet"]:
+                        continue
+
+                    b = "" if pd.isna(before.get(col)) else str(before.get(col)).strip()
+                    a = "" if pd.isna(after.get(col)) else str(after.get(col)).strip()
+
+                    if b != a:
+                        real_update_count += 1
+                        break
             real_insert_count = len(insert_map.keys() - common_keys)
             real_delete_count = len(delete_map.keys() - common_keys)
+
+            print("INSERT KEYS:", len(insert_map))
+            print("DELETE KEYS:", len(delete_map))
+            print("COMMON KEYS:", len(common_keys))
 
             items.append({
                 "vendor": vendor,
@@ -985,128 +1044,77 @@ def api_part_intelligence():
     # =====================================================
     # UPDATE MODE – DERIVED FROM INSERT + DELETE (FINAL)
     # =====================================================
-    # -------------------------------------------------
-    # SPLIT INSERT / DELETE
-    # -------------------------------------------------
     df_insert = df_part[df_part["_delta_type"] == "insert"].copy()
     df_delete = df_part[df_part["_delta_type"] == "delete"].copy()
 
-    # -------------------------------------------------
-    # 🔥 ROW KEY (CRITICAL)
-    # -------------------------------------------------
-    def get_row_key(row):
-        section = row.get("__Section")
-
-        if section == "Descriptions":
-            return (row.get("Part Number"), row.get("Description Code"), row.get("Sequence"))
-
-        if section == "Extended_Info":
-            return (row.get("Part Number"), row.get("Extended Info Code"))
-
-        if section == "Attributes":
-            return (row.get("Part Number"), row.get("Attribute Name"))
-
-        if section == "Packages":
-            return (row.get("Part Number"), row.get("Package UOM"), row.get("Package Quantity of Eaches"))
-
-        if section == "Digital_Assets":
-            return (row.get("Part Number"), row.get("FileName"))
-
-        if section == "Pricing":
-            return (row.get("Part Number"), row.get("Pricing Type"), row.get("Currency"))
-
-        return (row.get("Part Number"), section)
-
-    # -------------------------------------------------
-    # BUILD MATCH MAPS
-    # -------------------------------------------------
     insert_map = {get_row_key(r): r for _, r in df_insert.iterrows()}
     delete_map = {get_row_key(r): r for _, r in df_delete.iterrows()}
 
     common_keys = set(insert_map.keys()) & set(delete_map.keys())
 
-    # -------------------------------------------------
-    # ❗ IF NO COMMON KEYS → NOT AN UPDATE
-    # -------------------------------------------------
-    if not common_keys:
-        # fall back to existing insert/delete logic
+    # Only enter update mode when there are matched insert/delete pairs
+    if common_keys:
+
+        IGNORE_COLUMNS = {
+            "__Section",
+            "_sheet",
+            "_domain",
+            "_workflow",
+            "_delta_type",
+            "_merge",
+            "_row_hash_before",
+            "_row_hash_after",
+            "_entity_key",
+            "_entity_id",
+            "_row_id",
+            "_vendor",
+            "_autofix_run_id",
+            "_autofix_timestamp",
+            "_transformation_applied",
+            "_hash",
+            "delta_status"
+        }
+
+        def normalize(v):
+            if pd.isna(v):
+                return ""
+            try:
+                num = float(v)
+                if num.is_integer():
+                    return str(int(num))
+                return str(num)
+            except:
+                return str(v).strip()
+
+        changes = []
+
+        for key in common_keys:
+            before_row = delete_map[key]
+            after_row = insert_map[key]
+            section = after_row.get("__Section")
+
+            all_cols = set(before_row.index).union(set(after_row.index))
+
+            for col in all_cols:
+                if col in IGNORE_COLUMNS:
+                    continue
+
+                before = normalize(before_row[col]) if col in before_row else ""
+                after = normalize(after_row[col]) if col in after_row else ""
+
+                if before != after and (before or after):
+                    changes.append({
+                        "section": section,
+                        "field": col,
+                        "before": before or "-",
+                        "after": after or "-"
+                    })
+
         return jsonify(json_safe({
-            "mode": "insert",
+            "mode": "update",
+            "changes": changes,
             "image_preview_url": image_preview_url
         }))
-
-    # -------------------------------------------------
-    # NORMALIZATION + IGNORE
-    # -------------------------------------------------
-    IGNORE_COLUMNS = {
-        "__Section",
-        "_sheet",
-        "_domain",
-        "_workflow",
-        "_delta_type",
-        "_merge",
-        "_row_hash_before",
-        "_row_hash_after",
-        "_entity_key",
-        "_entity_id",
-        "_row_id",
-        "_vendor",
-        "_autofix_run_id",
-        "_autofix_timestamp",
-        "_transformation_applied",
-        "_hash",
-        "delta_status"
-    }
-
-    def normalize(v):
-        if pd.isna(v):
-            return ""
-        try:
-            num = float(v)
-            if num.is_integer():
-                return str(int(num))
-            return str(num)
-        except:
-            return str(v).strip()
-
-    changes = []
-
-    # -------------------------------------------------
-    # 🔥 TRUE BEFORE vs AFTER
-    # -------------------------------------------------
-    for key in common_keys:
-
-        before_row = delete_map[key]
-        after_row  = insert_map[key]
-
-        section = after_row.get("__Section")
-
-        all_cols = set(before_row.index).union(set(after_row.index))
-
-        for col in all_cols:
-
-            if col in IGNORE_COLUMNS:
-                continue
-
-            before = normalize(before_row[col]) if col in before_row else ""
-            after  = normalize(after_row[col]) if col in after_row else ""
-
-            if before != after and (before or after):
-                changes.append({
-                    "section": section,
-                    "field": col,
-                    "before": before or "-",
-                    "after": after or "-"
-                })
-
-    # -------------------------------------------------
-    # RETURN UPDATE MODE
-    # -------------------------------------------------
-    return jsonify(json_safe({
-        "mode": "update",
-        "changes": changes,
-        "image_preview_url": image_preview_url
-    }))
 
     print("DELTA ROWS FOR PART:", part)
     cols = ["Part Number"]

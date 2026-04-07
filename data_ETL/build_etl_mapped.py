@@ -82,7 +82,15 @@ def get_hash_columns(df):
         "_delta_type", "_merge", "__Section", "_sheet",
         "_entity_key", "_entity_id", "_row_id",
         "_vendor", "_autofix_run_id", "_autofix_timestamp",
-        "_transformation_applied"
+        "_transformation_applied",
+
+        # 🔥 CRITICAL FIXES
+        "delta_status",
+        "_domain",
+        "_workflow",
+        "_row_hash_before",
+        "_row_hash_after",
+        "_hash"
     }
 
     return [c for c in df.columns if c not in EXCLUDE_COLS]
@@ -362,7 +370,15 @@ def compute_delta(curr, base, is_delta_review):
         "_delta_type", "_merge", "__Section", "_sheet",
         "_entity_key", "_entity_id", "_row_id",
         "_vendor", "_autofix_run_id", "_autofix_timestamp",
-        "_transformation_applied"
+        "_transformation_applied",
+
+        # 🔥 CRITICAL FIXES
+        "delta_status",
+        "_domain",
+        "_workflow",
+        "_row_hash_before",
+        "_row_hash_after",
+        "_hash"
     }
 
     hash_cols = get_hash_columns(curr)
@@ -566,11 +582,12 @@ def enrich_with_product_context(container, vendor, unified, local):
 
 
 def build_unified_category_queue(container, vendor, local):
+
     product_delta = load_approved_workflow_delta(container, vendor, "products", local)
     pricing_delta = load_approved_workflow_delta(container, vendor, "pricing", local)
 
     # --------------------------------------------------
-    # FIRST-RUN GUARD: require product baseline
+    # FIRST-RUN GUARD
     # --------------------------------------------------
     baseline_path = (
         os.path.join(
@@ -585,20 +602,18 @@ def build_unified_category_queue(container, vendor, local):
         f"approved/products_workflow/vendor={vendor}/products_etl_mapped.parquet"
     )
 
-    baseline_exists = True
-
     try:
         if local:
             _ = read_parquet_local(baseline_path)
         else:
             _ = download_blob(container, baseline_path)
     except:
-        baseline_exists = False
-
-    if not baseline_exists:
         print("[QUEUE] Skipping → product baseline not available yet")
         return
 
+    # --------------------------------------------------
+    # DOMAIN TAGGING
+    # --------------------------------------------------
     if not product_delta.empty:
         product_delta = product_delta.copy()
         product_delta["_domain"] = "product"
@@ -609,31 +624,85 @@ def build_unified_category_queue(container, vendor, local):
         pricing_delta["_domain"] = "pricing"
         pricing_delta["_workflow"] = "pricing"
 
+    # --------------------------------------------------
+    # 🔥 CRITICAL FIX 1: DOMAIN SEPARATION
+    # --------------------------------------------------
+    if not product_delta.empty:
+        product_delta = product_delta[
+            product_delta["__Section"] != "Pricing"
+        ]
+
+    if not pricing_delta.empty:
+        pricing_delta = pricing_delta[
+            pricing_delta["__Section"] == "Pricing"
+        ]
+
     frames = [df for df in [product_delta, pricing_delta] if not df.empty]
 
     if not frames:
-        print("[QUEUE] No approved deltas found for products or pricing")
+        print("[QUEUE] No approved deltas found")
         return
 
-    # Ensure dtype consistency BEFORE concat
-    for df in [product_delta, pricing_delta]:
-        if not df.empty and "Part Number" in df.columns:
+    # --------------------------------------------------
+    # ENSURE STRING TYPES
+    # --------------------------------------------------
+    for df in frames:
+        if "Part Number" in df.columns:
             df["Part Number"] = df["Part Number"].astype("string").str.strip()
-            
+
     unified_delta = pd.concat(frames, ignore_index=True)
+
     # --------------------------------------------------
-    # ENRICH WITH PRODUCT CONTEXT (CRITICAL FIX)
+    # 🔥 CRITICAL FIX 2: SAFE ENRICHMENT (PRODUCT ONLY)
     # --------------------------------------------------
-    unified_delta = enrich_with_product_context(
+    product_part = unified_delta[
+        unified_delta["__Section"] != "Pricing"
+    ].copy()
+
+    pricing_part = unified_delta[
+        unified_delta["__Section"] == "Pricing"
+    ].copy()
+
+    product_part = enrich_with_product_context(
         container,
         vendor,
-        unified_delta,
+        product_part,
         local
     )
+
+    unified_delta = pd.concat([product_part, pricing_part], ignore_index=True)
+
+    # --------------------------------------------------
+    # 🔥 CRITICAL FIX 3: DEDUPLICATION
+    # --------------------------------------------------
+    unified_delta = unified_delta.drop_duplicates()
+
+    if "_hash" in unified_delta.columns:
+        unified_delta = unified_delta.drop_duplicates(
+            subset=["_hash", "_delta_type"]
+        )
+
+    # --------------------------------------------------
+    # FINAL NORMALIZATION
+    # --------------------------------------------------
+    if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
+        unified_delta["__Section"] = unified_delta["_sheet"]
+
+    unified_delta["Part Number"] = unified_delta["Part Number"].astype("string").str.strip()
+    unified_delta["__Section"] = unified_delta["__Section"].astype(str)
+
+    # 🔥 Ensure pricing rows always correctly tagged
+    unified_delta.loc[
+        unified_delta["__Section"] == "Pricing",
+        "_workflow"
+    ] = "pricing"
 
     unified_delta["_review_decision"] = pd.NA
     unified_delta["_review_comment"] = pd.NA
 
+    # --------------------------------------------------
+    # SAVE PARQUET
+    # --------------------------------------------------
     path = (
         os.path.join(
             PROJECT_ROOT,
@@ -647,13 +716,6 @@ def build_unified_category_queue(container, vendor, local):
         f"approved/unified_workflow/vendor={vendor}/unified_delta.parquet"
     )
 
-    if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
-        unified_delta["__Section"] = unified_delta["_sheet"]
-
-    # Ensure string types (avoid UI bugs like 00210 → 210)
-    unified_delta["Part Number"] = unified_delta["Part Number"].astype("string").str.strip()
-    unified_delta["__Section"] = unified_delta["__Section"].astype(str)
-
     data = df_to_bytes(unified_delta)
 
     if local:
@@ -661,10 +723,9 @@ def build_unified_category_queue(container, vendor, local):
     else:
         upload_blob(container, path, data)
 
-    # =========================================================
-    # 🔥 ALSO WRITE TO category_queue (REQUIRED FOR UI)
-    # =========================================================
-
+    # --------------------------------------------------
+    # ALSO WRITE TO CATEGORY QUEUE
+    # --------------------------------------------------
     queue_parquet_path = (
         os.path.join(
             PROJECT_ROOT,
@@ -684,15 +745,11 @@ def build_unified_category_queue(container, vendor, local):
         upload_blob(container, queue_parquet_path, data)
 
     print(f"[QUEUE] Synced unified_delta → category_queue")
-    
-    # =========================================================
-    # SAVE EXCEL (NEW)
-    # =========================================================
-    excel_path = path.replace(".parquet", ".xlsx")
 
-    # ensure __Section exists
-    if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
-        unified_delta["__Section"] = unified_delta["_sheet"]
+    # --------------------------------------------------
+    # SAVE EXCEL
+    # --------------------------------------------------
+    excel_path = path.replace(".parquet", ".xlsx")
 
     buf = BytesIO()
 
@@ -708,7 +765,6 @@ def build_unified_category_queue(container, vendor, local):
             df_sec.to_excel(writer, sheet_name=section[:31], index=False)
             written = True
 
-        # fallback if empty
         if not written:
             pd.DataFrame({"info": ["No delta changes"]}).to_excel(
                 writer, sheet_name="Summary", index=False
@@ -726,60 +782,7 @@ def build_unified_category_queue(container, vendor, local):
     else:
         upload_blob(container, queue_excel_path, buf.getvalue())
 
-    print(f"[QUEUE] Excel synced → category_queue")
-
-    print(f"[QUEUE] Excel written → {excel_path}")
-
     print(f"[QUEUE] Unified queue written for vendor={vendor} rows={len(unified_delta)}")
-
-
-# # =========================================================
-# # CATEGORY QUEUE
-# # =========================================================
-# def publish_category_queue(container, vendor, workflow, submission_type, submission_id, df, local):
-
-#     if df.empty:
-#         return
-
-#     df["_review_decision"] = pd.NA
-#     df["_review_comment"] = pd.NA
-
-#     path = (
-#         os.path.join(PROJECT_ROOT, "silver", CATEGORY_QUEUE_ROOT,
-#                      f"{workflow}_workflow", f"vendor={vendor}", CATEGORY_ACTIVE_DIR, "queue.parquet")
-#         if local else
-#         f"{CATEGORY_QUEUE_ROOT}/{workflow}_workflow/vendor={vendor}/{CATEGORY_ACTIVE_DIR}/queue.parquet"
-#     )
-
-#     data = df_to_bytes(df)
-
-#     if local:
-#         write_local(path, data)
-#     else:
-#         upload_blob(container, path, data)
-
-# ##HELPERS
-# def split_tabs(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-
-#     tabs = {}
-
-#     # -------------------------------------------------
-#     # CASE 1: Section column exists
-#     # -------------------------------------------------
-#     if "__Section" in df.columns or "_sheet" in df.columns:
-#         section_col = "__Section" if "__Section" in df.columns else "_sheet"
-
-#         for tab, cols in SCHEMA_TABS.items():
-#             chunk = df[df[section_col] == tab].copy()
-#             chunk = chunk.drop(columns=[section_col], errors="ignore")
-
-#             for c in cols:
-#                 if c not in chunk.columns:
-#                     chunk[c] = pd.NA
-
-#             tabs[tab] = chunk[cols].reset_index(drop=True)
-
-#         return tabs
 
 def filter_tabs_by_workflow(tabs: Dict[str, pd.DataFrame], workflow: str) -> Dict[str, pd.DataFrame]:
 
@@ -1058,11 +1061,12 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     else:
         upload_blob(container, excel_path, buf.getvalue())
 
-    # -------------------------------------------------
-    # DELTA GENERATION (for BOTH submission + review)
-    # -------------------------------------------------
-    print("[DELTA] Using GOLD baseline")
+        # -------------------------------------------------
+        # DELTA GENERATION (for BOTH submission + review)
+        # -------------------------------------------------
+        print("[DELTA] Using GOLD baseline")
 
+        
     # -------------------------------------------------
     # 🔥 LOAD UNIFIED GOLD BASELINE (NEW)
     # -------------------------------------------------
@@ -1120,6 +1124,19 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     print("\n[DEBUG AFTER DELTA]")
     print(delta["Part Number"].head(20))
     print(delta["Part Number"].dtype)
+
+    # 🔥 CRITICAL FIX: enforce workflow isolation
+
+    if workflow == "products":
+        delta = delta[
+            delta["__Section"] != "Pricing"
+        ]
+
+    if workflow == "pricing":
+        delta = delta[
+            delta["__Section"] == "Pricing"
+    ]
+
 
     # # 🔍 DEBUG HERE
     # print("\n===== DEBUG DELTA FOR 00211 =====")
