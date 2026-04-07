@@ -241,7 +241,7 @@ def write_promotion_log(
 
 APPROVED_CURRENT_ROOT = "approved/unified_workflow"
 APPROVED_HISTORY_ROOT = "approved/history"
-GOLD_CURRENT_ROOT = "selected/unified_workflow"
+GOLD_SELECTED_ROOT = "selected/unified_workflow"
 
 
 def publish_to_gold(container, vendor: str):
@@ -350,23 +350,16 @@ def publish_to_gold(container, vendor: str):
 
 def apply_delta_to_current_state(container, vendor: str):
 
-    print("🚨 ENTERED apply_delta_to_current_state")
-    print("🔍 VENDOR RAW:", repr(vendor))
-    print("🔍 DELTA PATH:", delta_path(vendor))
+    print("🚨 APPLY DELTA START:", vendor)
 
     metadata = load_metadata(container, vendor)
-    submission_id = None
-
-    if metadata:
-        submission_id = metadata.get("submission_id")
-
-    print("ℹ️ submission_id:", submission_id)
+    submission_id = metadata.get("submission_id") if metadata else None
 
     delta = load_delta(container, vendor)
     decisions = load_decisions(container, vendor)
 
     if delta.empty:
-        print("No delta found. Nothing to apply.")
+        print("No delta found")
         return False
 
     decisions_map = {
@@ -374,370 +367,164 @@ def apply_delta_to_current_state(container, vendor: str):
         for _, r in decisions.iterrows()
     }
 
-    print("---- APPLY DELTA DEBUG ----")
-    print("Vendor:", vendor)
-    print("Metadata:", metadata)
-
-
     # -----------------------------------------------------
-    # Load current baseline (if exists)
+    # LOAD BASELINE (APPROVED = CURRENT STATE)
     # -----------------------------------------------------
     current_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
 
     try:
-        current_bytes = _download_bytes(container, current_path)
-        df_current = _df_from_parquet_bytes(current_bytes)
-    except Exception:
+        df_current = _df_from_parquet_bytes(_download_bytes(container, current_path))
+    except:
         df_current = pd.DataFrame()
 
-    if "Part Number" in df_current.columns:
-        df_current["Part Number"] = df_current["Part Number"].astype(str)
-    else:
+    if "Part Number" not in df_current.columns:
         df_current["Part Number"] = ""
 
-    if "Product Status" not in df_current.columns:
-      df_current["Product Status"] = ""
+    df_current["Part Number"] = df_current["Part Number"].astype(str)
 
     if "delta_status" not in df_current.columns:
         df_current["delta_status"] = "active"
 
     # -----------------------------------------------------
-    # Load submission ready file (full mapped dataset)
+    # LOAD READY (INCOMING DATA)
     # -----------------------------------------------------
-    ready_path = (
-        f"category_queue/vendor={vendor}/"
-        f"active/unified_etl_mapped.parquet"
-    )
-    ready_bytes = _download_bytes(container, ready_path)
-    df_ready = _df_from_parquet_bytes(ready_bytes)
+    ready_path = f"category_queue/vendor={vendor}/active/unified_etl_mapped.parquet"
+    df_ready = _df_from_parquet_bytes(_download_bytes(container, ready_path))
     df_ready["Part Number"] = df_ready["Part Number"].astype(str)
 
     if "delta_status" not in df_ready.columns:
         df_ready["delta_status"] = "active"
 
-    # -----------------------------------------------------
-    # Process each changed part
-    # -----------------------------------------------------
+    approved_parts = []
+    rejected_parts = []
+
     changed_parts = sorted([
         p for p in decisions_map.keys()
         if str(p).strip()
     ])
 
-    print("DEBUG changed_parts:", changed_parts)
-    print("DEBUG decisions_map:", decisions_map)
-
-    approved_parts = []
-    rejected_parts = []
-
+    # -----------------------------------------------------
+    # CORE LOGIC (MIRROR OLD SYSTEM)
+    # -----------------------------------------------------
     for part in changed_parts:
-
-        print("🚨 AFTER ALL PROCESSING:")
-        print(df_current["Part Number"].unique())
 
         decision = decisions_map.get(part)
 
         if decision not in {"approve", "reject"}:
             continue
 
-        print(f"Processing part {part} → {decision}")
-
-        part_delta_rows = delta[
-            delta["Part Number"].astype(str) == part
+        part_delta = delta[
+            delta["Part Number"].astype(str) == str(part)
         ]
 
-
-        delta_types = set(
-            part_delta_rows[DELTA_TYPE_COL].dropna().tolist()
-        )
+        delta_types = set(part_delta[DELTA_TYPE_COL].dropna().tolist())
 
         if not delta_types:
-            print(f"⚠️ No delta found for {part} → treating as INSERT")
-
             delta_types = {"insert"}
-        print(f"DEBUG part={part} delta_types={delta_types}")
-        print("DEBUG current rows for part BEFORE:")
-        print(df_current[df_current["Part Number"] == part][["Part Number", "__Section", "delta_status"]])
 
-        # =====================================================
-        # 🔥 INSERT
-        # =====================================================
-        if "insert" in delta_types:
-
-            if decision == "approve":
-                df_insert = df_ready[df_ready["Part Number"] == part].copy()
-                df_insert["delta_status"] = "active"
-                df_current = df_current[df_current["Part Number"] != part]
-                df_current = pd.concat([df_current, df_insert], ignore_index=True)
-                approved_parts.append(part)
-
-            else:
-                print(f"INSERT rejected → removing {part}")
-                df_current = df_current[df_current["Part Number"] != part]
-                print(f"❌ AFTER INSERT REJECT ({part}) →")
-                print(df_current[df_current["Part Number"] == part])
-                print(df_current[df_current["Part Number"] == part][["Part Number", "__Section", "delta_status"]])
-                rejected_parts.append(part)
-            
-            print("🔍 DEBUG COMPARISON START")
-
-            # sample a few rows for that part
-            sample_rows = df_current[df_current["Part Number"].astype(str).str.contains(str(part).strip(), na=False)].head(5)
-
-            for val in sample_rows["Part Number"]:
-                print("VALUE IN DF:", repr(val), "| TYPE:", type(val))
-                print("VALUE TARGET:", repr(part), "| TYPE:", type(part))
-
-                print("EQUAL? ->", val == part)
-                print("STR EQUAL? ->", str(val) == str(part))
-                print("STR STRIP EQUAL? ->", str(val).strip() == str(part).strip())
-
-                print("LEN DF:", len(str(val)), "LEN TARGET:", len(str(part)))
-
-                print("---")
-
-            print("🔍 DEBUG COMPARISON END")
-
-            continue
-
-        # =====================================================
-        # 🔥 UPDATE
-        # =====================================================
-        if "update" in delta_types:
-
-            if decision == "approve":
-
-                df_current = df_current[
-                    df_current["Part Number"] != part
-                ]
-
-                df_update = df_ready[
-                    df_ready["Part Number"] == part
-                ].copy()
-
-                df_update["delta_status"] = "active"
-
-                df_current = pd.concat([df_current, df_update], ignore_index=True)
-
-                approved_parts.append(part)
-
-            else:
-                print(f"UPDATE rejected → marking inactive {part}")
-
-                df_current.loc[
-                df_current["Part Number"] == part,
-                "delta_status"
-            ] = "inactive"
-
-            print("DEBUG current rows for part AFTER reject update inactive:")
-            print(df_current[df_current["Part Number"] == part][["Part Number", "__Section", "delta_status"]])
-
-            rejected_parts.append(part)
-
-            continue
-
-        # =====================================================
-        # 🔥 DELETE
-        # =====================================================
+        # ============================
+        # DELETE
+        # ============================
         if "delete" in delta_types:
-
-            print(f"DELETE → marking inactive {part}")
+            print(f"DELETE → inactive {part}")
 
             df_current.loc[
-                df_current["Part Number"] == part,
+                df_current["Part Number"] == str(part),
                 "delta_status"
             ] = "inactive"
 
             approved_parts.append(part)
             continue
 
-    # =====================================================
-    # 🔥 FINAL CLEANUP (REMOVE REJECTED INSERTS)
-    # =====================================================
+        # ============================
+        # REJECT
+        # ============================
+        if decision == "reject":
 
-    for part in rejected_parts:
+            if "update" in delta_types:
+                print(f"UPDATE reject → inactive {part}")
 
-        print(f"🧹 FORCE removing rejected part {part}")
+                df_current.loc[
+                    df_current["Part Number"] == str(part),
+                    "delta_status"
+                ] = "inactive"
 
-        df_current = df_current[
-            df_current["Part Number"] != part
-        ]
-    
-    print("🚨 FINAL UNIFIED PARTS:")
-    print(df_current["Part Number"].unique())
+            else:
+                print(f"INSERT reject → remove {part}")
 
-    print("🚨 FINAL UNIFIED SNAPSHOT:")
-    print("🔬 RAW UNIQUE PARTS:")
-    print(df_current["Part Number"].unique())
-    print("🔬 ROW COUNT PER PART:")
-    print(
-        df_current.groupby("Part Number").size().sort_index()
-    )
-    print(
-        df_current[
-            ["Part Number", "__Section", "delta_status"]
-        ].sort_values(["Part Number", "__Section"])
-    )
-    
-    # -----------------------------------------------------
-    # Save updated baseline (Parquet + XLSX)
-    # -----------------------------------------------------
-
-    # Ensure clean index
-    df_current = df_current.reset_index(drop=True)
-
-    print("🧪 BASELINE PARTS:", df_current["Part Number"].unique())
-
-    # ---------- PARQUET ----------
-    parquet_buf = BytesIO()
-
-    # -----------------------------------------------------
-    # Normalize known numeric columns
-    # -----------------------------------------------------
-
-    NUMERIC_COLUMNS = [
-        "Merch Length",
-        "Merch Width",
-        "Merch Height",
-        "Weight",
-        "Quantity",
-        "Cost",
-        "Price"
-    ]
-
-    for col in NUMERIC_COLUMNS:
-        if col in df_current.columns:
-            df_current[col] = pd.to_numeric(
-                df_current[col],
-                errors="coerce"
-            )
-
-    pq.write_table(pa.Table.from_pandas(df_current), parquet_buf)
-    print("🧪 GLOBAL UNIQUE VALUES WITH REPR:")
-    for v in df_current["Part Number"].unique():
-        print(repr(v), "| len:", len(str(v)))
-    print("🚨 FINAL BEFORE SAVE:")
-    print(
-        df_current[
-            ["Part Number", "__Section", "delta_status"]
-        ].sort_values(["Part Number", "__Section"])
-    )
-    parquet_bytes = parquet_buf.getvalue()
-
-    # ---------- XLSX (Dynamic Multi-Tab Clean Version) ----------
-    xlsx_buf = BytesIO()
-
-    with pd.ExcelWriter(xlsx_buf, engine="xlsxwriter") as writer:
-
-        if "__Section" in df_current.columns:
-
-            sections = sorted(
-                df_current["__Section"].dropna().unique()
-            )
-
-            INTERNAL_COLUMNS = {"__Section", "_delta_type"}
-
-            for section in sections:
-
-                df_section = df_current[
-                    df_current["__Section"] == section
-                ].copy()
-
-                # Drop internal/governance columns
-                df_section = df_section.drop(
-                    columns=[
-                        c for c in df_section.columns
-                        if c in INTERNAL_COLUMNS
-                    ],
-                    errors="ignore"
-                )
-
-                # 🔥 Keep only columns that have at least one non-null value
-                non_empty_cols = [
-                    c for c in df_section.columns
-                    if df_section[c].notna().any()
+                df_current = df_current[
+                    df_current["Part Number"] != str(part)
                 ]
 
-                df_section = df_section[non_empty_cols]
+            rejected_parts.append(part)
+            continue
 
-                # Keep Part Number first if present
-                if "Part Number" in df_section.columns:
-                    cols = ["Part Number"] + [
-                        c for c in df_section.columns
-                        if c != "Part Number"
-                    ]
-                    df_section = df_section[cols]
+        # ============================
+        # INSERT APPROVE
+        # ============================
+        if "insert" in delta_types:
 
-                df_section.to_excel(
-                    writer,
-                    sheet_name=str(section)[:31],  # Excel limit
-                    index=False
-                )
+            print(f"INSERT approve → add {part}")
 
-        else:
-            df_current.to_excel(
-                writer,
-                sheet_name="Data",
-                index=False
-            )
+            df_insert = df_ready[
+                df_ready["Part Number"] == str(part)
+            ].copy()
 
-    xlsx_bytes = xlsx_buf.getvalue()
+            df_insert["delta_status"] = "active"
 
-    print("📦 Current state Parquet + Clean Multi-Tab XLSX written")
+            df_current = pd.concat([df_current, df_insert], ignore_index=True)
 
+        # ============================
+        # UPDATE APPROVE
+        # ============================
+        elif "update" in delta_types:
+
+            print(f"UPDATE approve → replace {part}")
+
+            df_current = df_current[
+                df_current["Part Number"] != str(part)
+            ]
+
+            df_update = df_ready[
+                df_ready["Part Number"] == str(part)
+            ].copy()
+
+            df_update["delta_status"] = "active"
+
+            df_current = pd.concat([df_current, df_update], ignore_index=True)
+
+        approved_parts.append(part)
 
     # -----------------------------------------------------
-    # Write SILVER approved/current_state (single source)
+    # FINAL CLEANUP
     # -----------------------------------------------------
+    df_current = df_current.reset_index(drop=True)
+
+    # -----------------------------------------------------
+    # SAVE PARQUET
+    # -----------------------------------------------------
+    parquet_bytes = _parquet_bytes_from_df(df_current)
+
     current_parquet_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
-    current_xlsx_path    = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.xlsx"
-
     _upload_bytes(container, current_parquet_path, parquet_bytes)
-    _upload_bytes(container, current_xlsx_path, xlsx_bytes)
 
     # -----------------------------------------------------
-    # Persist latest reviewed delta into SILVER approved/current_state
+    # SAVE DELTA SNAPSHOT
     # -----------------------------------------------------
     latest_delta_bytes = _download_bytes(container, delta_path(vendor))
-    silver_latest_delta_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_delta.parquet"
-    _upload_bytes(container, silver_latest_delta_path, latest_delta_bytes)
+    delta_save_path = f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_delta.parquet"
+    _upload_bytes(container, delta_save_path, latest_delta_bytes)
 
     # -----------------------------------------------------
-    # MIRROR to GOLD selected (identical “latest” artifacts)
+    # HISTORY SNAPSHOT
     # -----------------------------------------------------
-    gold = _gold_container()
+    if submission_id:
+        history_base = f"{APPROVED_HISTORY_ROOT}/vendor={vendor}/submission={submission_id}/"
+        _upload_bytes(container, history_base + "etl_mapped.parquet", parquet_bytes)
 
-    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
-    gold_xlsx_path    = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_etl_mapped.xlsx"
-    gold_delta_path   = f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_delta.parquet"
-
-    _upload_bytes(gold, gold_parquet_path, parquet_bytes)
-    _upload_bytes(gold, gold_xlsx_path, xlsx_bytes)
-    _upload_bytes(gold, gold_delta_path, latest_delta_bytes)
-
-    print("✅ GOLD selected mirrored from SILVER current_state (etl_mapped + delta)")
-
-    # ======================================================
-    # COPY ASSETS TO GOLD 
-    # ======================================================
-
-    silver = container
-    gold = _gold_container()
- 
     # -----------------------------------------------------
-    # Archive history snapshot (Parquet + XLSX)
+    # LOGGING
     # -----------------------------------------------------
-
-    history_base = (
-        f"{APPROVED_HISTORY_ROOT}/vendor={vendor}/"
-        f"submission={submission_id}/"
-    )
-
-    _upload_bytes(container, history_base + "etl_mapped.parquet", parquet_bytes)
-    _upload_bytes(container, history_base + "etl_mapped.xlsx", xlsx_bytes)
-
-    print("🗂 History snapshot written")
-
-    print(f"✅ Baseline updated for vendor {vendor}")
     write_promotion_log(
         container=container,
         vendor=vendor,
@@ -748,12 +535,14 @@ def apply_delta_to_current_state(container, vendor: str):
         user=current_user.username
     )
 
-    # Clear category queue
+    # -----------------------------------------------------
+    # CLEAR QUEUE
+    # -----------------------------------------------------
     prefix = f"{CATEGORY_QUEUE_ROOT}/vendor={vendor}/"
     for blob in container.list_blobs(name_starts_with=prefix):
         container.delete_blob(blob.name)
 
-    print("🧹 Category queue cleared")
+    print("✅ APPLY DELTA COMPLETE")
 
     return True
 
@@ -815,16 +604,12 @@ def api_category_review():
 
     container = _container()
 
-    metadata = load_metadata(container, vendor)
     delta = load_delta(container, vendor)
+    metadata = load_metadata(container, vendor)
 
     if delta.empty:
         return jsonify({
-            "summary": {
-                "vendor": vendor,
-                "parts": 0,
-                "status": "no_active_review"
-            },
+            "summary": {"vendor": vendor, "parts": 0},
             "parts": []
         })
 
@@ -834,60 +619,29 @@ def api_category_review():
         for _, r in decisions.iterrows()
     }
 
-    parts = sorted([
-        p for p in delta["Part Number"].dropna().astype(str).unique()
-        if p.strip()
-    ])
+    parts = sorted(
+        delta["Part Number"].dropna().astype(str).unique()
+    )
 
-    summary = {
-        "vendor": vendor,
-        "submission_id": metadata.get("submission_id") if metadata else None,
-        "parts": len(parts),
-        "row_inserts": int((delta[DELTA_TYPE_COL] == "insert").sum()),
-        "row_updates": int((delta[DELTA_TYPE_COL] == "update").sum()),
-        "row_deletes": int((delta[DELTA_TYPE_COL] == "delete").sum()),
-        "status": "pending"
-    }
-
-    parts_payload = []
+    payload = []
 
     for pn in parts:
         pn_rows = delta[delta["Part Number"].astype(str) == pn]
-        sections = {}
+        delta_types = set(pn_rows[DELTA_TYPE_COL].dropna().tolist())
 
-        for tab in pn_rows["__Section"].dropna().unique():
-            tab_rows = pn_rows[pn_rows["__Section"] == tab]
-
-            rows_payload = []
-
-            for _, r in tab_rows.iterrows():
-                rows_payload.append({
-                    "delta_type": str(r.get(DELTA_TYPE_COL, "")).lower(),
-                    "changes": [
-                        {
-                            "field": col,
-                            "before": "",
-                            "after": str(r.get(col, ""))
-                        }
-                        for col in r.index
-                        if col not in ["Part Number", "__Section", DELTA_TYPE_COL]
-                    ]
-                })
-
-            sections[tab] = {
-                "rows": rows_payload,
-                "baseline_rows": 0
-            }
-
-        parts_payload.append({
+        payload.append({
             "part_number": pn,
             "decision": decisions_map.get(pn, "pending"),
-            "sections": sections
+            "delta_types": list(delta_types)
         })
 
     return jsonify({
-        "summary": summary,
-        "parts": parts_payload
+        "summary": {
+            "vendor": vendor,
+            "submission_id": metadata.get("submission_id") if metadata else None,
+            "parts": len(parts)
+        },
+        "parts": payload
     })
 
 # =========================================================
@@ -1147,7 +901,7 @@ def api_part_intelligence():
         gold = _gold_container()
 
         baseline_path = (
-            f"{GOLD_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
+            f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
         )
 
         try:
