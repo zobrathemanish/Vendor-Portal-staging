@@ -720,7 +720,28 @@ def api_category_review_decision():
 
     return jsonify({"ok": True})
 
+def get_row_key(row):
+    section = row.get("__Section")
 
+    if section == "Descriptions":
+        return (row.get("Part Number"), row.get("Description Code"), row.get("Sequence"))
+
+    if section == "Extended_Info":
+        return (row.get("Part Number"), row.get("Extended Info Code"))
+
+    if section == "Attributes":
+        return (row.get("Part Number"), row.get("Attribute Name"))
+
+    if section == "Packages":
+        return (row.get("Part Number"), row.get("Package UOM"), row.get("Package Quantity of Eaches"))
+
+    if section == "Digital_Assets":
+        return (row.get("Part Number"), row.get("FileName"))
+
+    if section == "Pricing":
+        return (row.get("Part Number"), row.get("Pricing Type"), row.get("Currency"))
+
+    return (row.get("Part Number"), section)
 
 @category_review_bp.route("/api/category-review/work-queue")
 @login_required
@@ -804,14 +825,29 @@ def api_category_review_work_queue():
 
             decision = "auto_delete" if is_delete_only else decisions_map.get(pn, "pending")
 
+            # -----------------------------------------
+            # REAL CHANGE DETECTION (UI LOGIC)
+            # -----------------------------------------
+            df_insert = pn_rows[pn_rows[DELTA_TYPE_COL] == "insert"]
+            df_delete = pn_rows[pn_rows[DELTA_TYPE_COL] == "delete"]
+
+            insert_map = {get_row_key(r): r for _, r in df_insert.iterrows()}
+            delete_map = {get_row_key(r): r for _, r in df_delete.iterrows()}
+
+            common_keys = set(insert_map.keys()) & set(delete_map.keys())
+
+            real_update_count = len(common_keys)
+            real_insert_count = len(insert_map.keys() - common_keys)
+            real_delete_count = len(delete_map.keys() - common_keys)
+
             items.append({
                 "vendor": vendor,
                 "submission_id": submission_id,
                 "part_number": pn,
                 "decision": decision,
-                "row_inserts": int((pn_rows[DELTA_TYPE_COL] == "insert").sum()),
-                "row_updates": int((pn_rows[DELTA_TYPE_COL] == "update").sum()),
-                "row_deletes": int((pn_rows[DELTA_TYPE_COL] == "delete").sum()),
+                "row_inserts": real_insert_count,
+                "row_updates": real_update_count,
+                "row_deletes": real_delete_count,
             })
 
     # ---------------------------------------------
@@ -946,108 +982,131 @@ def api_part_intelligence():
             "image_preview_url": image_preview_url
         }))
 
-   # =====================================================
-    # UPDATE MODE – Section-Aware Diff
     # =====================================================
-    if "update" in delta_types:
+    # UPDATE MODE – DERIVED FROM INSERT + DELETE (FINAL)
+    # =====================================================
+    # -------------------------------------------------
+    # SPLIT INSERT / DELETE
+    # -------------------------------------------------
+    df_insert = df_part[df_part["_delta_type"] == "insert"].copy()
+    df_delete = df_part[df_part["_delta_type"] == "delete"].copy()
 
-        baseline_path = (
-            f"{APPROVED_CURRENT_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
-        )
+    # -------------------------------------------------
+    # 🔥 ROW KEY (CRITICAL)
+    # -------------------------------------------------
+    def get_row_key(row):
+        section = row.get("__Section")
 
-        try:
-            baseline_bytes = _download_bytes(container, baseline_path)
-            df_baseline = _df_from_parquet_bytes(baseline_bytes)
-        except:
-            return jsonify({"error": "Baseline not found"}), 404
+        if section == "Descriptions":
+            return (row.get("Part Number"), row.get("Description Code"), row.get("Sequence"))
 
-        ready_path = (
-            f"category_queue/vendor={vendor}/active/unified_etl_mapped.parquet"
-        )
+        if section == "Extended_Info":
+            return (row.get("Part Number"), row.get("Extended Info Code"))
 
-        ready_bytes = _download_bytes(container, ready_path)
-        df_ready = _df_from_parquet_bytes(ready_bytes)
+        if section == "Attributes":
+            return (row.get("Part Number"), row.get("Attribute Name"))
 
-        df_baseline_part = df_baseline[
-            df_baseline["Part Number"].astype(str) == str(part)
-        ]
+        if section == "Packages":
+            return (row.get("Part Number"), row.get("Package UOM"), row.get("Package Quantity of Eaches"))
 
-        df_ready_part = df_ready[
-            df_ready["Part Number"].astype(str) == str(part)
-        ]
+        if section == "Digital_Assets":
+            return (row.get("Part Number"), row.get("FileName"))
 
-        IGNORE_COLUMNS = {
-            "__Section",
-            "_delta_type",
-            "_row_hash_before",
-            "_row_hash_after"
-        }
+        if section == "Pricing":
+            return (row.get("Part Number"), row.get("Pricing Type"), row.get("Currency"))
 
-        def normalize(v):
-            if pd.isna(v):
-                return ""
+        return (row.get("Part Number"), section)
 
-            # Try numeric comparison first
-            try:
-                num = float(v)
-                # Remove meaningless trailing zeros
-                if num.is_integer():
-                    return str(int(num))
-                return str(num)
-            except:
-                return str(v).strip()
+    # -------------------------------------------------
+    # BUILD MATCH MAPS
+    # -------------------------------------------------
+    insert_map = {get_row_key(r): r for _, r in df_insert.iterrows()}
+    delete_map = {get_row_key(r): r for _, r in df_delete.iterrows()}
 
-        changes = []
+    common_keys = set(insert_map.keys()) & set(delete_map.keys())
 
-        # 🔥 Compare per section
-        all_sections = set(
-            df_baseline_part["__Section"].dropna().tolist()
-        ).union(
-            df_ready_part["__Section"].dropna().tolist()
-        )
-
-        for section in all_sections:
-
-            base_section = df_baseline_part[
-                df_baseline_part["__Section"] == section
-            ]
-
-            ready_section = df_ready_part[
-                df_ready_part["__Section"] == section
-            ]
-
-            if base_section.empty and ready_section.empty:
-                continue
-
-            # Use first row per section (safe in your design)
-            base_row = base_section.iloc[0] if not base_section.empty else None
-            ready_row = ready_section.iloc[0] if not ready_section.empty else None
-
-            all_cols = set(
-                list(base_section.columns) + list(ready_section.columns)
-            )
-
-            for col in all_cols:
-
-                if col in IGNORE_COLUMNS:
-                    continue
-
-                before = normalize(base_row[col]) if base_row is not None and col in base_section.columns else ""
-                after  = normalize(ready_row[col]) if ready_row is not None and col in ready_section.columns else ""
-
-                if before != after:
-                    changes.append({
-                        "section": section,
-                        "field": col,
-                        "before": before or "-",
-                        "after": after or "-"
-                    })
-
+    # -------------------------------------------------
+    # ❗ IF NO COMMON KEYS → NOT AN UPDATE
+    # -------------------------------------------------
+    if not common_keys:
+        # fall back to existing insert/delete logic
         return jsonify(json_safe({
-            "mode": "update",
-            "changes": changes,
+            "mode": "insert",
             "image_preview_url": image_preview_url
         }))
+
+    # -------------------------------------------------
+    # NORMALIZATION + IGNORE
+    # -------------------------------------------------
+    IGNORE_COLUMNS = {
+        "__Section",
+        "_sheet",
+        "_domain",
+        "_workflow",
+        "_delta_type",
+        "_merge",
+        "_row_hash_before",
+        "_row_hash_after",
+        "_entity_key",
+        "_entity_id",
+        "_row_id",
+        "_vendor",
+        "_autofix_run_id",
+        "_autofix_timestamp",
+        "_transformation_applied",
+        "_hash",
+        "delta_status"
+    }
+
+    def normalize(v):
+        if pd.isna(v):
+            return ""
+        try:
+            num = float(v)
+            if num.is_integer():
+                return str(int(num))
+            return str(num)
+        except:
+            return str(v).strip()
+
+    changes = []
+
+    # -------------------------------------------------
+    # 🔥 TRUE BEFORE vs AFTER
+    # -------------------------------------------------
+    for key in common_keys:
+
+        before_row = delete_map[key]
+        after_row  = insert_map[key]
+
+        section = after_row.get("__Section")
+
+        all_cols = set(before_row.index).union(set(after_row.index))
+
+        for col in all_cols:
+
+            if col in IGNORE_COLUMNS:
+                continue
+
+            before = normalize(before_row[col]) if col in before_row else ""
+            after  = normalize(after_row[col]) if col in after_row else ""
+
+            if before != after and (before or after):
+                changes.append({
+                    "section": section,
+                    "field": col,
+                    "before": before or "-",
+                    "after": after or "-"
+                })
+
+    # -------------------------------------------------
+    # RETURN UPDATE MODE
+    # -------------------------------------------------
+    return jsonify(json_safe({
+        "mode": "update",
+        "changes": changes,
+        "image_preview_url": image_preview_url
+    }))
 
     print("DELTA ROWS FOR PART:", part)
     cols = ["Part Number"]
@@ -1055,7 +1114,6 @@ def api_part_intelligence():
         cols.append("__Section")
 
     print(df_part[cols])
-
 
     if df_part.empty:
         return jsonify({"error": "No insert data found"}), 404

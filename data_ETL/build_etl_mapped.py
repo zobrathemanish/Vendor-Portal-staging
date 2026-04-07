@@ -77,6 +77,16 @@ SCHEMA_TABS: Dict[str, List[str]] = {
     ],
 }
 
+def get_hash_columns(df):
+    EXCLUDE_COLS = {
+        "_delta_type", "_merge", "__Section", "_sheet",
+        "_entity_key", "_entity_id", "_row_id",
+        "_vendor", "_autofix_run_id", "_autofix_timestamp",
+        "_transformation_applied"
+    }
+
+    return [c for c in df.columns if c not in EXCLUDE_COLS]
+
 # =========================================================
 # SUBMISSION TYPE
 # =========================================================
@@ -355,7 +365,7 @@ def compute_delta(curr, base, is_delta_review):
         "_transformation_applied"
     }
 
-    hash_cols = [c for c in all_cols if c not in EXCLUDE_COLS]
+    hash_cols = get_hash_columns(curr)
 
     print("\n[DEBUG BEFORE HASH]")
     print(curr["Part Number"].head(10))
@@ -392,41 +402,42 @@ def compute_delta(curr, base, is_delta_review):
     delta_df = pd.concat([inserts, deletes], ignore_index=True)
 
     # ----------------------------------------
-    # Convert insert+delete pairs → update
+    # ADD BEFORE/AFTER HASHES (CRITICAL)
     # ----------------------------------------
-    if not delta_df.empty and "Part Number" in delta_df.columns:
+    delta_df["_row_hash_before"] = None
+    delta_df["_row_hash_after"] = None
 
+    # inserts
+    delta_df.loc[delta_df["_delta_type"] == "insert", "_row_hash_after"] = delta_df["_hash"]
+
+    # deletes
+    delta_df.loc[delta_df["_delta_type"] == "delete", "_row_hash_before"] = delta_df["_hash"]
+
+    # updates → need mapping
+    if not delta_df.empty:
+
+        inserts_df = curr.copy()
+        deletes_df = base.copy()
+
+        # map by key (Part + section)
         key_cols = ["Part Number", "_sheet"]
 
-        inserts_df = delta_df[delta_df["_delta_type"] == "insert"]
-        deletes_df = delta_df[delta_df["_delta_type"] == "delete"]
+        insert_map = {
+            tuple(r[key_cols]): r["_hash"]
+            for _, r in inserts_df.iterrows()
+        }
 
-        common_keys = pd.merge(
-            inserts_df[key_cols],
-            deletes_df[key_cols],
-            on=key_cols
-        )
+        delete_map = {
+            tuple(r[key_cols]): r["_hash"]
+            for _, r in deletes_df.iterrows()
+        }
 
-        if not common_keys.empty:
-            common_keys["_marker"] = 1
+        for idx, row in delta_df.iterrows():
+            if row["_delta_type"] == "update":
+                key = (row["Part Number"], row["_sheet"])
 
-            delta_df = delta_df.merge(common_keys, on=key_cols, how="left")
-
-            # insert → update
-            delta_df.loc[
-                (delta_df["_delta_type"] == "insert") & (delta_df["_marker"] == 1),
-                "_delta_type"
-            ] = "update"
-
-            # remove corresponding deletes
-            delta_df = delta_df[
-                ~(
-                    (delta_df["_delta_type"] == "delete") &
-                    (delta_df["_marker"] == 1)
-                )
-            ]
-
-            delta_df = delta_df.drop(columns=["_marker"], errors="ignore")
+                delta_df.at[idx, "_row_hash_before"] = delete_map.get(key)
+                delta_df.at[idx, "_row_hash_after"]  = insert_map.get(key)
 
     return delta_df
 
@@ -882,6 +893,19 @@ def build_unified_approved_state(container, vendor, local):
     if "Part Number" in unified.columns:
         unified["Part Number"] = unified["Part Number"].astype("string").str.strip()
 
+    
+    # --------------------------------------------------
+    # 🔥 ADD HASH (CRITICAL FOR UPDATE MATCHING)
+    # --------------------------------------------------
+    hash_cols = get_hash_columns(unified)
+
+    unified["_hash"] = unified.apply(
+        lambda r: hash_row(r, hash_cols),
+        axis=1
+    )
+
+    print(unified[["_hash", "Part Number"]].head())
+
     # --------------------------
     # SAVE PATHS
     # --------------------------
@@ -1157,7 +1181,7 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
 
     delta_excel_path = f"{base_out}/delta_mapped.xlsx"
 
-    delta = delta.drop(columns=["_hash"], errors="ignore")
+    # delta = delta.drop(columns=["_hash"], errors="ignore")
 
     delta_tabs = _split_tabs_from_autofixed(delta)
     delta_tabs = filter_tabs_by_workflow(delta_tabs, workflow)
