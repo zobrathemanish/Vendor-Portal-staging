@@ -241,7 +241,6 @@ def write_promotion_log(
 
 APPROVED_CURRENT_ROOT = "approved/unified_workflow"
 APPROVED_HISTORY_ROOT = "approved/history"
-GOLD_SELECTED_ROOT = "selected/unified_workflow"
 
 
 def publish_to_gold(container, vendor: str):
@@ -857,23 +856,6 @@ def api_category_review_work_queue():
 
             common_keys = set(insert_map.keys()) & set(delete_map.keys())
 
-            print("\n===== DEBUG ROW MATCHING =====")
-
-            for key in common_keys:
-                before = delete_map[key]
-                after  = insert_map[key]
-
-                print("\n--- MATCHED KEY ---")
-                print("KEY:", key)
-
-                print("BEFORE (sample):")
-                print(before.to_dict())
-
-                print("AFTER (sample):")
-                print(after.to_dict())
-
-                break  # just inspect 1 first
-
             real_update_count = 0
 
             for key in common_keys:
@@ -996,7 +978,7 @@ def api_part_intelligence():
         gold = _gold_container()
 
         baseline_path = (
-            f"{GOLD_SELECTED_ROOT}/vendor={vendor}/unified_etl_mapped.parquet"
+            f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
         )
 
         try:

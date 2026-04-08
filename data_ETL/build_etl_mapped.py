@@ -259,8 +259,8 @@ def norm(v):
     if pd.isna(v):
         return ""
 
-    if str(v).startswith("002"):
-        print("🔥 NORM INPUT:", v, type(v))
+    # if str(v).startswith("002"):
+    #     print("🔥 NORM INPUT:", v, type(v))
 
     if isinstance(v, str):
         return v.strip()
@@ -383,10 +383,6 @@ def compute_delta(curr, base, is_delta_review):
 
     hash_cols = get_hash_columns(curr)
 
-    print("\n[DEBUG BEFORE HASH]")
-    print(curr["Part Number"].head(10))
-    print(curr["Part Number"].apply(lambda x: type(x)).value_counts())
-
     curr["_hash"] = curr.apply(lambda r: hash_row(r, hash_cols), axis=1)
     base["_hash"] = base.apply(lambda r: hash_row(r, hash_cols), axis=1)
 
@@ -479,14 +475,8 @@ def load_approved_workflow_delta(container, vendor, workflow, local) -> pd.DataF
     try:
         if local:
             df = read_parquet_local(path)
-            print("\n[DEBUG LOAD APPROVED DELTA]")
-            print(df["Part Number"].head(20))
-            print(df["Part Number"].dtype)
         else:
             df = df_from_bytes(download_blob(container, path))
-            print("\n[DEBUG LOAD APPROVED DELTA]")
-            print(df["Part Number"].head(20))
-            print(df["Part Number"].dtype)
 
         if df is None or df.empty:
             return pd.DataFrame()
@@ -1108,18 +1098,6 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     curr_flat = align(flat_df)
     gold_flat = align(gold_flat)
 
-    print("\n[DEBUG BEFORE DELTA - CURRENT]")
-    print(curr_flat["Part Number"].head(10))
-    print(curr_flat["Part Number"].dtype)
-
-    print("\n[DEBUG BEFORE DELTA - GOLD]")
-    if "Part Number" in gold_flat.columns:
-        print("\n[DEBUG BEFORE DELTA - GOLD]")
-        print(gold_flat["Part Number"].head(10))
-        print(gold_flat["Part Number"].dtype)
-    else:
-        print("\n[DEBUG BEFORE DELTA - GOLD] Part Number column missing")
-    
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
     print("\n[DEBUG AFTER DELTA]")
     print(delta["Part Number"].head(20))
@@ -1136,12 +1114,6 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         delta = delta[
             delta["__Section"] == "Pricing"
     ]
-
-
-    # # 🔍 DEBUG HERE
-    # print("\n===== DEBUG DELTA FOR 00211 =====")
-    # print(delta[delta["Part Number"] == "00211"].T)
-    # print("=================================\n")
 
     if delta.empty:
         print("[DELTA] No changes detected")
@@ -1239,41 +1211,6 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         write_local(delta_path, df_to_bytes(delta))
     else:
         upload_blob(container, delta_path, df_to_bytes(delta))
-
-    # if meta["is_review"]:
-
-    #     print("[QUEUE] Publishing reviewed delta to category queue")
-
-    #     # ------------------------------------------
-    #     # Read already generated delta from ready
-    #     # ------------------------------------------
-    #     delta_path_ready = (
-    #         f"{READY_ROOT}/{workflow}_workflow/vendor={vendor}/"
-    #         f"submission_type={submission_type}/submission={submission_id}/review/delta_mapped.parquet"
-    #     )
-
-    #     print("[QUEUE LOAD PATH]", delta_path_ready)
-
-    #     try:
-    #         delta_bytes = container.get_blob_client(delta_path_ready).download_blob().readall()
-    #         delta_df = pq.read_table(BytesIO(delta_bytes)).to_pandas()
-    #         print("[QUEUE LOAD SIZE]", len(delta_bytes))
-    #     except Exception as e:
-    #         print("[QUEUE] Failed to load delta:", e)
-    #         delta_df = pd.DataFrame()
-
-    #     # ------------------------------------------
-    #     # Publish to category queue
-    #     # ------------------------------------------
-    #     publish_category_queue(
-    #         container,
-    #         vendor,
-    #         workflow,
-    #         submission_type,
-    #         submission_id,
-    #         delta_df,
-    #         local
-    #     )
 
     # =========================================================
     # GOLD SELECTED DELTA (FULL vs DELTA REVIEW)
