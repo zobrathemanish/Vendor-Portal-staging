@@ -248,60 +248,104 @@ def publish_to_gold(container, vendor: str):
     gold = _gold_container()
 
     # ------------------------------------------------------
-    # 🔥 LOAD FINAL UNIFIED STATE (ONLY SOURCE)
+    # 🔥 LOAD APPROVED UNIFIED STATE (SOURCE OF TRUTH)
     # ------------------------------------------------------
     unified_parquet_path = f"approved/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
     unified_xlsx_path    = f"approved/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
-    unified_delta_path   = f"approved/unified_workflow/vendor={vendor}/unified_delta.parquet"
 
     try:
         unified_parquet_bytes = _download_bytes(container, unified_parquet_path)
-        unified_xlsx_bytes    = _download_bytes(container, unified_xlsx_path)
-        unified_delta_bytes   = _download_bytes(container, unified_delta_path)
     except Exception as e:
         print("❌ Failed to load unified approved state:", e)
         return False
 
     # ------------------------------------------------------
-    # 🔥 WRITE UNIFIED TO GOLD
-    # ------------------------------------------------------
-    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
-    gold_xlsx_path    = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
-    gold_delta_path   = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_delta.parquet"
-
-    _upload_bytes(gold, gold_parquet_path, unified_parquet_bytes)
-    _upload_bytes(gold, gold_xlsx_path, unified_xlsx_bytes)
-    _upload_bytes(gold, gold_delta_path, unified_delta_bytes)
-
-    print("✅ Unified data pushed to GOLD")
-
-    # ------------------------------------------------------
-    # 🔥 ASSET FILTERING
+    # 🔥 LOAD DATAFRAME
     # ------------------------------------------------------
     df_unified = _df_from_parquet_bytes(unified_parquet_bytes)
 
-    df_item = df_unified[df_unified["__Section"] == "Item_Master"].copy()
+    df_unified["Part Number"] = df_unified["Part Number"].astype(str).str.strip()
 
-    if "delta_status" not in df_item.columns:
-        df_item["delta_status"] = "active"
+    # ------------------------------------------------------
+    # 🔥 APPLY DECISIONS (CORE LOGIC)
+    # ------------------------------------------------------
+    decisions = load_decisions(container, vendor)
 
-    df_item["delta_status"] = (
-        df_item["delta_status"]
+    decisions_map = {
+        str(r["part_number"]).strip(): str(r["decision"]).strip()
+        for _, r in decisions.iterrows()
+    }
+
+    def resolve_status(part):
+        decision = decisions_map.get(part)
+
+        if decision == "reject":
+            return "inactive"
+
+        return "active"
+
+    df_unified["delta_status"] = df_unified["Part Number"].apply(resolve_status)
+
+    df_unified["delta_status"] = (
+        df_unified["delta_status"]
         .fillna("active")
         .astype(str)
         .str.strip()
         .str.lower()
     )
 
+    # ------------------------------------------------------
+    # 🔥 FILTER GOLD DATASET
+    # ------------------------------------------------------
+    df_gold = df_unified[df_unified["delta_status"] == "active"].copy()
+
+    # ------------------------------------------------------
+    # 🔥 WRITE PARQUET TO GOLD
+    # ------------------------------------------------------
+    gold_parquet_path = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+
+    gold_parquet_bytes = _parquet_bytes_from_df(df_gold)
+
+    _upload_bytes(gold, gold_parquet_path, gold_parquet_bytes)
+
+    print("✅ Filtered unified parquet pushed to GOLD")
+
+    # ------------------------------------------------------
+    # 🔥 WRITE XLSX (FILTERED)
+    # ------------------------------------------------------
+    gold_xlsx_path = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
+
+    try:
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+
+            for section, df_section in df_gold.groupby("__Section"):
+                sheet_name = str(section)[:31] if section else "Sheet1"
+                df_section.drop(columns=["__Section"], errors="ignore").to_excel(
+                    writer,
+                    sheet_name=sheet_name,
+                    index=False
+                )
+
+        _upload_bytes(gold, gold_xlsx_path, buf.getvalue())
+
+        print("✅ Filtered XLSX pushed to GOLD")
+
+    except Exception as e:
+        print("⚠️ XLSX write failed:", e)
+
+    # ------------------------------------------------------
+    # 🔥 ACTIVE PARTS (FOR ASSETS)
+    # ------------------------------------------------------
     active_parts = (
-        df_item[df_item["delta_status"] == "active"]["Part Number"]
+        df_gold["Part Number"]
         .dropna()
         .astype(str)
         .unique()
         .tolist()
     )
 
-    print("✅ Active parts (delta_status based):", active_parts)
+    print("✅ Active parts:", active_parts)
 
     # ------------------------------------------------------
     # 🔥 RESET GOLD ASSETS
@@ -391,8 +435,26 @@ def apply_delta_to_current_state(container, vendor: str):
     df_ready = _df_from_parquet_bytes(_download_bytes(container, ready_path))
     df_ready["Part Number"] = df_ready["Part Number"].astype(str)
 
+
+    # -----------------------------------------------------
+    # 🔥 FILTER ONLY APPROVED PARTS (CRITICAL FIX)
+    # -----------------------------------------------------
+    approved_parts_set = {
+        str(p).strip()
+        for p, d in decisions_map.items()
+        if d == "approve"
+    }
+
+    df_ready["Part Number"] = df_ready["Part Number"].astype(str).str.strip()
+
+    df_ready = df_ready[
+        df_ready["Part Number"].isin(approved_parts_set)
+    ]
+
     if "delta_status" not in df_ready.columns:
         df_ready["delta_status"] = "active"
+    
+    print("READY PARTS AFTER FILTER:", df_ready["Part Number"].unique())
 
     approved_parts = []
     rejected_parts = []
@@ -407,6 +469,10 @@ def apply_delta_to_current_state(container, vendor: str):
     # -----------------------------------------------------
     for part in changed_parts:
 
+        part = str(part).strip()
+        decision = decisions_map.get(part)
+
+
         decision = decisions_map.get(part)
 
         if decision not in {"approve", "reject"}:
@@ -418,8 +484,6 @@ def apply_delta_to_current_state(container, vendor: str):
 
         delta_types = set(part_delta[DELTA_TYPE_COL].dropna().tolist())
 
-        if not delta_types:
-            delta_types = {"insert"}
 
         # ============================
         # DELETE
@@ -487,6 +551,23 @@ def apply_delta_to_current_state(container, vendor: str):
             df_update = df_ready[
                 df_ready["Part Number"] == str(part)
             ].copy()
+
+            # missing sections from current (baseline)
+            existing_rows = df_current[
+                df_current["Part Number"] == str(part)
+            ].copy()
+
+            if not existing_rows.empty:
+                existing_sections = set(existing_rows["__Section"])
+                new_sections = set(df_update["__Section"])
+
+                missing_sections = existing_sections - new_sections
+
+                if missing_sections:
+                    df_update = pd.concat([
+                        df_update,
+                        existing_rows[existing_rows["__Section"].isin(missing_sections)]
+                    ], ignore_index=True)
 
             df_update["delta_status"] = "active"
 
@@ -816,10 +897,15 @@ def api_category_review_work_queue():
                 delete_only_parts.append(p)
 
         if part_numbers and len(delete_only_parts) == len(part_numbers):
-            print("🟡 Delete-only queue detected. Auto-promoting.")
-            apply_delta_to_current_state(container, vendor)
-            continue  # Skip building items for this vendor
+            print("🟡 Delete-only queue detected. Skipping auto-promote (handled in publish)")
+            continue
+        
+        print("\n🔍 DELTA CHECK FOR 00211")
+        test = delta[delta["Part Number"].astype(str) == "00211"]
 
+        print(test[["Part Number", "_delta_type", "__Section"]].head(20))
+        print("DELTA TYPES:", test["_delta_type"].unique())
+        print("ROW COUNT:", len(test))
         # -----------------------------------------
         # Normal Queue Build
         # -----------------------------------------
@@ -856,8 +942,35 @@ def api_category_review_work_queue():
 
             common_keys = set(insert_map.keys()) & set(delete_map.keys())
 
+            # --------------------------------------------------
+            # 🔥 NEW: detect update using GOLD baseline
+            # --------------------------------------------------
+            is_update_from_baseline = False
+            baseline_map = {}
+
+            try:
+                gold = _gold_container()
+                baseline_path = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+
+                baseline_bytes = _download_bytes(gold, baseline_path)
+                df_baseline = _df_from_parquet_bytes(baseline_bytes)
+
+                df_base_part = df_baseline[
+                    df_baseline["Part Number"].astype(str) == str(pn)
+                ]
+
+                if not df_base_part.empty:
+                    is_update_from_baseline = True
+                    baseline_map = {get_row_key(r): r for _, r in df_base_part.iterrows()}
+
+            except Exception as e:
+                print("⚠️ Baseline load failed for update detection:", e)
+
             real_update_count = 0
 
+            # ---------------------------------------------
+            # CASE 1: classic update (insert + delete)
+            # ---------------------------------------------
             for key in common_keys:
                 before = delete_map[key]
                 after  = insert_map[key]
@@ -874,12 +987,61 @@ def api_category_review_work_queue():
                     if b != a:
                         real_update_count += 1
                         break
-            real_insert_count = len(insert_map.keys() - common_keys)
-            real_delete_count = len(delete_map.keys() - common_keys)
 
-            print("INSERT KEYS:", len(insert_map))
-            print("DELETE KEYS:", len(delete_map))
-            print("COMMON KEYS:", len(common_keys))
+            # ---------------------------------------------
+            # CASE 2: insert-only BUT exists in baseline → UPDATE
+            # ---------------------------------------------
+            if not common_keys and is_update_from_baseline:
+
+                for _, after in insert_map.items():
+
+                    # 🔥 fallback: match ONLY by Part Number + Section
+                    before_rows = [
+                        r for r in baseline_map.values()
+                        if str(r.get("Part Number")) == str(pn)
+                        and r.get("__Section") == after.get("__Section")
+                    ]
+
+                    if not before_rows:
+                        continue
+
+                    before = before_rows[0]
+
+                    all_cols = set(before.index).union(set(after.index))
+
+                    for col in all_cols:
+                        if col.startswith("_") or col in ["__Section", "_sheet"]:
+                            continue
+
+                        b = "" if pd.isna(before.get(col)) else str(before.get(col)).strip()
+                        a = "" if pd.isna(after.get(col)) else str(after.get(col)).strip()
+
+                        if b != a:
+                            real_update_count += 1
+                            break
+
+            # ---------------------------------------------
+            # 🔥 ALWAYS COMPUTE COUNTS (CRITICAL)
+            # ---------------------------------------------
+            if is_delete_only:
+                real_insert_count = 0
+                real_update_count = 0
+                real_delete_count = 1  # 🔥 force delete indicator
+
+            elif is_update_from_baseline:
+                real_insert_count = 0
+                real_delete_count = 0
+
+            else:
+                real_insert_count = len(insert_map.keys() - common_keys)
+                real_delete_count = len(delete_map.keys() - common_keys)
+            # ---------------------------------------------
+            # 🔥 ALWAYS APPEND (CRITICAL FIX)
+            # ---------------------------------------------
+
+            # 🔥 FORCE update count if baseline exists
+            if is_update_from_baseline and real_update_count == 0 and not df_insert.empty:
+                real_update_count = 1
 
             items.append({
                 "vendor": vendor,
@@ -891,6 +1053,7 @@ def api_category_review_work_queue():
                 "row_deletes": real_delete_count,
             })
 
+            
     # ---------------------------------------------
     # Summary
     # ---------------------------------------------
@@ -1014,6 +1177,32 @@ def api_part_intelligence():
                 short_desc = r.get("Description Value", "")
                 break
 
+        # =====================================================
+        # 🖼️ IMAGE PREVIEW (from GOLD assets)
+        # =====================================================
+        image_preview_url = None
+
+        try:
+            gold = _gold_container()
+
+            assets_prefix = (
+                f"{GOLD_SELECTED_ROOT}/assets_workflow/vendor={vendor}/part_number={part}/images/"
+            )
+
+            blobs = list(gold.list_blobs(name_starts_with=assets_prefix))
+
+            if blobs:
+                first_blob = sorted(blobs, key=lambda b: b.name)[0]
+                filename = first_blob.name.split("/")[-1]
+
+                image_preview_url = (
+                    f"/api/category-review/asset-preview"
+                    f"?vendor={vendor}&part={part}&file={filename}"
+                )
+
+        except Exception as e:
+            print(f"[DELETE MODE] Failed to fetch image preview: {e}")
+
         return jsonify(json_safe({
             "mode": "delete",
             "brand": brand,
@@ -1034,8 +1223,32 @@ def api_part_intelligence():
 
     common_keys = set(insert_map.keys()) & set(delete_map.keys())
 
+    # --------------------------------------------------
+    # 🔥 NEW: detect update from GOLD baseline
+    # --------------------------------------------------
+    is_update_from_baseline = False
+    baseline_map = {}
+
+    try:
+        gold = _gold_container()
+        baseline_path = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+
+        baseline_bytes = _download_bytes(gold, baseline_path)
+        df_baseline = _df_from_parquet_bytes(baseline_bytes)
+
+        df_base_part = df_baseline[
+            df_baseline["Part Number"].astype(str) == str(part)
+        ]
+
+        if not df_base_part.empty:
+            is_update_from_baseline = True
+            baseline_map = {get_row_key(r): r for _, r in df_base_part.iterrows()}
+
+    except Exception as e:
+        print("⚠️ Baseline load failed:", e)
+
     # Only enter update mode when there are matched insert/delete pairs
-    if common_keys:
+    if common_keys or is_update_from_baseline:
 
         IGNORE_COLUMNS = {
             "__Section",
@@ -1073,6 +1286,37 @@ def api_part_intelligence():
         for key in common_keys:
             before_row = delete_map[key]
             after_row = insert_map[key]
+
+            # ---------------------------------------------
+            # 🔥 CASE 2: insert-only but exists in baseline
+            # ---------------------------------------------
+            if not common_keys and is_update_from_baseline:
+
+                for key, after_row in insert_map.items():
+
+                    before_row = baseline_map.get(key)
+
+                    if before_row is None:
+                        continue
+
+                    section = after_row.get("__Section")
+
+                    all_cols = set(before_row.index).union(set(after_row.index))
+
+                    for col in all_cols:
+                        if col in IGNORE_COLUMNS:
+                            continue
+
+                        before = normalize(before_row.get(col))
+                        after = normalize(after_row.get(col))
+
+                        if before != after and (before or after):
+                            changes.append({
+                                "section": section,
+                                "field": col,
+                                "before": before or "-",
+                                "after": after or "-"
+                            })
             section = after_row.get("__Section")
 
             all_cols = set(before_row.index).union(set(after_row.index))
@@ -1397,7 +1641,7 @@ def clear_category_queue(container, vendor: str):
 
     delta_parquet = f"{base_path}/delta_mapped.parquet"
     delta_excel = f"{base_path}/delta_mapped.xlsx"
-    decisions_path = f"{base_path}/decisions.parquet"   # 🔥 ADD THIS
+    decisions_path = f"{base_path}/decisions.parquet"  
 
     print(f"[QUEUE] Clearing category queue for vendor={vendor}")
 
@@ -1446,15 +1690,11 @@ def api_publish_gold():
     # -----------------------------------------------------
     # Resolve workflow FROM QUEUE (authoritative)
     # -----------------------------------------------------
-    delta = load_delta(container, vendor)
-
-    if delta.empty or "_workflow" not in delta.columns:
-        return jsonify({"error": "No workflow info found in queue"}), 400
+    print("🧠 Publishing from APPROVED (no delta dependency)")
 
     success = True
 
-    print("🔥 APPLYING DELTA BEFORE MANUAL PUBLISH")
-    apply_delta_to_current_state(container, vendor)
+    print("🔥 Publishing approved → gold (decision filtered)")
 
     # 🔥 ADD THIS LINE
     container = _container()   # force fresh client / avoid cached state

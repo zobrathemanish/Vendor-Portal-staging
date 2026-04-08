@@ -1027,7 +1027,7 @@ progressBar.classList.remove("progress-bar-animated");
 progressBar.classList.add("bg-success");
 progressBar.textContent = "Pricing file uploaded";
 
-updateStage("Upload complete",5,"Starting product pipeline");
+updateStage("Upload complete",5,"Starting Pricing Pipeline");
 document.getElementById("pipelineContainer").classList.remove("d-none");
 
 const start = await fetch("/ingestion/start-pricing-etl",{
