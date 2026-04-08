@@ -1026,7 +1026,7 @@ def api_category_review_work_queue():
             if is_delete_only:
                 real_insert_count = 0
                 real_update_count = 0
-                real_delete_count = 1  # 🔥 force delete indicator
+                real_delete_count = len (df_base_part)
 
             elif is_update_from_baseline:
                 real_insert_count = 0
