@@ -615,16 +615,16 @@ def apply_delta_to_current_state(container, vendor: str):
         user=current_user.username
     )
 
-    # -----------------------------------------------------
-    # CLEAR QUEUE
-    # -----------------------------------------------------
-    prefix = f"{CATEGORY_QUEUE_ROOT}/vendor={vendor}/"
-    for blob in container.list_blobs(name_starts_with=prefix):
-        container.delete_blob(blob.name)
+    # # -----------------------------------------------------
+    # # CLEAR QUEUE
+    # # -----------------------------------------------------
+    # prefix = f"{CATEGORY_QUEUE_ROOT}/vendor={vendor}/"
+    # for blob in container.list_blobs(name_starts_with=prefix):
+    #     container.delete_blob(blob.name)
 
-    print("✅ APPLY DELTA COMPLETE")
+    # print("✅ APPLY DELTA COMPLETE")
 
-    return True
+    # return True
 
 def split_unified_to_workflows(unified_df):
 
@@ -899,13 +899,7 @@ def api_category_review_work_queue():
         if part_numbers and len(delete_only_parts) == len(part_numbers):
             print("🟡 Delete-only queue detected. Skipping auto-promote (handled in publish)")
             continue
-        
-        print("\n🔍 DELTA CHECK FOR 00211")
-        test = delta[delta["Part Number"].astype(str) == "00211"]
 
-        print(test[["Part Number", "_delta_type", "__Section"]].head(20))
-        print("DELTA TYPES:", test["_delta_type"].unique())
-        print("ROW COUNT:", len(test))
         # -----------------------------------------
         # Normal Queue Build
         # -----------------------------------------
@@ -1026,23 +1020,26 @@ def api_category_review_work_queue():
             if is_delete_only:
                 real_insert_count = 0
                 real_update_count = 0
-                real_delete_count = len (df_base_part)
+                real_delete_count = len(df_base_part) if 'df_base_part' in locals() else 0
 
-            elif is_update_from_baseline:
+            elif is_update_from_baseline and real_update_count > 0:
                 real_insert_count = 0
                 real_delete_count = 0
 
             else:
-                real_insert_count = len(insert_map.keys() - common_keys)
+                if is_update_from_baseline:
+                    # no change → no insert
+                    real_insert_count = 0
+                else:
+                    real_insert_count = len(insert_map.keys())
+
                 real_delete_count = len(delete_map.keys() - common_keys)
-            # ---------------------------------------------
-            # 🔥 ALWAYS APPEND (CRITICAL FIX)
-            # ---------------------------------------------
+                real_delete_count = len(delete_map.keys() - common_keys)
 
-            # 🔥 FORCE update count if baseline exists
-            if is_update_from_baseline and real_update_count == 0 and not df_insert.empty:
-                real_update_count = 1
-
+            # SKIP NO CHANGE (CRITICAL FIX)
+            if is_update_from_baseline and real_update_count == 0 and not is_delete_only:
+                continue
+                
             items.append({
                 "vendor": vendor,
                 "submission_id": submission_id,
@@ -1701,7 +1698,8 @@ def api_publish_gold():
 
     success = publish_to_gold(container, vendor)
 
-    # clear_category_queue(container, vendor)
+    if success:
+        clear_category_queue(container, vendor)
 
     return jsonify({
         "success": success,
