@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from azure.storage.blob import BlobServiceClient
 import hashlib
+from data_ETL.data_unified_integrity import run_unified_integrity
 
 # =========================================================
 # CONFIG
@@ -1009,19 +1010,19 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     curr_flat = align(flat_df)
     gold_flat = align(gold_flat)
 
-    print("\n========== CURRENT (PRE-DELTA) CHECK ==========")
+    # print("\n========== CURRENT (PRE-DELTA) CHECK ==========")
 
-    curr_check = curr_flat[
-        (curr_flat["Part Number"] == "00211") &
-        (curr_flat["__Section"] == "Extended_Info") &
-        (curr_flat["Extended Info Code"] == "LIF")
-    ]
+    # curr_check = curr_flat[
+    #     (curr_flat["Part Number"] == "00211") &
+    #     (curr_flat["__Section"] == "Extended_Info") &
+    #     (curr_flat["Extended Info Code"] == "LIF")
+    # ]
 
-    print(curr_check[[
-        "Part Number",
-        "Extended Info Code",
-        "Extended Info Value"
-    ]])
+    # print(curr_check[[
+    #     "Part Number",
+    #     "Extended Info Code",
+    #     "Extended Info Value"
+    # ]])
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
     # print("\n[DEBUG AFTER DELTA]")
     # print(delta["Part Number"].head(20))
@@ -1376,17 +1377,26 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
         # -------------------------------------------------
         # REBUILD UNIFIED CATEGORY QUEUE FROM APPROVED DELTAS
         # -------------------------------------------------
+        build_unified_approved_state(
+            container=approved_container,
+            vendor=vendor,
+            local=local
+        )
+
+
+        can_publish = run_unified_integrity(container, vendor)
+
+        if not can_publish:
+            print("Blocking issues found — skipping category queue build")
+            return
+
         build_unified_category_queue(
             container=approved_container,
             vendor=vendor,
             local=local
         )
 
-        build_unified_approved_state(
-            container=approved_container,
-            vendor=vendor,
-            local=local
-        )
+       
 
 # =========================================================
 # CLI
