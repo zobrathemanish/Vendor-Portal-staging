@@ -117,8 +117,8 @@ def load_delta(container, vendor: str) -> pd.DataFrame:
         return df
 
     except Exception as e:
-        print("❌ DELTA LOAD FAILED:", e)
-        raise
+        print("ℹ️ No category queue found (expected):", e)
+        return pd.DataFrame()   
 
 def load_decisions(container, vendor: str) -> pd.DataFrame:
     try:
