@@ -1,3 +1,4 @@
+#build_etl_mapped.py
 import os
 import json
 from io import BytesIO
@@ -277,33 +278,6 @@ def hash_row(row, fields):
 
 
 # =========================================================
-# BASELINE
-# =========================================================
-def load_baseline(container, vendor, workflow, local):
-    path = (
-        os.path.join(
-            PROJECT_ROOT,
-            "silver",
-            "approved",
-            f"{workflow}_workflow",
-            f"{workflow}_etl_mapped.parquet"
-        )
-        if local else
-        f"approved/{workflow}_workflow/{workflow}_etl_mapped.parquet"
-    )
-
-    try:
-        df = read_parquet_local(path) if local else df_from_bytes(download_blob(container, path))
-        print("\n[DEBUG RAW INPUT]")
-        print(df["Part Number"].head(10))
-        print(df["Part Number"].dtype)
-        print(df["Part Number"].apply(lambda x: type(x)).value_counts())
-        return df
-    except:
-        return pd.DataFrame()
-
-
-# =========================================================
 # DELTA ENGINE
 # =========================================================
 def normalize_df(df):
@@ -327,8 +301,14 @@ def normalize_df(df):
 
     return df
 
-def compute_delta(curr, base, is_delta_review):
+def compute_delta(curr, base, is_delta_review=None, is_delta=None):
 
+    if is_delta is not None:
+        is_delta_review = is_delta
+
+    # -----------------------------
+    # Ensure section column
+    # -----------------------------
     for df in [curr, base]:
         if "__Section" not in df.columns and "_sheet" in df.columns:
             df["__Section"] = df["_sheet"]
@@ -336,19 +316,13 @@ def compute_delta(curr, base, is_delta_review):
     curr = normalize_df(curr)
     base = normalize_df(base)
 
-    # print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - CURR]")
-    # print(curr["Part Number"].head(10))
-    # print(curr["Part Number"].dtype)
-
-    # print("\n[DEBUG INSIDE DELTA - AFTER NORMALIZE - BASE]")
-    # print(base["Part Number"].head(10))
-    # print(base["Part Number"].dtype)
-
     if base.empty:
         curr["_delta_type"] = "insert"
         return curr
 
-    # Align columns between current and baseline
+    # -----------------------------
+    # ALIGN COLUMNS
+    # -----------------------------
     all_cols = sorted(set(curr.columns) | set(base.columns))
 
     for col in all_cols:
@@ -360,96 +334,90 @@ def compute_delta(curr, base, is_delta_review):
     curr = curr[all_cols]
     base = base[all_cols]
 
-    for df in [curr, base]:
-        if "__Section" in df.columns:
-            df["_sheet"] = df["__Section"]
-            # df.drop(columns=["__Section"], inplace=True)
-
-    # Exclude technical delta fields from hashing
-    EXCLUDE_COLS = {
-        "_delta_type", "_merge", "__Section", "_sheet",
-        "_entity_key", "_entity_id", "_row_id",
-        "_vendor", "_autofix_run_id", "_autofix_timestamp",
-        "_transformation_applied",
-
-        # 🔥 CRITICAL FIXES
-        "delta_status",
-        "_domain",
-        "_workflow",
-        "_row_hash_before",
-        "_row_hash_after",
-        "_hash"
-    }
-
+    # -----------------------------
+    # HASHES (for before/after)
+    # -----------------------------
     hash_cols = get_hash_columns(curr)
 
     curr["_hash"] = curr.apply(lambda r: hash_row(r, hash_cols), axis=1)
     base["_hash"] = base.apply(lambda r: hash_row(r, hash_cols), axis=1)
 
-    # print("\n---- HASH INPUT SAMPLE ----")
-    # print(curr[hash_cols].head(3).T)
-    # print(base[hash_cols].head(3).T)
+    # -----------------------------
+    # 🔥 BUSINESS KEY FUNCTION
+    # -----------------------------
+    def build_key(row):
+        section = row.get("__Section")
 
-    merged = curr.merge(base[["_hash"]], on="_hash", how="left", indicator=True)
+        key_map = {
+            "Attributes": ["Part Number", "Attribute Name"],
+            "Descriptions": ["Part Number", "Description Code", "Sequence"],
+            "Digital_Assets": ["Part Number", "FileName"],
+            "Extended_Info": ["Part Number", "Extended Info Code"],
+            "Item_Master": ["Part Number"],
+            "Packages": ["Part Number", "Package UOM"],
+            "Pricing": ["Part Number", "Pricing Type", "Currency"],
+        }
 
+        keys = key_map.get(section, ["Part Number"])
+
+        return tuple(str(row.get(k)).strip() for k in keys)
+
+    # -----------------------------
+    # BUILD MAPS
+    # -----------------------------
+    curr_map = {build_key(r): r for _, r in curr.iterrows()}
+    base_map = {build_key(r): r for _, r in base.iterrows()}
+
+    all_keys = set(curr_map) | set(base_map)
+
+    rows = []
+
+    for k in all_keys:
+        c = curr_map.get(k)
+        b = base_map.get(k)
+
+        # -------------------------
+        # INSERT
+        # -------------------------
+        if c is not None and b is None:
+            row = c.copy()
+            row["_delta_type"] = "insert"
+            row["_row_hash_after"] = c["_hash"]
+            row["_row_hash_before"] = None
+            rows.append(row)
+
+        # -------------------------
+        # DELETE
+        # -------------------------
+        elif b is not None and c is None:
+            row = b.copy()
+            row["_delta_type"] = "delete"
+            row["_row_hash_before"] = b["_hash"]
+            row["_row_hash_after"] = None
+            rows.append(row)
+
+        # -------------------------
+        # UPDATE
+        # -------------------------
+        elif b is not None and c is not None:
+
+            if c["_hash"] != b["_hash"]:
+                row = c.copy()
+                row["_delta_type"] = "update"
+                row["_row_hash_before"] = b["_hash"]
+                row["_row_hash_after"] = c["_hash"]
+                rows.append(row)
+
+    if not rows:
+        return pd.DataFrame()
+
+    delta_df = pd.DataFrame(rows)
+
+    # -----------------------------
+    # DELTA REVIEW MODE (INSERT ONLY)
+    # -----------------------------
     if is_delta_review:
-        merged["_delta_type"] = merged["_merge"].map({
-            "left_only": "insert",
-            "both": None
-        })
-        return merged[merged["_delta_type"].notna()].drop(columns=["_merge"], errors="ignore")
-
-    # full submission/review: inserts + deletes relative to approved
-    merged["_delta_type"] = merged["_merge"].map({
-        "left_only": "insert",
-        "both": None
-    })
-    inserts = merged[merged["_delta_type"].notna()].drop(columns=["_merge"], errors="ignore")
-
-    deletes = base.merge(curr[["_hash"]], on="_hash", how="left", indicator=True)
-    deletes = deletes[deletes["_merge"] == "left_only"].copy()
-    deletes["_delta_type"] = "delete"
-    deletes = deletes.drop(columns=["_merge"], errors="ignore")
-
-    delta_df = pd.concat([inserts, deletes], ignore_index=True)
-
-    # ----------------------------------------
-    # ADD BEFORE/AFTER HASHES (CRITICAL)
-    # ----------------------------------------
-    delta_df["_row_hash_before"] = None
-    delta_df["_row_hash_after"] = None
-
-    # inserts
-    delta_df.loc[delta_df["_delta_type"] == "insert", "_row_hash_after"] = delta_df["_hash"]
-
-    # deletes
-    delta_df.loc[delta_df["_delta_type"] == "delete", "_row_hash_before"] = delta_df["_hash"]
-
-    # updates → need mapping
-    if not delta_df.empty:
-
-        inserts_df = curr.copy()
-        deletes_df = base.copy()
-
-        # map by key (Part + section)
-        key_cols = ["Part Number", "_sheet"]
-
-        insert_map = {
-            tuple(r[key_cols]): r["_hash"]
-            for _, r in inserts_df.iterrows()
-        }
-
-        delete_map = {
-            tuple(r[key_cols]): r["_hash"]
-            for _, r in deletes_df.iterrows()
-        }
-
-        for idx, row in delta_df.iterrows():
-            if row["_delta_type"] == "update":
-                key = (row["Part Number"], row["_sheet"])
-
-                delta_df.at[idx, "_row_hash_before"] = delete_map.get(key)
-                delta_df.at[idx, "_row_hash_after"]  = insert_map.get(key)
+        return delta_df[delta_df["_delta_type"] == "insert"]
 
     return delta_df
 
@@ -570,209 +538,152 @@ def enrich_with_product_context(container, vendor, unified, local):
 
     return unified
 
+def upload_parquet(container, path, df):
+    from io import BytesIO
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    if df is None or df.empty:
+        print(f"[UPLOAD] Skipping empty parquet for {path}")
+        return
+
+    buf = BytesIO()
+    table = pa.Table.from_pandas(df)
+    pq.write_table(table, buf)
+
+    buf.seek(0)
+
+    container.upload_blob(name=path, data=buf.getvalue(), overwrite=True)
+    print(f"[UPLOAD] Parquet uploaded → {path} ({len(df)} rows)")
 
 def build_unified_category_queue(container, vendor, local):
 
-    product_delta = load_approved_workflow_delta(container, vendor, "products", local)
-    pricing_delta = load_approved_workflow_delta(container, vendor, "pricing", local)
+    print("[QUEUE] Building category queue using APPROVED vs GOLD")
 
-    # --------------------------------------------------
-    # FIRST-RUN GUARD
-    # --------------------------------------------------
-    baseline_path = (
-        os.path.join(
-            PROJECT_ROOT,
-            "silver",
-            "approved",
-            "products_workflow",
-            f"vendor={vendor}",
-            "products_etl_mapped.parquet"
-        )
+    # =====================================================
+    # LOAD APPROVED (NEW STATE)
+    # =====================================================
+    approved_path = (
+        os.path.join(PROJECT_ROOT, "silver", "approved",
+                     f"unified_workflow/vendor={vendor}/unified_etl_mapped.parquet")
         if local else
-        f"approved/products_workflow/vendor={vendor}/products_etl_mapped.parquet"
+        f"approved/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
     )
 
     try:
         if local:
-            _ = read_parquet_local(baseline_path)
+            df_approved = read_parquet_local(approved_path)
         else:
-            _ = download_blob(container, baseline_path)
+            df_approved = df_from_bytes(download_blob(container, approved_path))
+
+        print(f"[QUEUE] Approved rows: {len(df_approved)}")
+
     except:
-        print("[QUEUE] Skipping → product baseline not available yet")
+        print("[QUEUE] No approved unified data found — skipping")
         return
 
-    # --------------------------------------------------
-    # DOMAIN TAGGING
-    # --------------------------------------------------
-    if not product_delta.empty:
-        product_delta = product_delta.copy()
-        product_delta["_domain"] = "product"
-        product_delta["_workflow"] = "products"
+    # =====================================================
+    # LOAD GOLD (CURRENT STATE)
+    # =====================================================
+    gold_path = (
+        os.path.join(PROJECT_ROOT, "silver", "selected",
+                     f"unified_workflow/vendor={vendor}/unified_etl_mapped.parquet")
+        if local else
+        f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+    )
 
-    if not pricing_delta.empty:
-        pricing_delta = pricing_delta.copy()
-        pricing_delta["_domain"] = "pricing"
-        pricing_delta["_workflow"] = "pricing"
+    try:
+        if local:
+            df_gold = read_parquet_local(gold_path)
+        else:
+            df_gold = df_from_bytes(download_blob(container, gold_path))
 
-    # --------------------------------------------------
-    # 🔥 CRITICAL FIX 1: DOMAIN SEPARATION
-    # --------------------------------------------------
-    if not product_delta.empty:
-        product_delta = product_delta[
-            product_delta["__Section"] != "Pricing"
-        ]
+        print(f"[QUEUE] Gold rows: {len(df_gold)}")
 
-    if not pricing_delta.empty:
-        pricing_delta = pricing_delta[
-            pricing_delta["__Section"] == "Pricing"
-        ]
+    except:
+        print("[QUEUE] No gold baseline found — treating as full insert")
+        df_gold = pd.DataFrame(columns=df_approved.columns)
 
-    frames = [df for df in [product_delta, pricing_delta] if not df.empty]
+    # =====================================================
+    # ENSURE REQUIRED STRUCTURE
+    # =====================================================
+    if "__Section" not in df_approved.columns:
+        df_approved["__Section"] = df_approved.get("_sheet", "")
 
-    if not frames:
-        print("[QUEUE] No approved deltas found")
+    if "__Section" not in df_gold.columns:
+        df_gold["__Section"] = df_gold.get("_sheet", "")
+
+    # Add domain/workflow tags
+    df_approved["_domain"] = df_approved.get("_domain", "product")
+    df_gold["_domain"] = df_gold.get("_domain", "product")
+
+    df_approved["_workflow"] = df_approved.get("_workflow", "products")
+    df_gold["_workflow"] = df_gold.get("_workflow", "products")
+
+    # =====================================================
+    # COMPUTE DELTA (APPROVED vs GOLD)
+    # =====================================================
+    unified_delta = compute_delta(df_approved.copy(), df_gold.copy(), is_delta=False)
+
+    if unified_delta.empty:
+        print("[QUEUE] No delta rowsz")
         return
 
-    # --------------------------------------------------
-    # ENSURE STRING TYPES
-    # --------------------------------------------------
-    for df in frames:
-        if "Part Number" in df.columns:
-            df["Part Number"] = df["Part Number"].astype("string").str.strip()
+    print(f"[QUEUE] Delta rows: {len(unified_delta)}")
 
-    unified_delta = pd.concat(frames, ignore_index=True)
-
-    # --------------------------------------------------
-    # 🔥 CRITICAL FIX 2: SAFE ENRICHMENT (PRODUCT ONLY)
-    # --------------------------------------------------
-    product_part = unified_delta[
-        unified_delta["__Section"] != "Pricing"
-    ].copy()
-
-    pricing_part = unified_delta[
-        unified_delta["__Section"] == "Pricing"
-    ].copy()
-
-    product_part = enrich_with_product_context(
+    # =====================================================
+    # OPTIONAL: ENRICH PRODUCT CONTEXT
+    # =====================================================
+    unified_delta = enrich_with_product_context(
         container,
         vendor,
-        product_part,
+        unified_delta,
         local
     )
 
-    unified_delta = pd.concat([product_part, pricing_part], ignore_index=True)
+    # =====================================================
+    # FILTER TO VALID SCHEMA TABS
+    # =====================================================
+    unified_delta = unified_delta[
+        unified_delta["__Section"].isin(SCHEMA_TABS)
+    ]
 
-    # --------------------------------------------------
-    # 🔥 CRITICAL FIX 3: DEDUPLICATION
-    # --------------------------------------------------
-    unified_delta = unified_delta.drop_duplicates()
+    # =====================================================
+    # REMOVE DUPLICATES (SAFETY)
+    # =====================================================
+    unified_delta = unified_delta.drop_duplicates(
+        subset=["Part Number", "__Section", "_hash"]
+    )
 
-    if "_hash" in unified_delta.columns:
-        unified_delta = unified_delta.drop_duplicates(
-            subset=["_hash", "_delta_type"]
-        )
-
-    # --------------------------------------------------
-    # FINAL NORMALIZATION
-    # --------------------------------------------------
-    if "__Section" not in unified_delta.columns and "_sheet" in unified_delta.columns:
-        unified_delta["__Section"] = unified_delta["_sheet"]
-
-    unified_delta["Part Number"] = unified_delta["Part Number"].astype("string").str.strip()
-    unified_delta["__Section"] = unified_delta["__Section"].astype(str)
-
-    # 🔥 Ensure pricing rows always correctly tagged
-    unified_delta.loc[
-        unified_delta["__Section"] == "Pricing",
-        "_workflow"
-    ] = "pricing"
-
-    unified_delta["_review_decision"] = pd.NA
-    unified_delta["_review_comment"] = pd.NA
-
-    # --------------------------------------------------
-    # SAVE PARQUET
-    # --------------------------------------------------
-    path = (
-        os.path.join(
-            PROJECT_ROOT,
-            "silver",
-            "approved",
-            "unified_workflow",
-            f"vendor={vendor}",
-            "unified_delta.parquet"
-        )
+    # =====================================================
+    # SAVE OUTPUTS
+    # =====================================================
+    approved_unified_delta_path = (
+        os.path.join(PROJECT_ROOT, "silver", "approved",
+                     f"unified_workflow/vendor={vendor}/unified_delta.parquet")
         if local else
         f"approved/unified_workflow/vendor={vendor}/unified_delta.parquet"
     )
 
-    data = df_to_bytes(unified_delta)
-
-    if local:
-        write_local(path, data)
-    else:
-        upload_blob(container, path, data)
-
-    # --------------------------------------------------
-    # ALSO WRITE TO CATEGORY QUEUE
-    # --------------------------------------------------
-    queue_parquet_path = (
-        os.path.join(
-            PROJECT_ROOT,
-            "silver",
-            "category_queue",
-            f"vendor={vendor}",
-            "active",
-            "delta_mapped.parquet"
-        )
+    category_queue_path = (
+        os.path.join(PROJECT_ROOT, "silver", "category_queue",
+                     f"vendor={vendor}/active/delta_mapped.parquet")
         if local else
         f"category_queue/vendor={vendor}/active/delta_mapped.parquet"
     )
 
     if local:
-        write_local(queue_parquet_path, data)
+        os.makedirs(os.path.dirname(approved_unified_delta_path), exist_ok=True)
+        os.makedirs(os.path.dirname(category_queue_path), exist_ok=True)
+
+        unified_delta.to_parquet(approved_unified_delta_path, index=False)
+        unified_delta.to_parquet(category_queue_path, index=False)
+
     else:
-        upload_blob(container, queue_parquet_path, data)
+        upload_parquet(container, approved_unified_delta_path, unified_delta)
+        upload_parquet(container, category_queue_path, unified_delta)
 
-    print(f"[QUEUE] Synced unified_delta → category_queue")
-
-    # --------------------------------------------------
-    # SAVE EXCEL
-    # --------------------------------------------------
-    excel_path = path.replace(".parquet", ".xlsx")
-
-    buf = BytesIO()
-
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-
-        written = False
-
-        for section, df_sec in unified_delta.groupby("__Section"):
-
-            if df_sec.empty:
-                continue
-
-            df_sec.to_excel(writer, sheet_name=section[:31], index=False)
-            written = True
-
-        if not written:
-            pd.DataFrame({"info": ["No delta changes"]}).to_excel(
-                writer, sheet_name="Summary", index=False
-            )
-
-    if local:
-        write_local(excel_path, buf.getvalue())
-    else:
-        upload_blob(container, excel_path, buf.getvalue())
-
-    queue_excel_path = queue_parquet_path.replace(".parquet", ".xlsx")
-
-    if local:
-        write_local(queue_excel_path, buf.getvalue())
-    else:
-        upload_blob(container, queue_excel_path, buf.getvalue())
-
-    print(f"[QUEUE] Unified queue written for vendor={vendor} rows={len(unified_delta)}")
+    print(f"[QUEUE] Category queue updated with {len(unified_delta)} rows")
 
 def filter_tabs_by_workflow(tabs: Dict[str, pd.DataFrame], workflow: str) -> Dict[str, pd.DataFrame]:
 
@@ -1098,10 +1009,23 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
     curr_flat = align(flat_df)
     gold_flat = align(gold_flat)
 
+    print("\n========== CURRENT (PRE-DELTA) CHECK ==========")
+
+    curr_check = curr_flat[
+        (curr_flat["Part Number"] == "00211") &
+        (curr_flat["__Section"] == "Extended_Info") &
+        (curr_flat["Extended Info Code"] == "LIF")
+    ]
+
+    print(curr_check[[
+        "Part Number",
+        "Extended Info Code",
+        "Extended Info Value"
+    ]])
     delta = compute_delta(curr_flat.copy(), gold_flat.copy(), meta["is_delta"])
-    print("\n[DEBUG AFTER DELTA]")
-    print(delta["Part Number"].head(20))
-    print(delta["Part Number"].dtype)
+    # print("\n[DEBUG AFTER DELTA]")
+    # print(delta["Part Number"].head(20))
+    # print(delta["Part Number"].dtype)
 
     # 🔥 CRITICAL FIX: enforce workflow isolation
 

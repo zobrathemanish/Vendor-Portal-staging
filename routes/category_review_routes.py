@@ -25,6 +25,7 @@ DELETE
 
 """
 
+
 GOLD_CONTAINER = "gold"
 GOLD_SELECTED_ROOT = "selected"
 
@@ -195,6 +196,261 @@ def json_safe(obj):
         return obj.isoformat()
 
     return obj
+
+
+#------------------------
+# UPDATE HELPERS
+# -----------------------
+
+SECTION_RULES = {
+    "Attributes": {
+        "key": ["Attribute Name"],
+        "compare": ["Attribute Value"]
+    },
+    "Descriptions": {
+        "key": ["Description Code"],
+        "compare": ["Description Value"]
+    },
+    "Digital_Assets": {
+        "key": ["FileName"],
+        "compare": []  # presence only
+    },
+    "Extended_Info": {
+        "key": ["Extended Info Code"],
+        "compare": ["Extended Info Value"]
+    },
+    "Item_Master": {
+        "key": [],
+        "compare": [
+            "Product Status",
+            "Minimum Order Quantity",
+            "Minimum Order Quantity UOM"
+        ]
+    },
+    "Packages": {
+        "key": ["Package UOM"],
+        "compare": [
+            "Package Quantity of Eaches",
+            "Weight UOM",
+            "Weight",
+            "Dimension UOM",
+            "Merch Length",
+            "Merch Height",
+            "Merch Width",
+            "Ship Length",
+            "Ship Width",
+            "Ship Height"
+        ]
+    },
+    "Pricing": {
+        "key": ["Pricing Type", "Currency"],
+        "compare": None  # compare all
+    }
+}
+
+IGNORE_COLUMNS = {
+    "__Section",
+    "_sheet",
+    "_domain",
+    "_workflow",
+    "_delta_type",
+    "_merge",
+    "_row_hash_before",
+    "_row_hash_after",
+    "_entity_key",
+    "_entity_id",
+    "_row_id",
+    "_vendor",
+    "_autofix_run_id",
+    "_autofix_timestamp",
+    "_transformation_applied",
+    "_hash",
+    "delta_status"
+}
+
+def normalize(v):
+    if pd.isna(v):
+        return None
+
+    if isinstance(v, str):
+        v = v.strip()
+        if v == "":
+            return None
+
+    try:
+        num = float(v)
+        if num.is_integer():
+            return int(num)
+        return round(num, 6)
+    except:
+        return v
+
+def build_key(row, section):
+    rules = SECTION_RULES.get(section, {})
+    key_cols = rules.get("key", [])
+
+    return tuple(
+        [str(row.get("Part Number")).strip()] +
+        [str(row.get(col)).strip() for col in key_cols]
+    )
+
+def compare_rows(section, before, after):
+    rules = SECTION_RULES.get(section, {})
+    compare_cols = rules.get("compare")
+
+    changes = []
+
+    if section == "Digital_Assets":
+        return []  # handled separately
+
+    if compare_cols is None:
+        compare_cols = set(before.index).union(after.index)
+
+    # REMOVE SYSTEM / JUNK COLUMNS
+    compare_cols = [
+        col for col in compare_cols
+        if col not in IGNORE_COLUMNS
+    ]
+
+    for col in compare_cols:
+        if not col or str(col).lower() == "nan":
+            continue
+        b = normalize(before.get(col))
+        a = normalize(after.get(col))
+
+        if b != a:
+            changes.append((col, b, a))
+
+    return changes
+
+def build_context(section, row):
+    if section == "Attributes":
+        return f"Attribute [Name={row.get('Attribute Name')}]"
+
+    if section == "Descriptions":
+        return f"Description [Code={row.get('Description Code')}]"
+
+    if section == "Extended_Info":
+        return f"Extended Info [Code={row.get('Extended Info Code')}]"
+
+    if section == "Packages":
+        return f"Package [UOM={row.get('Package UOM')}]"
+
+    if section == "Pricing":
+        return f"Pricing [{row.get('Pricing Type')} {row.get('Currency')}]"
+
+    if section == "Item_Master":
+        return "Item Master"
+
+    return section
+
+def compute_section_diff(df_before, df_after):
+
+    changes = []
+
+    sections = set(df_before["__Section"]).union(df_after["__Section"])
+
+    for section in sections:
+
+        df_b = df_before[df_before["__Section"] == section]
+        df_a = df_after[df_after["__Section"] == section]
+
+        rules = SECTION_RULES.get(section, {})
+        key_cols = rules.get("key", [])
+
+        # build maps
+        before_map = {
+            build_key(r, section): r
+            for _, r in df_b.iterrows()
+        }
+
+        after_map = {
+            build_key(r, section): r
+            for _, r in df_a.iterrows()
+        }
+
+        all_keys = set(before_map) | set(after_map)
+
+        for k in all_keys:
+
+            before = before_map.get(k)
+            after = after_map.get(k)
+
+            # INSERT
+            if before is None:
+                changes.append({
+                    "section": section,
+                    "type": "insert",
+                    "context": build_context(section, after)
+                })
+                continue
+
+            # DELETE
+            if after is None:
+                changes.append({
+                    "section": section,
+                    "type": "delete",
+                    "context": build_context(section, before)
+                })
+                continue
+
+            # UPDATE
+            row_changes = compare_rows(section, before, after)
+
+            for col, b, a in row_changes:
+                changes.append({
+                    "section": section,
+                    "type": "update",
+                    "context": build_context(section, after),
+                    "field": col,
+                    "before": b,
+                    "after": a,
+                    "display": f"{build_context(section, after)} → {col}: {b} → {a}"
+                })
+
+            print("FINAL CHANGES:", changes)
+
+    return changes
+
+#temporary
+def debug_print_full_part(df_base_part, df_delta_part, part):
+
+    print("\n================ FULL DEBUG =================")
+    print("PART:", part)
+
+    # Only keep INSERT rows from delta (important)
+    df_delta_insert = df_delta_part[
+        df_delta_part["_delta_type"] == "insert"
+    ].copy()
+
+    sections = sorted(
+        set(df_base_part["__Section"]).union(df_delta_insert["__Section"])
+    )
+
+    for section in sections:
+        print(f"\n================ SECTION: {section} ================")
+
+        df_b = df_base_part[df_base_part["__Section"] == section]
+        df_a = df_delta_insert[df_delta_insert["__Section"] == section]
+
+        print("\n--- BASELINE (GOLD) ---")
+        if df_b.empty:
+            print("❌ NO BASELINE ROWS")
+        else:
+            for i, (_, row) in enumerate(df_b.iterrows(), 1):
+                print(f"\nRow {i}:")
+                for col, val in row.items():
+                    print(f"{col}: {val}")
+
+        print("\n--- DELTA (INSERT) ---")
+        if df_a.empty:
+            print("❌ NO DELTA ROWS")
+        else:
+            for i, (_, row) in enumerate(df_a.iterrows(), 1):
+                print(f"\nRow {i}:")
+                for col, val in row.items():
+                    print(f"{col}: {val}")
+
 # =========================================================
 # PROMOTION LOGGING
 # =========================================================
@@ -1067,6 +1323,50 @@ def api_category_review_work_queue():
         "items": items
     })
 
+def get_section_match_key(row):
+                section = row.get("__Section")
+
+                if section == "Extended_Info":
+                    return row.get("Extended Info Code")
+
+                if section == "Attributes":
+                    return row.get("Attribute Name")
+
+                if section == "Descriptions":
+                    return (row.get("Description Code"), row.get("Sequence"))
+
+                if section == "Packages":
+                    return (row.get("Package UOM"), row.get("Package Quantity of Eaches"))
+
+                if section == "Pricing":
+                    return (row.get("Pricing Type"), row.get("Currency"))
+
+                return None
+
+def get_field_changes(before_row, after_row):
+
+    changes = []
+
+    for col in after_row.index:
+
+        if col.startswith("_") or col in ["__Section", "_sheet"]:
+            continue
+
+        before = before_row.get(col)
+        after = after_row.get(col)
+
+        if pd.isna(before) and pd.isna(after):
+            continue
+
+        if str(before) != str(after):
+            changes.append({
+                "field": col,
+                "before": before,
+                "after": after
+            })
+
+    return changes
+
 @category_review_bp.route("/api/category-review/part-intelligence")
 @login_required
 def api_part_intelligence():
@@ -1097,6 +1397,8 @@ def api_part_intelligence():
     df_part = df[
         df["Part Number"].astype(str) == str(part)
     ].copy()
+
+    
 
     # =====================================================
     # IMAGE PREVIEW (Independent of Metadata)
@@ -1210,21 +1512,8 @@ def api_part_intelligence():
         }))
 
     # =====================================================
-    # UPDATE MODE – DERIVED FROM INSERT + DELETE (FINAL)
+    # UPDATE MODE (NEW CLEAN LOGIC)
     # =====================================================
-    df_insert = df_part[df_part["_delta_type"] == "insert"].copy()
-    df_delete = df_part[df_part["_delta_type"] == "delete"].copy()
-
-    insert_map = {get_row_key(r): r for _, r in df_insert.iterrows()}
-    delete_map = {get_row_key(r): r for _, r in df_delete.iterrows()}
-
-    common_keys = set(insert_map.keys()) & set(delete_map.keys())
-
-    # --------------------------------------------------
-    # 🔥 NEW: detect update from GOLD baseline
-    # --------------------------------------------------
-    is_update_from_baseline = False
-    baseline_map = {}
 
     try:
         gold = _gold_container()
@@ -1235,110 +1524,191 @@ def api_part_intelligence():
 
         df_base_part = df_baseline[
             df_baseline["Part Number"].astype(str) == str(part)
+        ].copy()
+
+        #  DEBUG FULL DATA
+        # debug_print_full_part(df_base_part, df_part, part)
+        print("\n=========== CLEAN BEFORE vs AFTER DEBUG ===========")
+        print("PART:", part)
+
+        # ----------------------------------------
+        # LOAD BASELINE (GOLD)
+        # ----------------------------------------
+        try:
+            gold = _gold_container()
+            baseline_path = f"{GOLD_SELECTED_ROOT}/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+            df_base = _df_from_parquet_bytes(_download_bytes(gold, baseline_path))
+
+            df_base_part = df_base[
+                df_base["Part Number"].astype(str) == str(part)
+            ].copy()
+
+        except Exception as e:
+            print("❌ GOLD LOAD FAILED:", e)
+            df_base_part = pd.DataFrame()
+
+        # ----------------------------------------
+        # CURRENT DELTA
+        # ----------------------------------------
+        df_after = df_part.copy()
+
+
+        # =========================================================
+        # EXTENDED INFO (LIS)
+        # =========================================================
+        print("\n--- EXTENDED INFO (LIS) ---")
+
+        before_ext = df_base_part[
+            (df_base_part["__Section"] == "Extended_Info") &
+            (df_base_part["Extended Info Code"] == "LIF")
         ]
 
-        if not df_base_part.empty:
-            is_update_from_baseline = True
-            baseline_map = {get_row_key(r): r for _, r in df_base_part.iterrows()}
+        after_ext = df_after[
+            (df_after["__Section"] == "Extended_Info") &
+            (df_after["Extended Info Code"] == "LIF")
+        ]
+
+        print("BEFORE (GOLD):")
+        if before_ext.empty:
+            print("❌ NOT FOUND")
+        else:
+            print(before_ext[[
+                "Part Number",
+                "Extended Info Code",
+                "Extended Info Value"
+            ]].to_string(index=False))
+
+        print("AFTER (DELTA):")
+        if after_ext.empty:
+            print("❌ NOT FOUND")
+        else:
+            print(after_ext[[
+                "Part Number",
+                "_delta_type",
+                "Extended Info Code",
+                "Extended Info Value"
+            ]].to_string(index=False))
+
+
+        # =========================================================
+        # PACKAGES (MERCH HEIGHT)
+        # =========================================================
+        print("\n--- PACKAGES (MERCH HEIGHT) ---")
+
+        before_pkg = df_base_part[
+            df_base_part["__Section"] == "Packages"
+        ]
+
+        after_pkg = df_after[
+            df_after["__Section"] == "Packages"
+        ]
+
+        print("BEFORE (GOLD):")
+        if before_pkg.empty:
+            print("❌ NOT FOUND")
+        else:
+            print(before_pkg[[
+                "Part Number",
+                "Package UOM",
+                "Merch Height"
+            ]].to_string(index=False))
+
+        print("AFTER (DELTA):")
+        if after_pkg.empty:
+            print("❌ NOT FOUND")
+        else:
+            print(after_pkg[[
+                "Part Number",
+                "_delta_type",
+                "Package UOM",
+                "Merch Height"
+            ]].to_string(index=False))
+
+
+        # =========================================================
+        # PRICING
+        # =========================================================
+        print("\n--- PRICING ---")
+
+        before_pricing = df_base_part[
+            df_base_part["__Section"] == "Pricing"
+        ]
+
+        after_pricing = df_after[
+            df_after["__Section"] == "Pricing"
+        ]
+
+        print("BEFORE (GOLD):")
+        if before_pricing.empty:
+            print("❌ NOT FOUND")
+        else:
+            print(before_pricing[[
+                "Part Number",
+                "Dealer Price",
+                "Net Price"
+            ]].to_string(index=False))
+
+        print("AFTER (DELTA):")
+        if after_pricing.empty:
+            print("❌ NOT FOUND")
+        else:
+            print(after_pricing[[
+                "Part Number",
+                "_delta_type",
+                "Dealer Price",
+                "Net Price"
+            ]].to_string(index=False))
+        
 
     except Exception as e:
         print("⚠️ Baseline load failed:", e)
+        df_base_part = pd.DataFrame()
 
-    # Only enter update mode when there are matched insert/delete pairs
-    if common_keys or is_update_from_baseline:
+    # If baseline exists → compute diff using new engine
+        # If baseline exists → build field-level diff for UPDATE rows only
+    if not df_base_part.empty:
 
-        IGNORE_COLUMNS = {
-            "__Section",
-            "_sheet",
-            "_domain",
-            "_workflow",
-            "_delta_type",
-            "_merge",
-            "_row_hash_before",
-            "_row_hash_after",
-            "_entity_key",
-            "_entity_id",
-            "_row_id",
-            "_vendor",
-            "_autofix_run_id",
-            "_autofix_timestamp",
-            "_transformation_applied",
-            "_hash",
-            "delta_status"
-        }
-
-        def normalize(v):
-            if pd.isna(v):
-                return ""
-            try:
-                num = float(v)
-                if num.is_integer():
-                    return str(int(num))
-                return str(num)
-            except:
-                return str(v).strip()
+        df_updates = df_part.copy()
 
         changes = []
 
-        for key in common_keys:
-            before_row = delete_map[key]
-            after_row = insert_map[key]
-
-            # ---------------------------------------------
-            # 🔥 CASE 2: insert-only but exists in baseline
-            # ---------------------------------------------
-            if not common_keys and is_update_from_baseline:
-
-                for key, after_row in insert_map.items():
-
-                    before_row = baseline_map.get(key)
-
-                    if before_row is None:
-                        continue
-
-                    section = after_row.get("__Section")
-
-                    all_cols = set(before_row.index).union(set(after_row.index))
-
-                    for col in all_cols:
-                        if col in IGNORE_COLUMNS:
-                            continue
-
-                        before = normalize(before_row.get(col))
-                        after = normalize(after_row.get(col))
-
-                        if before != after and (before or after):
-                            changes.append({
-                                "section": section,
-                                "field": col,
-                                "before": before or "-",
-                                "after": after or "-"
-                            })
+        for _, after_row in df_updates.iterrows():
             section = after_row.get("__Section")
+            key = build_key(after_row, section)
 
-            all_cols = set(before_row.index).union(set(after_row.index))
+            base_rows = df_base_part[
+                df_base_part["__Section"] == section
+            ].copy()
 
-            for col in all_cols:
-                if col in IGNORE_COLUMNS:
-                    continue
+            before_row = None
+            for _, candidate in base_rows.iterrows():
+                if build_key(candidate, section) == key:
+                    before_row = candidate
+                    break
 
-                before = normalize(before_row[col]) if col in before_row else ""
-                after = normalize(after_row[col]) if col in after_row else ""
+            if before_row is None:
+                continue
 
-                if before != after and (before or after):
-                    changes.append({
-                        "section": section,
-                        "field": col,
-                        "before": before or "-",
-                        "after": after or "-"
-                    })
+            row_changes = compare_rows(section, before_row, after_row)
 
-        return jsonify(json_safe({
-            "mode": "update",
-            "changes": changes,
-            "image_preview_url": image_preview_url
-        }))
+            for field, before_val, after_val in row_changes:
+                changes.append({
+                    "section": section,
+                    "type": "update",
+                    "context": build_context(section, after_row),
+                    "field": field,
+                    "before": before_val if before_val is not None else "-",
+                    "after": after_val if after_val is not None else "-",
+                    "display": f"{build_context(section, after_row)} → {field}: {before_val} → {after_val}"
+                })
 
+        if changes:
+            return jsonify(json_safe({
+                "mode": "update",
+                "changes": changes,
+                "image_preview_url": image_preview_url
+            }))
+        
     print("DELTA ROWS FOR PART:", part)
     cols = ["Part Number"]
     if "__Section" in df_part.columns:
