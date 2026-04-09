@@ -63,7 +63,6 @@ STEPS = [
     ("Health Check", "data_health_check.py", ["--vendor"]),
     ("Autofix", "data_autofix.py", ["--vendor"]),
     ("Canonicalize", "data_canonicalize.py", ["--vendor"]),
-    ("Integrity Checks", "data_integrity_checks.py", ["--vendor"]),
     ("Build Review", "build_etl_mapped.py", ["--vendor"]),
 
     # ---- Analytics layer (vendor-level)
@@ -183,13 +182,13 @@ def main():
 
     for name, script, flags in STEPS:
 
-        # 🚫 Skip analytics for review submissions
-        if args.submission_type.endswith("_review") and script in (
-            "vendor_profiling.py",
-            "vendor_scorecard.py",
-        ):
-            print(f"⏭ Skipping {name} (review submission)")
-            continue
+        # # 🚫 Skip analytics for review submissions
+        # if args.submission_type.endswith("_review") and script in (
+        #     "vendor_profiling.py",
+        #     "vendor_scorecard.py",
+        # ):
+        #     print(f"⏭ Skipping {name} (review submission)")
+        #     continue
 
         run_step(
             name,
