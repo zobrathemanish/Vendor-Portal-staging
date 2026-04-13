@@ -11,7 +11,7 @@ Supports:
   • Local mode (--local)
 
 Outputs:
-  silver/<in_review|post_pricing_review>/vendor=<vendor>/submission=<id>/analytics/vendor_profiling/
+  silver/in_review/{workflow}_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/analytics/vendor_profiling/
     - vendor_profile.parquet
     - vendor_profile.xlsx
 
@@ -111,33 +111,37 @@ class PipelineContext:
         self.workflow = workflow      # "product" | "pricing"
         self.submission_type = submission_type            # "review" | "post_review"
 
-    @property
-    def in_review_root(self):
-        if self.workflow == "pricing":
-            return "post_pricing_review"
-        return "in_review"
-
-def submission_base_path(vendor: str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
-    root = ctx.in_review_root
+def submission_base_path(vendor: str, workflow: str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
+    root = "in_review"
 
     if local:
         return os.path.join(
             "silver",
             root,
+            f"{workflow}_workflow",
             f"vendor={vendor}",
+            f"submission_type={ctx.submission_type}",
             f"submission={submission_id}",
         )
-    return f"{root}/vendor={vendor}/submission={submission_id}"
+
+    return (
+        f"{root}/"
+        f"{workflow}_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={ctx.submission_type}/"
+        f"submission={submission_id}"
+    )
 
 def build_vendor_profile_for_submission(
     vendor,
+    workflow,
     submission_id,
     container,
     local,
     ctx: PipelineContext,
 ):
 
-    base = submission_base_path(vendor, submission_id, local, ctx)
+    base = submission_base_path(vendor, workflow, submission_id, local, ctx)
 
     profile = {
         "vendor": vendor,
@@ -664,6 +668,27 @@ def run_vendor_profiling(
     submission_type: str = "review",
     local: bool = False,
 ):
+    # 🔥 Normalize workflow input
+    workflow = workflow.lower().strip()
+
+    print(f"DEBUG workflow={workflow} | submission_type={submission_type}")
+
+    # handle common mismatch
+    if workflow == "products":
+        workflow = "product"
+
+    # 🔥 Skip delta submissions
+    if "delta" in submission_type.lower():
+        print(f"⏭ Skipping profiling (delta submission) | {submission_id}")
+        return
+
+    # 🔥 Skip unsupported workflows
+    VALID_WORKFLOWS = {"product", "pricing", "assets"}
+
+    if workflow not in VALID_WORKFLOWS:
+        print(f"⏭ Skipping profiling (unsupported workflow={workflow}) | {submission_id}")
+        return
+    
     ctx = PipelineContext(workflow=workflow, submission_type=submission_type)
     container = None if local else get_container()
 
@@ -673,6 +698,7 @@ def run_vendor_profiling(
 
     profile = build_vendor_profile_for_submission(
         vendor=vendor,
+        workflow=workflow,
         submission_id=submission_id,
         container=container,
         local=local,
@@ -682,7 +708,7 @@ def run_vendor_profiling(
     df = pd.DataFrame([profile])
     df = df.reindex(columns=[c for c in COLUMN_ORDER if c in df.columns])
 
-    base = submission_base_path(vendor, submission_id, local, ctx)
+    base = submission_base_path(vendor, workflow, submission_id, local, ctx)
 
     out_base = (
         os.path.join(base, "analytics", "vendor_profiling")

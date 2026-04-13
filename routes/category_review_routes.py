@@ -208,8 +208,8 @@ SECTION_RULES = {
         "compare": ["Attribute Value"]
     },
     "Descriptions": {
-        "key": ["Description Code"],
-        "compare": ["Description Value"]
+        "key": ["Description Code", "Description Value"],  # 🔥 FIX
+        "compare": []
     },
     "Digital_Assets": {
         "key": ["FileName"],
@@ -1059,46 +1059,51 @@ def api_category_review_decision():
 def get_row_key(row):
     section = row.get("__Section")
 
+    def norm(x):
+        if x is None:
+            return ""
+        return str(x).strip().lower()
+
     if section == "Descriptions":
         return (
-            row.get("Part Number"),
-            row.get("Description Code"),
-            row.get("Sequence"),
+            norm(row.get("Part Number")),
+            norm(row.get("Description Code")),
+            norm(row.get("Description Value")),   # 🔥 use value, NOT sequence
         )
 
     if section == "Extended_Info":
         return (
-            row.get("Part Number"),
-            row.get("Extended Info Code"),
+            norm(row.get("Part Number")),
+            norm(row.get("Extended Info Code")),
+            norm(row.get("Extended Info Value")),  # 🔥 added
         )
 
     if section == "Attributes":
         return (
-            row.get("Part Number"),
-            row.get("Attribute Name"),
+            norm(row.get("Part Number")),
+            norm(row.get("Attribute Name")),
+            norm(row.get("Attribute Value")),      # 🔥 added
         )
 
     if section == "Packages":
         return (
-            row.get("Part Number"),
-            row.get("Package UOM"),
-            row.get("Package Quantity of Eaches"),
+            norm(row.get("Part Number")),
+            norm(row.get("Package UOM")),
+            norm(row.get("Package Quantity of Eaches")),
         )
 
     if section == "Digital_Assets":
         return (
-            row.get("Part Number"),
-            row.get("FileName"),
+            norm(row.get("Part Number")),
+            norm(row.get("FileName")),
         )
 
     if section == "Pricing":
         return (
-            row.get("Part Number"),
-            row.get("Pricing Type"),
-            row.get("Currency"),
+            norm(row.get("Part Number")),   
         )
 
-    return (row.get("Part Number"), section)
+    return (norm(row.get("Part Number")), section)
 
 @category_review_bp.route("/api/category-review/work-queue")
 @login_required
@@ -1252,10 +1257,15 @@ def api_category_review_work_queue():
                         and r.get("__Section") == after.get("__Section")
                     ]
 
-                    if not before_rows:
-                        continue
+                    match_key = get_row_key(after)
 
-                    before = before_rows[0]
+                    before = next(
+                        (r for r in before_rows if get_row_key(r) == match_key),
+                        None
+                    )
+
+                    if before is None:
+                        continue
 
                     all_cols = set(before.index).union(set(after.index))
 
@@ -1686,9 +1696,20 @@ def api_part_intelligence():
                     before_row = candidate
                     break
 
+            # -----------------------------
+            # INSERT
+            # -----------------------------
             if before_row is None:
+                changes.append({
+                    "section": section,
+                    "type": "insert",
+                    "context": build_context(section, after_row),
+                })
                 continue
 
+            # -----------------------------
+            # UPDATE
+            # -----------------------------
             row_changes = compare_rows(section, before_row, after_row)
 
             for field, before_val, after_val in row_changes:
@@ -1701,11 +1722,12 @@ def api_part_intelligence():
                     "after": after_val if after_val is not None else "-",
                     "display": f"{build_context(section, after_row)} → {field}: {before_val} → {after_val}"
                 })
-
+                
         if changes:
+        # ALWAYS return update mode if delta exists
             return jsonify(json_safe({
                 "mode": "update",
-                "changes": changes,
+                "changes": changes,   # can be empty
                 "image_preview_url": image_preview_url
             }))
         

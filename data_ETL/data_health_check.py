@@ -16,8 +16,7 @@ This script detects:
 - Row/column missingness ratios (informational)
 - Format/type issues (dates, numeric coercion)
 - Anomalies (negative values, suspicious zeros, duplicates)
-- Outliers (IQR) including Shipping Volume (Ship L*W*H)
-- Conversion candidates (Curre"ncy CAD, Weight UOM KG, Dimension UOM CM)
+- Conversion candidates (Currency CAD, Weight UOM KG, Dimension UOM CM)
 - String normalization candidates (trim whitespace)
 
 Reads (Azure)

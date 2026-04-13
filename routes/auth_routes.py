@@ -14,7 +14,6 @@ def load_user(user_id):
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        # Already logged in → redirect based on role
         return _role_redirect(current_user)
 
     if request.method == "POST":
@@ -24,14 +23,23 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if user and user.is_active and user.check_password(password):
+            # 🔥 Kill any previous session completely
+            logout_user()
+
+            # 🔥 Login fresh
             login_user(user)
 
-            # 🔥 ROLE BASED REDIRECT
-            return _role_redirect(user)
+            # 🔥 FORCE redirect (ignore next completely)
+            return redirect(url_for("auth.index"))
 
         flash("Invalid credentials", "danger")
 
     return render_template("login.html")
+
+@login_manager.unauthorized_handler
+def unauthorized():
+    # 🔥 Always go to clean login (NO next param)
+    return redirect(url_for("auth.login"))
 
 
 @auth_bp.route("/logout")

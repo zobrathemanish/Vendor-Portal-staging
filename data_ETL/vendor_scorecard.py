@@ -53,26 +53,27 @@ class PipelineContext:
     def __init__(self, submission_type: str):
         self.submission_type = submission_type
 
-    @property
-    def workflow(self):
-        if "pricing" in self.submission_type:
-            return "pricing"
-        return "product"
-
-    @property
-    def in_review_root(self):
-        if self.workflow == "pricing":
-            return "post_pricing_review"
-        return "in_review"
-
 #Adding Base Resolver
-def submission_base_path(vendor: str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
-    root = ctx.in_review_root
+def submission_base_path(vendor: str, workflow:str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
+    root = "in_review"
 
     if local:
-        return os.path.join("silver", root, f"vendor={vendor}", f"submission={submission_id}")
+        return os.path.join(
+            "silver",
+            root,
+            f"{workflow}_workflow",
+            f"vendor={vendor}",
+            f"submission_type={ctx.submission_type}",
+            f"submission={submission_id}",
+        )
 
-    return f"{root}/vendor={vendor}/submission={submission_id}"
+    return (
+        f"{root}/"
+        f"{workflow}_workflow/"
+        f"vendor={vendor}/"
+        f"submission_type={ctx.submission_type}/"
+        f"submission={submission_id}"
+    )
 
 # =========================================================
 # STORAGE HELPERS
@@ -109,8 +110,8 @@ def read_profile(container, path: str, local: bool) -> pd.DataFrame:
     raise ValueError(f"Unsupported profile format: {path}")
 
 
-def write_outputs(container, vendor, submission_id, df, local, ctx):
-    base = submission_base_path(vendor, submission_id, local, ctx)
+def write_outputs(container, vendor, workflow, submission_id, df, local, ctx):
+    base = submission_base_path(vendor, workflow, submission_id, local, ctx)
 
     if local:
         out_dir = os.path.join(base, "analytics", "vendor_scorecard")
@@ -154,8 +155,8 @@ def list_vendors(local: bool, container=None) -> List[str]:
     return sorted(vendors)
 
 
-def get_profile_path(vendor: str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
-    base = submission_base_path(vendor, submission_id, local, ctx)
+def get_profile_path(vendor: str, workflow:str, submission_id: str, local: bool, ctx: PipelineContext) -> str:
+    base = submission_base_path(vendor, workflow, submission_id, local, ctx)
 
     if local:
         return os.path.join(
@@ -251,10 +252,24 @@ def infer_vendor_from_submission(
 # =========================================================
 def run_vendor_scorecard(
     vendor: str,
+    workflow: str,
     submission_id: str,
     submission_type: str = "product_submission",
     local: bool = False,
+    
 ):
+    # 🔥 Normalize workflow input
+    workflow = workflow.lower().strip()
+
+    print(f"DEBUG workflow={workflow} | submission_type={submission_type}")
+
+    # handle common mismatch
+    if workflow == "products":
+        workflow = "product"
+        
+    if "delta" in submission_type.lower():
+        print(f"⏭ Skipping scorecard for delta submission | {submission_id}")
+        return
     container = None if local else get_container()
 
     print("▶️ Vendor Scorecard")
@@ -263,7 +278,7 @@ def run_vendor_scorecard(
 
     ctx = PipelineContext(submission_type=submission_type)
 
-    profile_path = get_profile_path(vendor, submission_id, local, ctx)
+    profile_path = get_profile_path(vendor, workflow, submission_id, local, ctx)
     if local and not os.path.exists(profile_path):
         print(f"⚠️ No profiling found | vendor={vendor} | submission={submission_id}")
         return
@@ -313,14 +328,14 @@ def run_vendor_scorecard(
 
     df["scorecard_generated_ts"] = datetime.utcnow().isoformat()
 
-    write_outputs(container, vendor, submission_id, df, local, ctx)
+    write_outputs(container, vendor, workflow, submission_id, df, local, ctx)
 
     print(f"✅ Vendor scorecard generated | vendor={vendor} | submission={submission_id}")
 
     # -------------------------------------------------
     # ADMIN UPDATE (ONLY AFTER PRICING REVIEW)
     # -------------------------------------------------
-    if not local and ctx.workflow == "pricing":
+    if not local:
         can_promote = bool(df.get("can_promote", [True])[0])
 
         if can_promote:
@@ -353,9 +368,11 @@ def main():
 
     run_vendor_scorecard(
         vendor=args.vendor,
+        workflow=args.workflow,
         submission_id=args.submission_id,
         submission_type=args.submission_type,
         local=args.local,
+       
     )
 
 if __name__ == "__main__":
