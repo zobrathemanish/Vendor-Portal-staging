@@ -88,8 +88,8 @@ def _role_redirect(user):
         return redirect(url_for("ingestion.ingest_product"))
 
     # Admin
-    elif user.role == "admin":
-        return redirect(url_for("admin.admin_home"))
+    elif user.role == "admin_team":
+            return redirect(url_for("admin.admin_home"))
 
     # Fallback
     return redirect(url_for("auth.login"))

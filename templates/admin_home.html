@@ -230,12 +230,9 @@
     
                 <!-- Stage Toggle (only dashboard scope) -->
                 <div id="stageToggle" class="btn-group btn-group-sm">
-                <button class="btn btn-dark active" data-stage="post_pricing_review">
-                    Post Pricing
-                </button>
-                <button class="btn btn-outline-dark" data-stage="in_review">
-                    Before Pricing
-                </button>
+                  <button class="btn btn-dark active" data-stage="in_review">
+                      In Review
+                  </button>
                 </div>
 
             <!-- Tabs -->
@@ -312,10 +309,8 @@
 
                 <select id="stageFilter" class="form-select form-select-sm" style="width:190px;">
                   <option value="">All Stages</option>
-                  <option value="ready">Ready</option>
                   <option value="in_review">In Review</option>
-                  <option value="post_pricing_review">Post Pricing</option>
-                  <option value="ready_pricing_review">Ready Pricing Review</option>
+                  <option value="ready">Ready</option>
                   <option value="category_queue">Category Queue</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
@@ -440,7 +435,8 @@ tabSubmissions?.addEventListener("click", () => setActiveTab("submissions"));
    DASHBOARD (Admin Summary)
 ========================= */
 let scoreChartInstance = null;
-let currentStage = "post_pricing_review";
+let currentStage = "in_review";
+
 
 document.querySelectorAll("#stageToggle button").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -712,24 +708,20 @@ function renderSummary() {
   const total = submissions.length;
   const count = (stage) => submissions.filter(s => s.stage === stage).length;
 
-  const ready = count("ready");
-  const inReview = count("in_review");
-  const postPricing = count("post_pricing_review");
-  const readyPricing = count("ready_pricing_review");
-  const categoryQueue = count("category_queue");
-  const approved = count("approved");
-  const rejected = count("rejected");
+ const ready = count("ready");
+const inReview = count("in_review");
+const categoryQueue = count("category_queue");
+const approved = count("approved");
+const rejected = count("rejected");
 
-  container.innerHTML = `
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Total</div><div class="h4 mb-0">${total}</div></div></div>
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Ready</div><div class="h4 mb-0">${ready}</div></div></div>
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">In Review</div><div class="h4 mb-0">${inReview}</div></div></div>
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Post Pricing</div><div class="h4 mb-0">${postPricing}</div></div></div>
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Category Queue</div><div class="h4 mb-0">${categoryQueue}</div></div></div>
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Rejected</div><div class="h4 mb-0 text-danger">${rejected}</div></div></div>
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Ready Pricing</div><div class="h4 mb-0">${readyPricing}</div></div></div>
-    <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Approved</div><div class="h4 mb-0">${approved}</div></div></div>
-  `;
+container.innerHTML = `
+  <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Total</div><div class="h4 mb-0">${total}</div></div></div>
+  <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">In Review</div><div class="h4 mb-0">${inReview}</div></div></div>
+  <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Ready</div><div class="h4 mb-0">${ready}</div></div></div>
+  <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Category Queue</div><div class="h4 mb-0">${categoryQueue}</div></div></div>
+  <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Approved</div><div class="h4 mb-0">${approved}</div></div></div>
+  <div class="col-md-2"><div class="card shadow-sm p-3"><div class="text-muted small">Rejected</div><div class="h4 mb-0 text-danger">${rejected}</div></div></div>
+`;
 }
 
 function renderPipeline(pipeline) {
@@ -766,9 +758,15 @@ function renderCards() {
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
               <div>
-                <h6 class="mb-0">${escapeHtml(sub.vendor)}</h6>
+                <h6 class="mb-0">
+                  ${escapeHtml(sub.vendor)}
+                  <small class="text-muted">(${escapeHtml(sub.workflow || "")})</small>
+                </h6>
                 <small class="text-muted">${escapeHtml(sub.submission_id)}</small>
               </div>
+              <small class="text-muted">
+                ${escapeHtml(sub.submission_id)} | ${escapeHtml(sub.submission_type || "")}
+              </small>
               <span class="badge bg-dark stage-badge">${escapeHtml(String(sub.stage || "").toUpperCase())}</span>
             </div>
 
