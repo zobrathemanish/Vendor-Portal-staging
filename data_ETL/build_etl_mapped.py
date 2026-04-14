@@ -1388,13 +1388,13 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
 
         if not can_publish:
             print("Blocking issues found — skipping category queue build")
-            return
-
-        build_unified_category_queue(
-            container=approved_container,
-            vendor=vendor,
-            local=local
-        )
+        else:
+            print("✅ Integrity passed — building category queue")
+            build_unified_category_queue(
+                container=approved_container,
+                vendor=vendor,
+                local=local
+            )
 
        
 

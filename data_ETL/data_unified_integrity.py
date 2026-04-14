@@ -44,11 +44,11 @@ def run_unified_integrity(container, vendor: str) -> bool:
         df = read_df(container, unified_path)
     except Exception as e:
         print("❌ Failed to load unified dataset:", e)
-        return True
+        return False
 
     if df.empty:
         print("⚠️ Unified dataset empty")
-        return True
+        return False
 
     df["Part Number"] = df["Part Number"].astype(str).str.strip()
 
@@ -131,7 +131,7 @@ def run_unified_integrity(container, vendor: str) -> bool:
         "can_publish": blocking == 0
     }
 
-    base = f"unified_integrity/vendor={vendor}"
+    base = f"approved/unified_integrity/vendor={vendor}"
 
     write_df(container, f"{base}/integrity_issues.parquet", issues_df)
     write_json(container, f"{base}/integrity_summary.json", summary)

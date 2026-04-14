@@ -2026,13 +2026,58 @@ def api_asset_preview():
 from azure.core.exceptions import ResourceNotFoundError
 
 def clear_category_queue(container, vendor: str):
+    from datetime import datetime
+    import json
+
     base_path = f"category_queue/vendor={vendor}/active"
 
     delta_parquet = f"{base_path}/delta_mapped.parquet"
     delta_excel = f"{base_path}/delta_mapped.xlsx"
-    decisions_path = f"{base_path}/decisions.parquet"  
+    decisions_path = f"{base_path}/decisions.parquet"
 
     print(f"[QUEUE] Clearing category queue for vendor={vendor}")
+
+    # =========================================
+    # 1. DELETE QUEUE FILES (existing behavior)
+    # =========================================
+    for path in [delta_parquet, delta_excel, decisions_path]:
+        try:
+            container.delete_blob(path)
+            print(f"[QUEUE] Deleted: {path}")
+        except:
+            pass
+
+    # =========================================
+    # 2. CAPTURE MERGE TIME (CRITICAL)
+    # =========================================
+    merge_blob_path = f"approved/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
+
+    merge_time = None
+    try:
+        merge_blob = container.get_blob_client(merge_blob_path)
+        props = merge_blob.get_blob_properties()
+        merge_time = props.last_modified.isoformat()
+    except Exception as e:
+        print(f"[QUEUE] Warning: Could not fetch merge time: {e}")
+
+    # =========================================
+    # 3. WRITE COMPLETION MARKER
+    # =========================================
+    completion_path = f"category_queue/vendor={vendor}/_category_completion.json"
+
+    payload = {
+        "vendor": vendor,
+        "completed_at": datetime.utcnow().isoformat(),
+        "merge_reference_time": merge_time
+    }
+
+    container.upload_blob(
+        completion_path,
+        json.dumps(payload, indent=2),
+        overwrite=True
+    )
+
+    print(f"[QUEUE] Category completion recorded: {completion_path}")
 
     # -----------------------------------
     # Delete delta parquet

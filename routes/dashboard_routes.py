@@ -278,106 +278,183 @@ def get_admin_submissions():
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        results = {}
+        from collections import defaultdict
 
-        # 🔥 SINGLE CONTAINER SCAN
-        all_blobs = container.list_blobs()
+        # =========================================
+        # 1. SCAN ALL BLOBS WITH TIMESTAMP
+        # =========================================
+        vendor_data = defaultdict(lambda: {
+            "workflows": {
+                "pricing": [],
+                "products": [],
+                "assets": []
+            },
+            "global": {}
+        })
 
-        submission_map = {}
-
-        for blob in all_blobs:
+        for blob in container.list_blobs():
             name = blob.name
+            last_modified = blob.last_modified
 
-            if "vendor=" not in name or "submission=" not in name:
+            if "vendor=" not in name:
                 continue
 
             parts = name.split("/")
 
             vendor = None
+            workflow = None
             submission_id = None
+            submission_type = None
 
             for part in parts:
                 if part.startswith("vendor="):
                     vendor = part.replace("vendor=", "")
-                if part.startswith("submission="):
+                elif part.endswith("_workflow"):
+                    workflow = part.replace("_workflow", "")
+                elif part.startswith("submission="):
                     submission_id = part.replace("submission=", "")
+                elif part.startswith("submission_type="):
+                    submission_type = part.replace("submission_type=", "")
 
-            if not vendor or not submission_id:
+            if not vendor:
                 continue
 
-            # 🔥 extract workflow
-            workflow = None
-            for part in parts:
-                if part.endswith("_workflow"):
-                    workflow = part.replace("_workflow", "")
+            # =========================================
+            # WORKFLOW BLOBS
+            # =========================================
+            if workflow and submission_id:
+                vendor_data[vendor]["workflows"][workflow].append({
+                    "blob": name,
+                    "submission_id": submission_id,
+                    "submission_type": submission_type,
+                    "last_modified": last_modified
+                })
 
-            key = (vendor, submission_id)
+            # =========================================
+            # GLOBAL BLOBS
+            # =========================================
+            if "approved/unified_workflow" in name:
+                vendor_data[vendor]["global"]["merge"] = last_modified
 
-            if key not in submission_map:
-                submission_map[key] = {
-                    "blob_names": set(),
-                    "workflows": {}
+            if "approved/unified_integrity" in name:
+                vendor_data[vendor]["global"]["integrity"] = {
+                    "time": last_modified,
+                    "blob": name
                 }
 
-            submission_map[key]["blob_names"].add(name)
+            if "selected/unified_workflow" in name:
+                vendor_data[vendor]["global"]["gold"] = last_modified
 
-            if workflow:
-                if workflow not in submission_map[key]["workflows"]:
-                    submission_map[key]["workflows"][workflow] = set()
-                submission_map[key]["workflows"][workflow].add(name)
+            if "_category_completion.json" in name:
+                vendor_data[vendor]["global"]["category_completion"] = {
+                    "time": last_modified,
+                    "blob": name
+                }
 
-        # 🔥 Now build results from memory (FAST)
-        for (vendor, submission_id), data in submission_map.items():
+            if name.endswith(f"category_queue/vendor={vendor}/active/delta_mapped.parquet") \
+                or name.endswith(f"category_queue/vendor={vendor}/active/delta_mapped.xlsx") \
+                or name.endswith(f"category_queue/vendor={vendor}/active/decisions.parquet"):
 
-            blob_names = data["blob_names"]
-            workflows = data["workflows"]
+                    vendor_data[vendor]["global"].setdefault("category_active", []).append(name)
 
-            stage = detect_stage_fast(vendor, submission_id, blob_names)
-            failure = detect_failure_fast(blob_names)
+        # =========================================
+        # 2. BUILD FINAL RESULTS
+        # =========================================
+        results = []
 
-            merged_pipeline = {}
-            workflow_pipelines = {}
+        for vendor, data in vendor_data.items():
 
-            # 🔥 build per-workflow pipelines
-            for wf, wf_blobs in workflows.items():
-                wf_stage = detect_stage_fast(vendor, submission_id, wf_blobs)
-                wf_pipeline = build_pipeline_state_fast(vendor, submission_id, wf_stage, wf_blobs)
+            workflows_result = {}
 
-                workflow_pipelines[wf] = wf_pipeline
+            latest_workflow_time = None
 
-                # 🔥 merge pipelines
-                for step, status in wf_pipeline.items():
-                    if status == "success":
-                        merged_pipeline[step] = "success"
-                    elif step not in merged_pipeline:
-                        merged_pipeline[step] = status
+            # -----------------------------------------
+            # PER WORKFLOW STATUS
+            # -----------------------------------------
+            for wf, blobs in data["workflows"].items():
 
-            results[(vendor, submission_id)] = {
+                if not blobs:
+                    workflows_result[wf] = {"pre_review": "not_started", "review": "not_started"}
+                    continue
+
+                # latest submission
+                latest = max(blobs, key=lambda x: x["last_modified"])
+
+                latest_time = latest["last_modified"]
+                if not latest_workflow_time or latest_time > latest_workflow_time:
+                    latest_workflow_time = latest_time
+
+                blob_names = [b["blob"] for b in blobs]
+
+                # detection
+                has_ingestion = any("raw/" in b for b in blob_names)
+                has_mapping = any("mapped/mapped.xlsx" in b or "_asset_manifest.json" in b for b in blob_names)
+                has_etl = any("etl_mapped.xlsx" in b or "transformed_assets.zip" in b for b in blob_names)
+
+                if latest["submission_type"] and "review" in latest["submission_type"]:
+                    status = "success" if (has_ingestion and has_mapping and has_etl) else "in_progress"
+                    workflows_result[wf] = {"pre_review": "done", "review": status}
+                else:
+                    status = "success" if (has_ingestion and has_mapping and has_etl) else "in_progress"
+                    workflows_result[wf] = {"pre_review": status, "review": "not_started"}
+
+            # -----------------------------------------
+            # GLOBAL STATES
+            # -----------------------------------------
+            global_data = data["global"]
+
+            merge_time = global_data.get("merge")
+            integrity_data = global_data.get("integrity")
+            gold_time = global_data.get("gold")
+            category_completion = global_data.get("category_completion")
+            category_active = global_data.get("category_active", [])
+
+            # MERGE
+            if not merge_time:
+                merge_status = "not_started"
+            elif latest_workflow_time and merge_time >= latest_workflow_time:
+                merge_status = "success"
+            else:
+                merge_status = "in_progress"
+
+            # INTEGRITY
+            if not integrity_data:
+                integrity_status = "not_started"
+            elif merge_time and integrity_data["time"] >= merge_time:
+                integrity_status = "success"
+            else:
+                integrity_status = "in_progress"
+
+            # CATEGORY
+            if category_active:
+                category_status = "in_progress"
+            elif not category_completion:
+                category_status = "not_started"
+            elif merge_time and category_completion["time"] >= merge_time:
+                category_status = "success"
+            else:
+                category_status = "not_started"
+
+            # GOLD
+            if not gold_time:
+                gold_status = "not_started"
+            elif integrity_data and gold_time >= integrity_data["time"]:
+                gold_status = "success"
+            else:
+                gold_status = "in_progress"
+
+            results.append({
                 "vendor": vendor,
-                "submission_id": submission_id,
-                "stage": stage,
-                "failure": failure,
-                "pipeline": merged_pipeline,
-                "workflows": workflow_pipelines
-            }
+                "workflows": workflows_result,
+                "global": {
+                    "merge": merge_status,
+                    "integrity": integrity_status,
+                    "category": category_status,
+                    "gold": gold_status
+                }
+            })
 
-        final_results = list(results.values())
-        final_results.sort(key=lambda x: x["submission_id"], reverse=True)
-
-        # latest_only filter
-        latest_only_param = request.args.get("latest_only", "1").lower() in ("1", "true", "yes")
-
-        if latest_only_param:
-            latest_only = {}
-            for r in final_results:
-                v = r["vendor"]
-                if v not in latest_only:
-                    latest_only[v] = r
-            final_results = list(latest_only.values())
-
-        print(f"DEBUG submissions returned: {len(results)}")
-
-        return jsonify(final_results)
+        return jsonify(results)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

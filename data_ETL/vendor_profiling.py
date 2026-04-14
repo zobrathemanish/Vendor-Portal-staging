@@ -664,7 +664,7 @@ def build_vendor_profile(vendor: str, container, local: bool) -> Dict:
 def run_vendor_profiling(
     vendor: str,
     submission_id: str,
-    workflow: str = "product",
+    workflow: str = "products",
     submission_type: str = "review",
     local: bool = False,
 ):
@@ -674,8 +674,8 @@ def run_vendor_profiling(
     print(f"DEBUG workflow={workflow} | submission_type={submission_type}")
 
     # handle common mismatch
-    if workflow == "products":
-        workflow = "product"
+    if workflow == "product":
+        workflow = "products"
 
     # 🔥 Skip delta submissions
     if "delta" in submission_type.lower():
@@ -683,7 +683,7 @@ def run_vendor_profiling(
         return
 
     # 🔥 Skip unsupported workflows
-    VALID_WORKFLOWS = {"product", "pricing", "assets"}
+    VALID_WORKFLOWS = {"products", "pricing", "assets"}
 
     if workflow not in VALID_WORKFLOWS:
         print(f"⏭ Skipping profiling (unsupported workflow={workflow}) | {submission_id}")

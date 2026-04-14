@@ -264,8 +264,8 @@ def run_vendor_scorecard(
     print(f"DEBUG workflow={workflow} | submission_type={submission_type}")
 
     # handle common mismatch
-    if workflow == "products":
-        workflow = "product"
+    if workflow == "product":
+        workflow = "products"
         
     if "delta" in submission_type.lower():
         print(f"⏭ Skipping scorecard for delta submission | {submission_id}")

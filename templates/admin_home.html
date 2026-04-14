@@ -724,12 +724,64 @@ container.innerHTML = `
 `;
 }
 
-function renderPipeline(pipeline) {
-  let html = "";
-  Object.entries(pipeline || {}).forEach(([step, status]) => {
-    html += `<span class="status-badge status-${escapeHtml(status)}">${escapeHtml(capitalize(step))}</span>`;
-  });
-  return html;
+function getStatusBadge(status) {
+  if (status === "success") return `<span class="badge bg-success">●</span>`;
+  if (status === "in_progress") return `<span class="badge bg-warning text-dark">●</span>`;
+  if (status === "failed") return `<span class="badge bg-danger">●</span>`;
+  return `<span class="badge bg-secondary">●</span>`;
+}
+
+function renderWorkflowSection(title, workflows, key) {
+  return `
+    <div class="mb-2">
+      <div class="fw-bold small">${title}</div>
+      ${Object.entries(workflows).map(([wf, data]) => `
+        <div class="d-flex justify-content-between small">
+          <span>${capitalize(wf)}</span>
+          ${getStatusBadge(data[key])}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderGlobalSection(global) {
+  return `
+    <div class="mt-2 pt-2 border-top">
+      <div class="fw-bold small">Pipeline</div>
+
+      <div class="d-flex justify-content-between small">
+        <span>Merge</span> ${getStatusBadge(global.merge)}
+      </div>
+
+      <div class="d-flex justify-content-between small">
+        <span>Integrity</span> ${getStatusBadge(global.integrity)}
+      </div>
+
+      <div class="d-flex justify-content-between small">
+        <span>Category</span> ${getStatusBadge(global.category)}
+      </div>
+
+      <div class="d-flex justify-content-between small">
+        <span>Gold</span> ${getStatusBadge(global.gold)}
+      </div>
+    </div>
+  `;
+}
+
+function getStatusClass(status) {
+  if (status === "success") return "status-success";
+  if (status === "failed") return "status-failed";
+  if (status === "in_progress") return "status-generated";
+  return "status-pending";
+}
+
+function renderBadge(label, status) {
+  return `
+    <span class="status-badge ${getStatusClass(status)}">
+      ${escapeHtml(label)}
+    </span>
+  `;
 }
 
 function renderCards() {
@@ -746,8 +798,7 @@ function renderCards() {
 
   submissions
     .filter(s =>
-      (s.vendor || "").toLowerCase().includes(search) &&
-      (stageFilter === "" || s.stage === stageFilter)
+      (s.vendor || "").toLowerCase().includes(search)
     )
     .forEach(sub => {
       const col = document.createElement("div");
@@ -756,30 +807,33 @@ function renderCards() {
       col.innerHTML = `
         <div class="card shadow-sm h-100">
           <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start">
-              <div>
-                <h6 class="mb-0">
-                  ${escapeHtml(sub.vendor)}
-                  <small class="text-muted">(${escapeHtml(sub.workflow || "")})</small>
-                </h6>
-                <small class="text-muted">${escapeHtml(sub.submission_id)}</small>
-              </div>
-              <small class="text-muted">
-                ${escapeHtml(sub.submission_id)} | ${escapeHtml(sub.submission_type || "")}
-              </small>
-              <span class="badge bg-dark stage-badge">${escapeHtml(String(sub.stage || "").toUpperCase())}</span>
+
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h6 class="mb-0">${escapeHtml(sub.vendor)}</h6>
             </div>
 
-            ${sub.failure ? `
-              <div class="mt-2 text-danger small">
-                ⚠ Failure: ${escapeHtml(String(sub.failure).toUpperCase())}
-              </div>
-            ` : ""}
-
-            <hr class="my-3">
-            <div class="d-flex flex-wrap gap-1">
-              ${renderPipeline(sub.pipeline)}
+            <!-- PRE REVIEW -->
+            <div class="mb-2">
+              ${Object.entries(sub.workflows).map(([wf, data]) => 
+                renderBadge(`${capitalize(wf)} Pre`, data.pre_review)
+              ).join(" ")}
             </div>
+
+            <!-- REVIEW -->
+            <div class="mb-2">
+              ${Object.entries(sub.workflows).map(([wf, data]) => 
+                renderBadge(`${capitalize(wf)} Review`, data.review)
+              ).join(" ")}
+            </div>
+
+            <!-- GLOBAL PIPELINE -->
+            <div class="mt-2 pt-2 border-top">
+              ${renderBadge("Merge", sub.global.merge)}
+              ${renderBadge("Integrity", sub.global.integrity)}
+              ${renderBadge("Category", sub.global.category)}
+              ${renderBadge("Gold", sub.global.gold)}
+            </div>
+
           </div>
         </div>
       `;
