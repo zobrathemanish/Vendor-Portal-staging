@@ -270,6 +270,15 @@ def get_admin_summary():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+def read_json(container, path):
+    import json
+    blob_client = container.get_blob_client(path)
+    data = blob_client.download_blob().readall()
+    return json.loads(data)
+
+def get_gold_container():
+    svc = BlobServiceClient.from_connection_string(AZURE_CONN_STR)
+    return svc.get_container_client("gold")
 
 @admin_bp.route("/api/admin/submissions")
 @login_required
@@ -279,6 +288,8 @@ def get_admin_submissions():
 
     try:
         from collections import defaultdict
+
+        gold_container = get_gold_container()
 
         # =========================================
         # 1. SCAN ALL BLOBS WITH TIMESTAMP
@@ -342,8 +353,6 @@ def get_admin_submissions():
                     "blob": name
                 }
 
-            if "selected/unified_workflow" in name:
-                vendor_data[vendor]["global"]["gold"] = last_modified
 
             if "_category_completion.json" in name:
                 vendor_data[vendor]["global"]["category_completion"] = {
@@ -357,46 +366,26 @@ def get_admin_submissions():
 
                     vendor_data[vendor]["global"].setdefault("category_active", []).append(name)
 
+            if f"approved/assets_workflow/vendor={vendor}/part_number=" in name:
+                vendor_data[vendor]["global"].setdefault("approved_assets", []).append({
+                    "blob": name,
+                    "last_modified": last_modified
+                })
         # =========================================
         # 2. BUILD FINAL RESULTS
         # =========================================
+        # =========================================
+        # 2. BUILD FINAL RESULTS (FRESHNESS-BASED)
+        # =========================================
         results = []
+
+        def is_fresh(file_time, ref_time):
+            return file_time and ref_time and file_time >= ref_time
 
         for vendor, data in vendor_data.items():
 
             workflows_result = {}
-
             latest_workflow_time = None
-
-            # -----------------------------------------
-            # PER WORKFLOW STATUS
-            # -----------------------------------------
-            for wf, blobs in data["workflows"].items():
-
-                if not blobs:
-                    workflows_result[wf] = {"pre_review": "not_started", "review": "not_started"}
-                    continue
-
-                # latest submission
-                latest = max(blobs, key=lambda x: x["last_modified"])
-
-                latest_time = latest["last_modified"]
-                if not latest_workflow_time or latest_time > latest_workflow_time:
-                    latest_workflow_time = latest_time
-
-                blob_names = [b["blob"] for b in blobs]
-
-                # detection
-                has_ingestion = any("raw/" in b for b in blob_names)
-                has_mapping = any("mapped/mapped.xlsx" in b or "_asset_manifest.json" in b for b in blob_names)
-                has_etl = any("etl_mapped.xlsx" in b or "transformed_assets.zip" in b for b in blob_names)
-
-                if latest["submission_type"] and "review" in latest["submission_type"]:
-                    status = "success" if (has_ingestion and has_mapping and has_etl) else "in_progress"
-                    workflows_result[wf] = {"pre_review": "done", "review": status}
-                else:
-                    status = "success" if (has_ingestion and has_mapping and has_etl) else "in_progress"
-                    workflows_result[wf] = {"pre_review": status, "review": "not_started"}
 
             # -----------------------------------------
             # GLOBAL STATES
@@ -404,44 +393,259 @@ def get_admin_submissions():
             global_data = data["global"]
 
             merge_time = global_data.get("merge")
+        
             integrity_data = global_data.get("integrity")
-            gold_time = global_data.get("gold")
+            # 🔥 GET GOLD TIME FROM GOLD CONTAINER
+            gold_time = None
+            gold_path = f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
+
+            try:
+                blob = gold_container.get_blob_client(gold_path)
+                gold_time = blob.get_blob_properties().last_modified
+            except:
+                gold_time = None
             category_completion = global_data.get("category_completion")
             category_active = global_data.get("category_active", [])
 
+            # -----------------------------------------
             # MERGE
-            if not merge_time:
+            # -----------------------------------------
+            # -----------------------------------------
+            # MERGE (FIXED)
+            # -----------------------------------------
+
+            # 🔥 Check if ANY workflow has new data after gold
+            has_active_run = False
+
+            for wf, blobs in data["workflows"].items():
+                if any(
+                    (not gold_time or b["last_modified"] >= gold_time)
+                    for b in blobs
+                ):
+                    has_active_run = True
+                    break
+
+            if not has_active_run:
                 merge_status = "not_started"
-            elif latest_workflow_time and merge_time >= latest_workflow_time:
+
+            elif category_active:
                 merge_status = "success"
+
+            elif merge_time:
+                merge_status = "in_progress"
+
             else:
                 merge_status = "in_progress"
 
+            # -----------------------------------------
             # INTEGRITY
+            # -----------------------------------------
             if not integrity_data:
                 integrity_status = "not_started"
-            elif merge_time and integrity_data["time"] >= merge_time:
-                integrity_status = "success"
+                integrity_time = None
             else:
-                integrity_status = "in_progress"
+                try:
+                    summary_path = f"approved/unified_integrity/vendor={vendor}/integrity_summary.json"
+                    summary = read_json(container, summary_path)
 
+                    integrity_time = integrity_data["time"]
+
+                    if not summary.get("can_publish", False):
+                        integrity_status = "failed"
+
+                    elif is_fresh(integrity_time, merge_time):
+                        integrity_status = "success"
+
+                    else:
+                        integrity_status = "not_started"
+
+                except:
+                    integrity_status = "failed"
+                    integrity_time = None
+
+            # -----------------------------------------
             # CATEGORY
-            if category_active:
+            # -----------------------------------------
+            if integrity_status == "failed":
+                category_status = "failed"
+
+            elif category_active:
                 category_status = "in_progress"
+
             elif not category_completion:
                 category_status = "not_started"
-            elif merge_time and category_completion["time"] >= merge_time:
+
+            elif is_fresh(category_completion["time"], merge_time):
                 category_status = "success"
+
             else:
                 category_status = "not_started"
 
-            # GOLD
+            # -----------------------------------------
+            # GOLD (FIXED)
+            # -----------------------------------------
+
             if not gold_time:
                 gold_status = "not_started"
-            elif integrity_data and gold_time >= integrity_data["time"]:
+
+            elif category_status == "success":
                 gold_status = "success"
-            else:
+
+
+            elif category_status == "in_progress":
                 gold_status = "in_progress"
+
+            elif category_status == "failed":
+                gold_status = "not_started"
+
+            else:
+                gold_status = "not_started"
+
+            # -----------------------------------------
+            # HISTORY SNAPSHOT (ONLY WHEN GOLD JUST COMPLETED)
+            # -----------------------------------------
+
+            if gold_status == "success":
+                history_path = f"approved/unified_workflow/vendor={vendor}/_history.json"
+
+                try:
+                    history = read_json(container, history_path)
+                except:
+                    history = []
+
+                # 🔥 Avoid duplicate entries (important)
+                if not history or history[-1].get("timestamp") != str(gold_time):
+
+                    history.append({
+                        "timestamp": str(gold_time),
+                        "status": {
+                            "merge": merge_status,
+                            "integrity": integrity_status,
+                            "category": category_status,
+                            "gold": gold_status
+                        }
+                    })
+
+                    container.upload_blob(
+                        history_path,
+                        json.dumps(history, indent=2),
+                        overwrite=True
+                    )
+
+                # MERGE FILTER
+                if merge_time and latest_workflow_time and merge_time < latest_workflow_time:
+                    merge_time = None
+
+                # INTEGRITY FILTER
+                if integrity_data and latest_workflow_time and integrity_data["time"] < latest_workflow_time:
+                    integrity_data = None
+
+                # CATEGORY FILTER
+                if category_completion and latest_workflow_time and category_completion["time"] < latest_workflow_time:
+                    category_completion = None
+
+            # -----------------------------------------
+            # WORKFLOW STATES
+            # -----------------------------------------
+            for wf, blobs in data["workflows"].items():
+                run_start_time = gold_time
+
+                filtered_blobs = blobs
+                if run_start_time:
+                    filtered_blobs = [
+                        b for b in blobs
+                        if b["last_modified"] >= run_start_time
+                    ]
+                wf_latest_time = None
+                if blobs:
+                    wf_latest_time = max(b["last_modified"] for b in blobs)
+
+                if not filtered_blobs:
+                    workflows_result[wf] = {"pre_review": "not_started", "review": "not_started"}
+                    continue
+
+                latest = max(filtered_blobs, key=lambda x: x["last_modified"])
+                latest_time = latest["last_modified"]
+
+                blob_names = [b["blob"] for b in filtered_blobs]
+
+                # PRE REVIEW
+                has_ingestion = any("raw/" in b for b in blob_names)
+                has_mapping = any("mapped/mapped.xlsx" in b or "_asset_manifest.json" in b for b in blob_names)
+                has_etl = any("etl_mapped.xlsx" in b or "transformed_assets.zip" in b for b in blob_names)
+
+                # PRE-REVIEW (STRICT — submission based only)
+
+                submission_type = latest.get("submission_type", "") or ""
+
+                is_pre_submission = (
+                    submission_type.endswith("_submission")
+                    or submission_type.startswith("delta_") and submission_type.endswith("_submission")
+                )
+
+                if is_pre_submission:
+                    if has_ingestion and has_mapping and has_etl:
+                        pre_status = "success"
+                    else:
+                        pre_status = "in_progress"
+                else:
+                    # review run should NOT affect pre-review
+                    pre_status = "not_started"
+
+                # REVIEW
+                if latest["submission_type"] and "review" in latest["submission_type"]:
+
+                    if wf == "assets":
+                        approved_assets = global_data.get("approved_assets", [])
+
+                        has_assets_processing = any(
+                            "_asset_manifest.json" in b or "transformed_assets.zip" in b
+                            for b in blob_names
+                        )
+
+                        has_assets_approved = any(
+                            is_fresh(b["last_modified"], latest_time)
+                            for b in approved_assets
+                        )
+
+                        if has_assets_approved:
+                            review_status = "success"
+                        elif has_assets_processing:
+                            review_status = "in_progress"
+                        else:
+                            review_status = "not_started"
+
+                    else:
+                        has_analytics = any(
+                            "analytics/vendor_scorecard" in b or
+                            "analytics/vendor_profiling" in b
+                            for b in blob_names
+                        )
+                        review_status = "success" if has_analytics else "in_progress"
+
+                else:
+                    review_status = "not_started"
+
+                workflows_result[wf] = {
+                    "pre_review": pre_status,
+                    "review": review_status
+                }
+
+            # -----------------------------------------
+            # FINAL STATE RESET AFTER GOLD
+            # -----------------------------------------
+
+            if gold_status == "success":
+                workflows_result = {
+                    "pricing": {"pre_review": "not_started", "review": "not_started"},
+                    "products": {"pre_review": "not_started", "review": "not_started"},
+                    "assets": {"pre_review": "not_started", "review": "not_started"},
+                }
+
+                merge_status = "not_started"
+                integrity_status = "not_started"
+                category_status = "not_started"
+                gold_status = "not_started"
 
             results.append({
                 "vendor": vendor,
@@ -453,6 +657,28 @@ def get_admin_submissions():
                     "gold": gold_status
                 }
             })
+                
+        latest_only_param = request.args.get("latest_only", "true").lower() in ("1", "true")
+
+        if not latest_only_param:
+            for vendor in list(vendor_data.keys()):
+
+                history_path = f"approved/unified_workflow/vendor={vendor}/_history.json"
+
+                try:
+                    history = read_json(container, history_path)
+
+                    for h in history:
+                        results.append({
+                            "vendor": vendor,
+                            "workflows": {},
+                            "global": h["status"],
+                            "is_history": True,
+                            "timestamp": h["timestamp"]
+                        })
+
+                except:
+                    pass
 
         return jsonify(results)
 
