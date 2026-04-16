@@ -509,6 +509,37 @@ def promote_assets(vendor, submission_type, submission_id):
 
     log(f"Promoted {promoted} assets → APPROVED + GOLD", 2)
 
+    # =========================================================
+    # SAVE ASSETS REVIEW META (FOR SNAPSHOT LINEAGE)
+    # =========================================================
+    import json
+    from datetime import datetime
+
+    meta_path = f"approved/assets_workflow/vendor={vendor}/_meta.json"
+
+    meta_payload = {
+        "review_submission_id": submission_id,
+        "workflow": "assets",
+        "updated_at": datetime.utcnow().isoformat()
+    }
+
+    try:
+        existing = json.loads(
+            container.get_blob_client(meta_path).download_blob().readall()
+        )
+    except:
+        existing = {}
+
+    existing.update(meta_payload)
+
+    container.upload_blob(
+        meta_path,
+        json.dumps(existing, indent=2),
+        overwrite=True
+    )
+
+    log(f"[META] assets review_submission_id saved → {submission_id}", 2)
+
 
 # =========================================================
 # CACHE

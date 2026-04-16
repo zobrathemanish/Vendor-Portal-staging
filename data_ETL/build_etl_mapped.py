@@ -422,6 +422,36 @@ def compute_delta(curr, base, is_delta_review=None, is_delta=None):
 
     return delta_df
 
+## HELPERS
+def save_approved_meta(container, vendor, workflow, submission_id):
+    import json
+    from datetime import datetime
+
+    meta_path = f"approved/{workflow}_workflow/vendor={vendor}/_meta.json"
+
+    payload = {
+        "review_submission_id": submission_id,
+        "workflow": workflow,
+        "updated_at": datetime.utcnow().isoformat()
+    }
+
+    try:
+        existing = json.loads(
+            container.get_blob_client(meta_path).download_blob().readall()
+        )
+    except:
+        existing = {}
+
+    existing.update(payload)
+
+    container.upload_blob(
+        meta_path,
+        json.dumps(existing, indent=2),
+        overwrite=True
+    )
+
+    print(f"[META] {workflow} review_submission_id saved → {submission_id}")
+
 # =========================================================
 # CATEGORY QUEUE (UNIFIED PRODUCT + PRICING)
 # =========================================================
@@ -1374,6 +1404,10 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
                 approved_container.upload_blob(approved_parquet_path, parquet_data, overwrite=True)
                 approved_container.upload_blob(approved_excel_path, merged_excel_bytes, overwrite=True)
 
+
+        # 🔥 SAVE REVIEW SUBMISSION ID (LINEAGE)
+        save_approved_meta(approved_container, vendor, workflow, submission_id)
+        
         # -------------------------------------------------
         # REBUILD UNIFIED CATEGORY QUEUE FROM APPROVED DELTAS
         # -------------------------------------------------

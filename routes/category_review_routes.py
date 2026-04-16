@@ -197,7 +197,84 @@ def json_safe(obj):
 
     return obj
 
+def save_category_snapshot(container, vendor):
 
+    from datetime import datetime
+    import json
+
+    # ----------------------------------------
+    # 1. CREATE CATEGORY REVIEW ID
+    # ----------------------------------------
+    category_review_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+
+    # ----------------------------------------
+    # 2. LOAD DECISIONS
+    # ----------------------------------------
+    decisions_df = load_decisions(container, vendor)
+
+    decisions = decisions_df.to_dict(orient="records")
+
+    # ----------------------------------------
+    # 3. LOAD WORKFLOW REVIEW IDS (from approved meta)
+    # ----------------------------------------
+    def get_meta(wf):
+        try:
+            silver = _container()
+
+            path = f"approved/{wf}_workflow/vendor={vendor}/_meta.json"
+
+            return json.loads(
+                silver.get_blob_client(path).download_blob().readall()
+            ).get("review_submission_id")
+
+        except:
+            return None
+
+    pricing_id = get_meta("pricing")
+    product_id = get_meta("products")
+    asset_id   = get_meta("assets")
+
+    if not (pricing_id and product_id and asset_id):
+        raise Exception("❌ Missing workflow review IDs — cannot create snapshot")
+
+    # ----------------------------------------
+    # 4. BUILD SNAPSHOT
+    # ----------------------------------------
+    snapshot = {
+        "category_review_id": category_review_id,
+        "timestamp": datetime.utcnow().isoformat(),
+
+        "components": {
+            "pricing_review_id": pricing_id,
+            "product_review_id": product_id,
+            "asset_review_id": asset_id
+        },
+
+        "decisions": decisions
+    }
+
+    # 🔥 BUILD FINAL SNAPSHOT ID (READABLE + TRACEABLE)
+    snapshot_id = f"{pricing_id}|{product_id}|{asset_id}|{category_review_id}"
+
+    snapshot["snapshot_id"] = snapshot_id
+
+    # ----------------------------------------
+    # 5. SAVE
+    # ----------------------------------------
+    path = (
+        f"approved/logs/vendor={vendor}/category_review/"
+        f"{category_review_id}.json"
+    )
+
+    container.upload_blob(
+        path,
+        json.dumps(snapshot, indent=2),
+        overwrite=True
+    )
+
+    print(f"[CATEGORY SNAPSHOT] Saved → {category_review_id}")
+
+    return snapshot_id, category_review_id
 #------------------------
 # UPDATE HELPERS
 # -----------------------
@@ -2134,6 +2211,29 @@ def api_publish_gold():
     container = _container()   # force fresh client / avoid cached state
 
     success = publish_to_gold(container, vendor)
+
+    # 🔥 CREATE CATEGORY SNAPSHOT and also SNAPSHOT ID at the same time
+    snapshot_id, category_review_id = save_category_snapshot(container, vendor)
+
+    if success:
+        # 🔥 SAVE GOLD SNAPSHOT ID (for UI)
+        snapshot_id = f"{category_review_id}"
+
+        gold_meta_path = f"selected/unified_workflow/vendor={vendor}/_snapshot.json"
+
+        gold_container = _gold_container()
+
+        gold_container.upload_blob(
+            gold_meta_path,
+            json.dumps({
+                "snapshot_id": snapshot_id,
+                "category_review_id": category_review_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }, indent=2),
+            overwrite=True
+        )
+
+    print(f"[GOLD SNAPSHOT] Saved → {snapshot_id}")
 
     if success:
         clear_category_queue(container, vendor)
