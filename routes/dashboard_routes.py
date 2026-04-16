@@ -13,8 +13,12 @@ admin_bp = Blueprint("admin", __name__)
 AZURE_CONN_STR = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 SILVER_CONTAINER = os.getenv("SILVER_CONTAINER", "silver")
 
+
 blob_service = BlobServiceClient.from_connection_string(AZURE_CONN_STR)
 container = blob_service.get_container_client(SILVER_CONTAINER)
+
+BRONZE_CONTAINER = os.getenv("BRONZE_CONTAINER", "bronze")
+bronze_container = blob_service.get_container_client(BRONZE_CONTAINER)
 
 # =========================================================
 # UTILITIES
@@ -215,10 +219,12 @@ def get_admin_summary():
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        stage = request.args.get("stage", "post_pricing_review")
+        stage = request.args.get("stage", "in_review")
 
-        if stage not in ["in_review", "post_pricing_review"]:
+        if stage != "in_review":
             return jsonify({"error": "Invalid stage"}), 400
+
+        prefix = "in_review/"
 
         results = {}
 
@@ -381,8 +387,13 @@ def get_admin_submissions():
 
         def is_fresh(file_time, ref_time):
             return file_time and ref_time and file_time >= ref_time
+        
 
         for vendor, data in vendor_data.items():
+            
+            print(" TOTAL VENDORS:", len(vendor_data))
+            print(" VENDORS:", list(vendor_data.keys()))
+            print("\n🚀 ENTERING VENDOR:", vendor)
 
             workflows_result = {}
             latest_workflow_time = None
@@ -395,21 +406,19 @@ def get_admin_submissions():
             merge_time = global_data.get("merge")
         
             integrity_data = global_data.get("integrity")
-            # 🔥 GET GOLD TIME FROM GOLD CONTAINER
             gold_time = None
+            reset_time = None
             gold_path = f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
 
             try:
                 blob = gold_container.get_blob_client(gold_path)
                 gold_time = blob.get_blob_properties().last_modified
+                reset_time = gold_time
             except:
                 gold_time = None
             category_completion = global_data.get("category_completion")
             category_active = global_data.get("category_active", [])
 
-            # -----------------------------------------
-            # MERGE
-            # -----------------------------------------
             # -----------------------------------------
             # MERGE (FIXED)
             # -----------------------------------------
@@ -545,143 +554,165 @@ def get_admin_submissions():
                     category_completion = None
 
             # -----------------------------------------
-            # WORKFLOW STATES
+            # WORKFLOW STATES (FINAL CLEAN LOGIC)
             # -----------------------------------------
-            for wf, blobs in data["workflows"].items():
-                run_start_time = gold_time
+            # -----------------------------------------
+            # WORKFLOW STATES (NEW CLEAN LOGIC)
+            # -----------------------------------------
+            from datetime import datetime
 
-                filtered_blobs = blobs
-                if run_start_time:
-                    filtered_blobs = [
-                        b for b in blobs
-                        if b["last_modified"] >= run_start_time
-                    ]
-                wf_latest_time = None
-                if blobs:
-                    wf_latest_time = max(b["last_modified"] for b in blobs)
+            def _blob_exists(container, path):
+                try:
+                    container.get_blob_client(path).get_blob_properties()
+                    return True
+                except:
+                    return False
 
-                if not filtered_blobs:
-                    workflows_result[wf] = {"pre_review": "not_started", "review": "not_started"}
-                    continue
+            def _get_blob_time(container, path):
+                try:
+                    return container.get_blob_client(path).get_blob_properties().last_modified
+                except:
+                    return None
 
-                latest = max(filtered_blobs, key=lambda x: x["last_modified"])
-                latest_time = latest["last_modified"]
-
-                blob_names = [b["blob"] for b in filtered_blobs]
-
-                # PRE REVIEW
-                has_ingestion = any("raw/" in b for b in blob_names)
-                has_mapping = any("mapped/mapped.xlsx" in b or "_asset_manifest.json" in b for b in blob_names)
-                has_etl = any("etl_mapped.xlsx" in b or "transformed_assets.zip" in b for b in blob_names)
-
-                # PRE-REVIEW (STRICT — submission based only)
-
-                submission_type = latest.get("submission_type", "") or ""
-
-                is_pre_submission = (
-                    submission_type.endswith("_submission")
-                    or submission_type.startswith("delta_") and submission_type.endswith("_submission")
-                )
+            for wf in ["products", "pricing", "assets"]:
 
                 # -----------------------------------------
-                # PRE REVIEW (FIXED - independent)
+                # 1. GET LATEST SUBMISSION FROM RAW
                 # -----------------------------------------
+                submission_type_map = {
+                    "products": "product_submission",
+                    "pricing": "pricing_submission",
+                    "assets": "asset_submission"
+                }
 
-                # 🔥 Detect submission from FULL history
-                all_blob_names = [b["blob"] for b in blobs]
+                submission_type = submission_type_map[wf]
 
-                has_ingestion = any("raw/" in b for b in all_blob_names)
-                has_mapping = any("mapped/mapped.xlsx" in b or "_asset_manifest.json" in b for b in all_blob_names)
-                has_etl = any("etl_mapped.xlsx" in b or "transformed_assets.zip" in b for b in all_blob_names)
-
-                has_submission = any(
-                    "submission_type=" in b and "submission" in b
-                    for b in all_blob_names
+                prefix = (
+                    f"raw/vendor={vendor}/workflow={wf}/"
+                    f"submission_type={submission_type}/"
                 )
 
-                # 🔥 Detect processing (current run)
-                has_processing = any(
-                    "/mapped/" in b or
-                    "/canonical/" in b or
-                    "/autofix/" in b or
-                    "transformed_assets.zip" in b or
-                    "_asset_manifest.json" in b
-                    for b in blob_names  # filtered
-                )
+                latest_submission_id = None
+                submission_time = None
 
-                if has_ingestion and has_mapping and has_etl:
-                    pre_status = "success"
-                elif has_processing:
-                    pre_status = "in_progress"
-                elif has_submission:
-                    pre_status = "in_progress"
-                else:
-                    pre_status = "not_started"
+                seen = set()
+
+                found_any = False
+
+                for blob in bronze_container.list_blobs(name_starts_with=prefix):
+                    print("FOUND:", blob.name)
+                    found_any = True
+                    break
+
+                if not found_any:
+                    print("❌ NO BLOBS FOUND FOR:", prefix)
+
+                for blob in bronze_container.list_blobs(name_starts_with=prefix):
+                    parts = blob.name.split("/")
+
+                    for p in parts:
+                        if p.startswith("submission="):
+                            submission_id = p.replace("submission=", "")
+
+                            # avoid checking same submission multiple times
+                            if submission_id in seen:
+                                continue
+                            seen.add(submission_id)
+
+                            # pick latest by submission_id (timestamp string)
+                            if not latest_submission_id or submission_id > latest_submission_id:
+                                latest_submission_id = submission_id
+                                submission_time = blob.last_modified
+
+                            print("WF:", wf, "LATEST SUBMISSION:", latest_submission_id)
 
                 # -----------------------------------------
-                # REVIEW (FIXED)
+                # 2. PRE-REVIEW (SUBMISSION)
                 # -----------------------------------------
+                pre_status = "not_started"
 
-                submission_type = latest.get("submission_type", "") or ""
-                is_review = "review" in submission_type
+                if latest_submission_id:
+                    # Check if submission is after gold reset
+                    is_new = not reset_time or (submission_time and submission_time >= reset_time)
 
-                # 🔥 Detect processing phase (purple)
-                has_processing = any(
-                    "/mapped/" in b or
-                    "/canonical/" in b or
-                    "/autofix/" in b or
-                    "/analytics/" in b or
-                    "transformed_assets.zip" in b or
-                    "_asset_manifest.json" in b
-                    for b in blob_names
-                )
+                    if is_new:
 
-                if is_review:
+                        if wf == "products":
+                            ready_path = (
+                                f"ready/products_workflow/vendor={vendor}/"
+                                f"submission_type=product_submission/"
+                                f"submission={latest_submission_id}/review/etl_mapped.parquet"
+                            )
 
-                    if wf == "assets":
-                        approved_assets = global_data.get("approved_assets", [])
+                            if _blob_exists(container, ready_path):
+                                pre_status = "success"
+                            else:
+                                pre_status = "in_progress"
 
-                        has_assets_approved = any(
-                            b["last_modified"] >= latest_time
-                            for b in approved_assets
-                        )
+                        elif wf == "pricing":
+                            ready_path = (
+                                f"ready/pricing_workflow/vendor={vendor}/"
+                                f"submission_type=pricing_submission/"
+                                f"submission={latest_submission_id}/review/etl_mapped.parquet"
+                            )
 
-                        if has_assets_approved:
-                            review_status = "success"
-                        elif has_processing:
-                            review_status = "in_progress"
-                        else:
-                            review_status = "not_started"
+                            if _blob_exists(container, ready_path):
+                                pre_status = "success"
+                            else:
+                                pre_status = "in_progress"
 
-                    else:
-                        has_analytics = any(
-                            "analytics/vendor_scorecard" in b or
-                            "analytics/vendor_profiling" in b
-                            for b in blob_names
-                        )
+                        elif wf == "assets":
+                            # Check if ANY asset exists
+                            asset_prefix = (
+                                f"ready/assets_workflow/vendor={vendor}/"
+                                f"submission_type=asset_submission/"
+                                f"submission={latest_submission_id}/assets/"
+                            )
 
-                        if has_analytics:
-                            review_status = "success"
-                        elif has_processing:
-                            review_status = "in_progress"
-                        else:
-                            review_status = "not_started"
+                            has_assets = False
+                            for _ in container.list_blobs(name_starts_with=asset_prefix):
+                                has_assets = True
+                                break
 
-                else:
-                    # 🔥 IMPORTANT: Preserve previous review success
-                    previous_success = any(
-                        "analytics/vendor_scorecard" in b or
-                        "analytics/vendor_profiling" in b
-                        for b in blobs  # FULL history (not filtered)
+                            if has_assets:
+                                pre_status = "success"
+                            else:
+                                pre_status = "in_progress"
+
+                # -----------------------------------------
+                # 3. REVIEW (APPROVED)
+                # -----------------------------------------
+                review_status = "not_started"
+
+                if wf in ["products", "pricing"]:
+                    approved_path = (
+                        f"approved/{wf}_workflow/vendor={vendor}/{wf}_etl_mapped.parquet"
                     )
 
-                    review_status = "success" if previous_success else "not_started"
+                    approved_time = _get_blob_time(container, approved_path)
 
+                    if approved_time and (not reset_time or approved_time >= reset_time):
+                        review_status = "success"
+
+                elif wf == "assets":
+                    approved_prefix = f"approved/assets_workflow/vendor={vendor}/part_number="
+
+                    latest_asset_time = None
+
+                    for blob in container.list_blobs(name_starts_with=approved_prefix):
+                        if not latest_asset_time or blob.last_modified > latest_asset_time:
+                            latest_asset_time = blob.last_modified
+
+                    if latest_asset_time and (not reset_time or latest_asset_time >= reset_time):
+                        review_status = "success"
+
+                # -----------------------------------------
+                # FINAL ASSIGNMENT
+                # -----------------------------------------
                 workflows_result[wf] = {
                     "pre_review": pre_status,
                     "review": review_status
                 }
-
             # -----------------------------------------
             # FINAL STATE RESET AFTER GOLD
             # -----------------------------------------
