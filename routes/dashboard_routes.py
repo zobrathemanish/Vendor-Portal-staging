@@ -181,6 +181,47 @@ def build_pipeline_state_fast(vendor, submission_id, stage, blob_names):
 
     return pipeline
 
+ # -----------------------------------------
+# FINAL STATE RESET AFTER GOLD
+# -----------------------------------------
+def save_pipeline_history(container, vendor, workflows_result,
+                        merge_status, integrity_status,
+                          category_status, gold_status, gold_time):
+
+                history_path = f"approved/unified_workflow/vendor={vendor}/_history.json"
+
+                try:
+                    history = read_json(container, history_path)
+                except:
+                    history = []
+
+                # Avoid duplicate entries
+                if history and history[-1].get("timestamp") == str(gold_time):
+                    return
+
+                snapshot = {
+                    "timestamp": str(gold_time),
+
+                    # 🔥 FULL WORKFLOW STATE (this was missing)
+                    "workflows": workflows_result,
+
+                    # 🔥 GLOBAL STATE
+                    "global": {
+                        "merge": merge_status,
+                        "integrity": integrity_status,
+                        "category": category_status,
+                        "gold": gold_status
+                    }
+                }
+
+                history.append(snapshot)
+
+                container.upload_blob(
+                    history_path,
+                    json.dumps(history, indent=2),
+                    overwrite=True
+                )
+
 # =========================================================
 # ADMIN UI PAGE
 # =========================================================
@@ -680,10 +721,36 @@ def get_admin_submissions():
                                 pre_status = "in_progress"
 
                 # -----------------------------------------
-                # 3. REVIEW (APPROVED)
+                # 3. REVIEW (FULL STATE: RAW → APPROVED)
                 # -----------------------------------------
                 review_status = "not_started"
 
+                # -----------------------------------------
+                # 1. CHECK RAW (REVIEW STARTED → PURPLE)
+                # -----------------------------------------
+                review_submission_type_map = {
+                    "products": "product_review",
+                    "pricing": "pricing_review",
+                    "assets": "asset_review"
+                }
+
+                review_submission_type = review_submission_type_map[wf]
+
+                raw_prefix = (
+                    f"raw/vendor={vendor}/workflow={wf}/"
+                    f"submission_type={review_submission_type}/"
+                )
+
+                has_raw_review = False
+
+                for _ in bronze_container.list_blobs(name_starts_with=raw_prefix):
+                    has_raw_review = True
+                    break
+
+
+                # -----------------------------------------
+                # 2. CHECK APPROVED (REVIEW COMPLETE → GREEN)
+                # -----------------------------------------
                 if wf in ["products", "pricing"]:
                     approved_path = (
                         f"approved/{wf}_workflow/vendor={vendor}/{wf}_etl_mapped.parquet"
@@ -706,6 +773,13 @@ def get_admin_submissions():
                     if latest_asset_time and (not reset_time or latest_asset_time >= reset_time):
                         review_status = "success"
 
+
+                # -----------------------------------------
+                # 3. RAW EXISTS BUT NOT APPROVED → PURPLE
+                # -----------------------------------------
+                if review_status != "success" and has_raw_review:
+                    review_status = "in_progress"
+
                 # -----------------------------------------
                 # FINAL ASSIGNMENT
                 # -----------------------------------------
@@ -713,11 +787,22 @@ def get_admin_submissions():
                     "pre_review": pre_status,
                     "review": review_status
                 }
-            # -----------------------------------------
-            # FINAL STATE RESET AFTER GOLD
-            # -----------------------------------------
-
+           
             if gold_status == "success":
+
+                # 🔥 SAVE FULL SNAPSHOT FIRST
+                save_pipeline_history(
+                    container,
+                    vendor,
+                    workflows_result,
+                    merge_status,
+                    integrity_status,
+                    category_status,
+                    gold_status,
+                    gold_time
+                )
+
+                # 🔄 THEN RESET FOR NEXT RUN
                 workflows_result = {
                     "pricing": {"pre_review": "not_started", "review": "not_started"},
                     "products": {"pre_review": "not_started", "review": "not_started"},
@@ -753,8 +838,8 @@ def get_admin_submissions():
                     for h in history:
                         results.append({
                             "vendor": vendor,
-                            "workflows": {},
-                            "global": h["status"],
+                            "workflows": h.get("workflows", {}),
+                            "global": h.get("global", {}),
                             "is_history": True,
                             "timestamp": h["timestamp"]
                         })
