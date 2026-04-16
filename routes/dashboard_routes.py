@@ -583,34 +583,72 @@ def get_admin_submissions():
                     or submission_type.startswith("delta_") and submission_type.endswith("_submission")
                 )
 
-                if is_pre_submission:
-                    if has_ingestion and has_mapping and has_etl:
-                        pre_status = "success"
-                    else:
-                        pre_status = "in_progress"
+                # -----------------------------------------
+                # PRE REVIEW (FIXED - independent)
+                # -----------------------------------------
+
+                # 🔥 Detect submission from FULL history
+                all_blob_names = [b["blob"] for b in blobs]
+
+                has_ingestion = any("raw/" in b for b in all_blob_names)
+                has_mapping = any("mapped/mapped.xlsx" in b or "_asset_manifest.json" in b for b in all_blob_names)
+                has_etl = any("etl_mapped.xlsx" in b or "transformed_assets.zip" in b for b in all_blob_names)
+
+                has_submission = any(
+                    "submission_type=" in b and "submission" in b
+                    for b in all_blob_names
+                )
+
+                # 🔥 Detect processing (current run)
+                has_processing = any(
+                    "/mapped/" in b or
+                    "/canonical/" in b or
+                    "/autofix/" in b or
+                    "transformed_assets.zip" in b or
+                    "_asset_manifest.json" in b
+                    for b in blob_names  # filtered
+                )
+
+                if has_ingestion and has_mapping and has_etl:
+                    pre_status = "success"
+                elif has_processing:
+                    pre_status = "in_progress"
+                elif has_submission:
+                    pre_status = "in_progress"
                 else:
-                    # review run should NOT affect pre-review
                     pre_status = "not_started"
 
-                # REVIEW
-                if latest["submission_type"] and "review" in latest["submission_type"]:
+                # -----------------------------------------
+                # REVIEW (FIXED)
+                # -----------------------------------------
+
+                submission_type = latest.get("submission_type", "") or ""
+                is_review = "review" in submission_type
+
+                # 🔥 Detect processing phase (purple)
+                has_processing = any(
+                    "/mapped/" in b or
+                    "/canonical/" in b or
+                    "/autofix/" in b or
+                    "/analytics/" in b or
+                    "transformed_assets.zip" in b or
+                    "_asset_manifest.json" in b
+                    for b in blob_names
+                )
+
+                if is_review:
 
                     if wf == "assets":
                         approved_assets = global_data.get("approved_assets", [])
 
-                        has_assets_processing = any(
-                            "_asset_manifest.json" in b or "transformed_assets.zip" in b
-                            for b in blob_names
-                        )
-
                         has_assets_approved = any(
-                            is_fresh(b["last_modified"], latest_time)
+                            b["last_modified"] >= latest_time
                             for b in approved_assets
                         )
 
                         if has_assets_approved:
                             review_status = "success"
-                        elif has_assets_processing:
+                        elif has_processing:
                             review_status = "in_progress"
                         else:
                             review_status = "not_started"
@@ -621,10 +659,23 @@ def get_admin_submissions():
                             "analytics/vendor_profiling" in b
                             for b in blob_names
                         )
-                        review_status = "success" if has_analytics else "in_progress"
+
+                        if has_analytics:
+                            review_status = "success"
+                        elif has_processing:
+                            review_status = "in_progress"
+                        else:
+                            review_status = "not_started"
 
                 else:
-                    review_status = "not_started"
+                    # 🔥 IMPORTANT: Preserve previous review success
+                    previous_success = any(
+                        "analytics/vendor_scorecard" in b or
+                        "analytics/vendor_profiling" in b
+                        for b in blobs  # FULL history (not filtered)
+                    )
+
+                    review_status = "success" if previous_success else "not_started"
 
                 workflows_result[wf] = {
                     "pre_review": pre_status,
