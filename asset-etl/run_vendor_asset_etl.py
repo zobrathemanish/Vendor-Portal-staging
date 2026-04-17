@@ -318,6 +318,34 @@ def main():
     status["message"] = "Processing complete"
     status["finished_at"] = datetime.utcnow().isoformat()
 
+    # -----------------------------------------------------
+    # 🔥 TRIGGER PROFILING + SCORECARD (NEW)
+    # -----------------------------------------------------
+    try:
+        from data_ETL.vendor_profiling import run_vendor_profiling
+        from data_ETL.vendor_scorecard import run_vendor_scorecard
+
+        print("\n▶️ Triggering Asset Profiling + Scorecard")
+
+        run_vendor_profiling(
+            vendor=vendor,
+            submission_id=submission_id,
+            workflow="assets",
+            submission_type=submission_type,
+            local=False
+        )
+
+        run_vendor_scorecard(
+            vendor=vendor,
+            submission_id=submission_id,
+            workflow="assets",
+            submission_type=submission_type,
+            local=False
+        )
+
+    except Exception as e:
+        print(f"⚠️ Profiling/Scorecard failed: {e}")
+
     save_status(vendor, status, submission_id)
 
     print("\n====================================")

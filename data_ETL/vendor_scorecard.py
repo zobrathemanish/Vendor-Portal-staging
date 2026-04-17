@@ -168,6 +168,158 @@ def get_profile_path(vendor: str, workflow:str, submission_id: str, local: bool,
 
     return f"{base}/analytics/vendor_profiling/vendor_profile_{submission_id}.parquet"
 
+def build_unified_vendor_scorecard(vendor: str, local: bool = False):
+
+    print(f"\n▶️ Unified Vendor Scorecard | vendor={vendor}")
+
+    container = None if local else get_container()
+
+    workflows = ["products", "pricing", "assets"]
+
+    data = {}
+
+    # -------------------------------------------------
+    # LOAD APPROVED SCORECARDS
+    # -------------------------------------------------
+    for wf in workflows:
+
+        prefix = f"approved/{wf}_workflow/vendor={vendor}/analytics/vendor_scorecard/"
+
+        latest_blob = None
+        latest_submission = None
+
+        for blob in container.list_blobs(name_starts_with=prefix):
+            if not blob.name.endswith(".xlsx"):
+                continue
+
+            parts = blob.name.split("_")
+            submission = parts[-1].replace(".xlsx", "")
+
+            if not latest_submission or submission > latest_submission:
+                latest_submission = submission
+                latest_blob = blob.name
+
+        if not latest_blob:
+            print(f"⚠️ Missing scorecard for {wf}")
+            continue
+
+        print(f"✔ Loaded {wf} → {latest_blob}")
+
+        raw = container.get_blob_client(latest_blob).download_blob().readall()
+        df = pd.read_excel(BytesIO(raw))
+
+        data[wf] = df.iloc[0].to_dict()
+
+    if not data:
+        print("❌ No workflow scorecards found")
+        return
+
+    # -------------------------------------------------
+    # AGGREGATION LOGIC
+    # -------------------------------------------------
+    def get(metric, wf):
+        return data.get(wf, {}).get(metric, 0)
+    
+    system_resolved = (
+        get("autofix_resolved_issues", "products") +
+        get("autofix_resolved_issues", "pricing")
+    )
+
+    autofix_unresolved = (
+        get("autofix_unresolved_issues", "products") +
+        get("autofix_unresolved_issues", "pricing")
+    )
+
+    total_detected = (
+        get("autofix_detected_issues", "products") +
+        get("autofix_detected_issues", "pricing")
+    )
+
+    total_issues = total_detected
+
+    total_resolved = system_resolved
+
+    automation_score = (
+        (total_resolved / total_detected) * 100
+        if total_detected > 0 else 100
+    )
+
+    asset_missing_pct = get("asset_missing_pct", "assets")
+
+    asset_score = get("asset_score", "assets")
+
+
+    ops_candidates = [
+        data.get("products", {}).get("operations_score"),
+        data.get("pricing", {}).get("operations_score"),
+        data.get("assets", {}).get("operations_score"),
+    ]
+
+    ops_candidates = [x for x in ops_candidates if x is not None]
+
+    operations_score = min(ops_candidates) if ops_candidates else 100
+
+    unified = {
+        "vendor": vendor,
+
+        # Core metrics
+        "data_quality_score": get("data_quality_score", "products"),
+
+        "automation_score": automation_score,
+
+        "asset_score": asset_score,
+
+        "operations_score": operations_score,
+
+        # Issues
+        "total_issues": total_issues,
+        "system_resolved": system_resolved,
+        "autofix_unresolved": autofix_unresolved,
+
+        # Missingness
+        "missingness": get("row_missingness_avg_pct", "products"),
+
+        "asset_missing_pct": asset_missing_pct,
+    }
+
+    # -------------------------------------------------
+    # FINAL SCORE
+    # -------------------------------------------------
+    unified["overall_score"] = (
+        unified["data_quality_score"] * WEIGHTS["data_quality"]
+        + unified["automation_score"] * WEIGHTS["automation"]
+        + unified["asset_score"] * WEIGHTS["assets"]
+        + unified["operations_score"] * WEIGHTS["operations"]
+    )
+
+    unified["scorecard_generated_ts"] = datetime.utcnow().isoformat()
+
+    for k in [
+        "data_quality_score",
+        "automation_score",
+        "asset_score",
+        "operations_score",
+        "overall_score",
+        "missingness",
+        "asset_missing_pct",
+    ]:
+        if k in unified and unified[k] is not None:
+            unified[k] = round(unified[k], 2)
+
+    df_out = pd.DataFrame([unified])
+
+    # -------------------------------------------------
+    # SAVE
+    # -------------------------------------------------
+    out_path = f"approved/unified_analytics/vendor={vendor}/vendor_scorecard.xlsx"
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df_out.to_excel(writer, index=False)
+
+    container.upload_blob(out_path, buf.getvalue(), overwrite=True)
+
+    print(f"✅ Unified scorecard saved → {out_path}")
 
 # =========================================================
 # SCORING FUNCTIONS
@@ -330,6 +482,36 @@ def run_vendor_scorecard(
 
     write_outputs(container, vendor, workflow, submission_id, df, local, ctx)
 
+    # =========================================================
+    # 🔥 PROMOTE ANALYTICS TO APPROVED (CORRECT PLACE)
+    # =========================================================
+
+    if not local:
+        print(f"[APPROVED] Promoting analytics (post-scorecard) | {vendor} | {workflow}")
+
+        base_in = submission_base_path(vendor, workflow, submission_id, local, ctx)
+
+        src_prefix = f"{base_in}/analytics/"
+        dst_prefix = f"approved/{workflow}_workflow/vendor={vendor}/analytics/"
+
+        blobs = list(container.list_blobs(name_starts_with=src_prefix))
+
+        print(f"DEBUG: Found {len(blobs)} analytics blobs")
+
+        for blob in blobs:
+            src_path = blob.name
+            relative = src_path.split("/analytics/")[1]
+            dst_path = f"{dst_prefix}{relative}"
+
+            try:
+                data = container.get_blob_client(src_path).download_blob().readall()
+                container.upload_blob(dst_path, data, overwrite=True)
+
+                print(f"✅ Promoted: {dst_path}")
+
+            except Exception as e:
+                print(f"⚠️ Failed: {src_path} | {e}")
+
     print(f"✅ Vendor scorecard generated | vendor={vendor} | submission={submission_id}")
 
     # -------------------------------------------------
@@ -346,6 +528,13 @@ def run_vendor_scorecard(
                 scorecard_df=df,
             )
             print(f"📊 Admin summary updated | vendor={vendor}")
+            # -------------------------------------------------
+            # 🔥 BUILD UNIFIED DASHBOARD METRICS (CORRECT PLACE)
+            # -------------------------------------------------
+            try:
+                build_unified_vendor_scorecard(vendor, local)
+            except Exception as e:
+                print(f"⚠️ Unified aggregation skipped: {e}")
         else:
             print(f"⏭ Admin not updated (blocking issues present) | vendor={vendor}")
 
@@ -371,8 +560,7 @@ def main():
         workflow=args.workflow,
         submission_id=args.submission_id,
         submission_type=args.submission_type,
-        local=args.local,
-       
+        local=args.local,  
     )
 
 if __name__ == "__main__":

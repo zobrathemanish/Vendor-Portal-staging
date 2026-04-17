@@ -102,6 +102,11 @@ COLUMN_ORDER = [
     # Metadata
     "profiling_generated_ts",
 ]
+#loading media canonical
+def load_media_canonical(container, submission_path):
+    path = f"{submission_path}/canonical/media_canonical.parquet"
+    raw = container.get_blob_client(path).download_blob().readall()
+    return pd.read_parquet(BytesIO(raw))
 
 # =========================================================
 # PIPELINE CONTEXT (NEW)
@@ -534,7 +539,24 @@ def load_media_canonical(submission_path, container, local):
 
     by_entity = images.groupby("_entity_id")["media_type"].apply(set)
 
-    total_products = by_entity.shape[0]
+    # TOTAL PRODUCTS should come from canonical universe (not images only)
+    total_products = df2["_entity_id"].nunique()
+
+    # group only images
+    images = df2[df2["media_category"] == "image"]
+    by_entity = images.groupby("_entity_id")["media_type"].apply(set)
+
+    with_any_image = sum(
+        ("P01" in reps) or ("P04" in reps)
+        for reps in by_entity
+    )
+
+    with_both = sum(
+        ("P01" in reps) and ("P04" in reps)
+        for reps in by_entity
+    )
+
+    missing_all = total_products - with_any_image
 
     with_any_image = sum(
         ("P01" in reps) or ("P04" in reps)
@@ -550,7 +572,7 @@ def load_media_canonical(submission_path, container, local):
         "media_products_total": total_products,
         "media_products_with_any_image": with_any_image,
         "media_products_with_both_images": with_both,
-        "media_products_missing_all_images": total_products - with_any_image,
+        "media_products_missing_all_images": missing_all,
         "media_compliance_pct": round(
             100 * with_any_image / total_products, 2
         ) if total_products > 0 else 0.0,

@@ -277,6 +277,7 @@ def get_admin_summary():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 def read_json(container, path):
     import json
     blob_client = container.get_blob_client(path)

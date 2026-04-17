@@ -452,6 +452,47 @@ def save_approved_meta(container, vendor, workflow, submission_id):
 
     print(f"[META] {workflow} review_submission_id saved → {submission_id}")
 
+# def promote_workflow_analytics(container, vendor, workflow, submission_type, submission_id, local):
+#     analytics_files = [
+#         (
+#             f"in_review/{workflow}_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/analytics/vendor_scorecard/vendor_scorecard_{submission_id}.parquet",
+#             f"approved/{workflow}_workflow/vendor={vendor}/analytics/vendor_scorecard/vendor_scorecard_{submission_id}.parquet",
+#         ),
+#         (
+#             f"in_review/{workflow}_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/analytics/vendor_scorecard/vendor_scorecard_{submission_id}.xlsx",
+#             f"approved/{workflow}_workflow/vendor={vendor}/analytics/vendor_scorecard/vendor_scorecard_{submission_id}.xlsx",
+#         ),
+#         (
+#             f"in_review/{workflow}_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/analytics/vendor_profiling/vendor_profile_{submission_id}.parquet",
+#             f"approved/{workflow}_workflow/vendor={vendor}/analytics/vendor_profiling/vendor_profile_{submission_id}.parquet",
+#         ),
+#         (
+#             f"in_review/{workflow}_workflow/vendor={vendor}/submission_type={submission_type}/submission={submission_id}/analytics/vendor_profiling/vendor_profile_{submission_id}.xlsx",
+#             f"approved/{workflow}_workflow/vendor={vendor}/analytics/vendor_profiling/vendor_profile_{submission_id}.xlsx",
+#         ),
+#     ]
+
+#     print(f"[APPROVED] Promoting analytics files → workflow={workflow} submission={submission_id}")
+
+#     for src_path, dst_path in analytics_files:
+#         try:
+#             if local:
+#                 src_full = os.path.join(PROJECT_ROOT, "silver", src_path)
+#                 if not os.path.exists(src_full):
+#                     print(f"⚠️ Missing local analytics file: {src_full}")
+#                     continue
+#                 with open(src_full, "rb") as f:
+#                     data = f.read()
+#                 write_local(os.path.join(PROJECT_ROOT, "silver", dst_path), data)
+#             else:
+#                 data = download_blob(container, src_path)
+#                 upload_blob(container, dst_path, data)
+
+#             print(f"✅ Promoted analytics: {dst_path}")
+
+#         except Exception as e:
+#             print(f"⚠️ Failed analytics promote: {src_path} | {e}")
+
 # =========================================================
 # CATEGORY QUEUE (UNIFIED PRODUCT + PRICING)
 # =========================================================
@@ -1407,7 +1448,17 @@ def build_etl_mapped_for_vendor(container, vendor, submission_type, submission_i
 
         # 🔥 SAVE REVIEW SUBMISSION ID (LINEAGE)
         save_approved_meta(approved_container, vendor, workflow, submission_id)
-        
+
+        # # 🔥 PROMOTE ANALYTICS
+        # promote_workflow_analytics(
+        #     container=approved_container,
+        #     vendor=vendor,
+        #     workflow=workflow,
+        #     submission_type=submission_type,
+        #     submission_id=submission_id,
+        #     local=local,
+        # )
+
         # -------------------------------------------------
         # REBUILD UNIFIED CATEGORY QUEUE FROM APPROVED DELTAS
         # -------------------------------------------------
