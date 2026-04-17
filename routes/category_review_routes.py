@@ -10,6 +10,7 @@ from flask import Blueprint, request, render_template, current_app, jsonify, abo
 from azure.storage.blob import BlobServiceClient
 from flask_login import login_required, current_user
 import numpy as np
+from utils.pipeline_state_helper import compute_vendor_pipeline_state, get_gold_container
 
 """
 INSERT
@@ -2183,6 +2184,58 @@ def clear_category_queue(container, vendor: str):
     except ResourceNotFoundError:
         print("[QUEUE] Decisions already empty")
 
+# -----------------------------------------
+# FINAL STATE RESET AFTER GOLD
+# -----------------------------------------
+def save_pipeline_history(
+    container,
+    vendor,
+    state,
+    snapshot_id,
+    category_review_id
+):
+    import json
+    from datetime import datetime
+
+    history_path = f"approved/unified_workflow/vendor={vendor}/_history.json"
+
+    try:
+        history = read_json(container, history_path)
+    except:
+        history = []
+
+    if history and history[-1].get("snapshot_id") == snapshot_id:
+        return
+
+    ids = dict(state.get("ids", {}))
+    ids["category_review_id"] = category_review_id
+
+    display = dict(state.get("display", {}))
+    display["category"] = category_review_id[-6:] if category_review_id else None
+
+    snapshot = {
+        "snapshot_id": snapshot_id,
+        "display": display,
+        "timestamp": datetime.utcnow().isoformat(),
+        "ids": ids,
+        "workflows": state.get("workflows", {}),
+        "global": state.get("global", {})
+    }
+
+    history.append(snapshot)
+
+    container.upload_blob(
+        history_path,
+        json.dumps(history, indent=2),
+        overwrite=True
+    )
+
+def read_json(container, path):
+    import json
+    blob_client = container.get_blob_client(path)
+    data = blob_client.download_blob().readall()
+    return json.loads(data)
+
 @category_review_bp.route("/api/category-review/publish-gold", methods=["POST"])
 @login_required
 def api_publish_gold():
@@ -2198,29 +2251,91 @@ def api_publish_gold():
 
     container = _container()
 
-    # -----------------------------------------------------
-    # Resolve workflow FROM QUEUE (authoritative)
-    # -----------------------------------------------------
     print("🧠 Publishing from APPROVED (no delta dependency)")
+    print("🔥 Preparing snapshot BEFORE gold publish")
 
-    success = True
-
-    print("🔥 Publishing approved → gold (decision filtered)")
-
-    # 🔥 ADD THIS LINE
-    container = _container()   # force fresh client / avoid cached state
-
-    success = publish_to_gold(container, vendor)
-
-    # 🔥 CREATE CATEGORY SNAPSHOT and also SNAPSHOT ID at the same time
+    # -----------------------------------------------------
+    # 🔥 1. CREATE CATEGORY SNAPSHOT (SOURCE OF TRUTH)
+    # -----------------------------------------------------
     snapshot_id, category_review_id = save_category_snapshot(container, vendor)
 
+    # -----------------------------------------------------
+    # 🔥 2. LOAD SNAPSHOT DETAILS (for lineage)
+    # -----------------------------------------------------
+    product_id = None
+    pricing_id = None
+    asset_id = None
+
+    category_path = (
+        f"approved/logs/vendor={vendor}/category_review/"
+        f"{category_review_id}.json"
+    )
+
+    try:
+        full_snapshot = read_json(container, category_path)
+
+        product_id = full_snapshot.get("components", {}).get("product_review_id")
+        pricing_id = full_snapshot.get("components", {}).get("pricing_review_id")
+        asset_id   = full_snapshot.get("components", {}).get("asset_review_id")
+
+    except Exception as e:
+        print("⚠️ Failed to load category snapshot:", e)
+
+
+    # -----------------------------------------------------
+    # 🔥 3. COMPUTE TRUE CURRENT PIPELINE STATE BEFORE GOLD
+    # -----------------------------------------------------
+    gold_container = get_gold_container(current_app.config["AZURE_CONNECTION_STRING"])
+
+    state = compute_vendor_pipeline_state(
+        vendor=vendor,
+        silver_container=container,
+        bronze_container=_svc().get_container_client("bronze"),
+        gold_container=gold_container
+    )
+
+    # make sure lineage ids are populated from snapshot if helper meta is missing
+    if not state["ids"].get("product_review_id"):
+        state["ids"]["product_review_id"] = product_id
+        state["display"]["products"] = product_id[-6:] if product_id else None
+
+    if not state["ids"].get("pricing_review_id"):
+        state["ids"]["pricing_review_id"] = pricing_id
+        state["display"]["pricing"] = pricing_id[-6:] if pricing_id else None
+
+    if not state["ids"].get("asset_review_id"):
+        state["ids"]["asset_review_id"] = asset_id
+        state["display"]["assets"] = asset_id[-6:] if asset_id else None
+
+    # category review being created now should be the one saved to history
+    state["ids"]["category_review_id"] = category_review_id
+    state["display"]["category"] = category_review_id[-6:] if category_review_id else None
+
+    # -----------------------------------------------------
+    # 🔥 4. SAVE PIPELINE HISTORY (TRUE PRE-PUBLISH SNAPSHOT)
+    # -----------------------------------------------------
+    save_pipeline_history(
+        container=container,
+        vendor=vendor,
+        state=state,
+        snapshot_id=snapshot_id,
+        category_review_id=category_review_id
+    )
+
+    print(f"[HISTORY] Saved snapshot → {snapshot_id}")
+
+    # -----------------------------------------------------
+    # 🔥 5. NOW PUBLISH TO GOLD
+    # -----------------------------------------------------
+    print("🔥 Publishing approved → gold (decision filtered)")
+    container = _container()  # fresh client
+    success = publish_to_gold(container, vendor)
+
+    # -----------------------------------------------------
+    # 🔥 6. SAVE GOLD SNAPSHOT (FOR UI / SOURCE OF TRUTH)
+    # -----------------------------------------------------
     if success:
-        # 🔥 SAVE GOLD SNAPSHOT ID (for UI)
-        snapshot_id = f"{category_review_id}"
-
         gold_meta_path = f"selected/unified_workflow/vendor={vendor}/_snapshot.json"
-
         gold_container = _gold_container()
 
         gold_container.upload_blob(
@@ -2233,9 +2348,11 @@ def api_publish_gold():
             overwrite=True
         )
 
-    print(f"[GOLD SNAPSHOT] Saved → {snapshot_id}")
+        print(f"[GOLD SNAPSHOT] Saved → {snapshot_id}")
 
-    if success:
+        # -------------------------------------------------
+        # 🔄 CLEAR CATEGORY QUEUE
+        # -------------------------------------------------
         clear_category_queue(container, vendor)
 
     return jsonify({
