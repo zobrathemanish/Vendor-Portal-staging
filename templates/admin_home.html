@@ -278,7 +278,7 @@
                             <th>Assets (25%)</th>
                             <th>Operations (15%)</th>
                             <th>Missingness / Product</th>
-                            <th>Asset Missing %</th>
+                            <th>Asset Missing SKU %</th>
                             <th>System Resolved</th>
                             <th>Autofix Unresolved</th>
                             <th>Total Issues</th>
@@ -521,43 +521,6 @@ function getScoreBadge(score) {
   return `<span class="badge bg-danger">${s}%</span>`;
 }
 
-
-function buildKPIs(data) {
-  const container = document.getElementById("kpiStrip");
-  if (!container) return;
-
-  const totalVendors = data.length;
-
-  const avgOverall = avg(data.map(d => d.overall_score));
-  const avgDQ = avg(data.map(d => d.data_quality_score));
-  const avgMissingness = avg(data.map(d => d.row_missingness_avg_pct));
-  const totalIssues = sum(data.map(d => d.health_issue_count));
-  const totalAutofixDetected = sum(data.map(d => d.autofix_detected_issues));
-
-  const kpis = [
-    { label: "Vendors", value: totalVendors },
-    { label: "Avg Overall", value: pct(avgOverall) },
-    { label: "Avg Data Quality", value: pct(avgDQ) },
-    { label: "Avg Missingness", value: pct(avgMissingness) },
-    { label: "Total Issues", value: num(totalIssues) },
-    { label: "Autofix Detected", value: num(totalAutofixDetected) },
-  ];
-
-  container.innerHTML = "";
-  kpis.forEach(kpi => {
-    container.innerHTML += `
-      <div class="col-md">
-        <div class="card text-center shadow-sm">
-          <div class="card-body">
-            <h6>${escapeHtml(kpi.label)}</h6>
-            <h3>${escapeHtml(kpi.value)}</h3>
-          </div>
-        </div>
-      </div>`;
-  });
-}
-
-
 function buildChart(data) {
   const canvas = document.getElementById("scoreChart");
   if (!canvas) return;
@@ -600,7 +563,7 @@ function num(v) {
 function pickLastUpdated(row) {
   // Prefer scorecard ts, else profiling ts, else "-"
   const ts = row.scorecard_generated_ts || row.profiling_generated_ts;
-  return ts ? new Date(ts).toLocaleString() : "-";
+  return ts ? fmtDate(ts) : "-";
 }
 
 function buildKPIs(data) {
@@ -612,9 +575,9 @@ function buildKPIs(data) {
   // IMPORTANT: match API keys
   const avgOverall = avg(data.map(d => d.overall_score));
   const avgDQ = avg(data.map(d => d.data_quality_score));
-  const avgMissingness = avg(data.map(d => d.row_missingness_avg_pct)); // already a %
-  const totalIssues = sum(data.map(d => d.health_issue_count));
-  const totalAutofixDetected = sum(data.map(d => d.autofix_detected_issues));
+  const avgMissingness = avg(data.map(d => d.missingness));
+  const totalIssues = sum(data.map(d => d.total_issues));
+  const totalResolved = sum(data.map(d => d.system_resolved));
 
   const kpis = [
     { label: "Vendors", value: totalVendors },
@@ -622,7 +585,7 @@ function buildKPIs(data) {
     { label: "Avg Data Quality", value: pct(avgDQ) },
     { label: "Avg Missingness", value: pct(avgMissingness) },
     { label: "Total Issues", value: num(totalIssues) },
-    { label: "Autofix Detected", value: num(totalAutofixDetected) },
+    { label: "Resolved", value: num(totalResolved) },
   ];
 
   container.innerHTML = "";
@@ -656,12 +619,12 @@ function buildTable(data) {
     const assetScore = pct(v.asset_score, 2);
     const operations = pct(v.operations_score, 2);
 
-    const missingness = pct(v.row_missingness_avg_pct, 2);
+    const missingness = pct(v.missingness, 2);
     const assetMissing = pct(v.asset_missing_pct, 2);
 
-    const resolved = num(v.autofix_resolved_issues);
-    const unresolved = num(v.autofix_unresolved_issues);
-    const totalIssues = num(v.health_issue_count);
+    const resolved = num(v.system_resolved);
+    const unresolved = num(v.autofix_unresolved);
+    const totalIssues = num(v.total_issues);
 
     const lastUpdated = pickLastUpdated(v);
 

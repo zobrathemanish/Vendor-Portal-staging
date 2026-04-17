@@ -225,53 +225,33 @@ def get_admin_summary():
         if stage != "in_review":
             return jsonify({"error": "Invalid stage"}), 400
 
-        prefix = "in_review/"
-
+        prefix = "approved/unified_analytics/"
         results = {}
 
-        prefix = f"{stage}/"
-
         for blob in container.list_blobs(name_starts_with=prefix):
+
+            if not blob.name.endswith("vendor_scorecard.xlsx"):
+                continue
+
             parts = blob.name.split("/")
-
-            # NEW STRUCTURE:
-            # in_review/{workflow}_workflow/vendor=X/submission_type=Y/submission=Z/analytics/...
-
-            if len(parts) < 7:
-                continue
-
-            workflow_part = parts[1]               # product_workflow
-            vendor_part = parts[2]                # vendor=...
-            submission_type_part = parts[3]       # submission_type=...
-            submission_part = parts[4]            # submission=...
-
-            if not vendor_part.startswith("vendor="):
-                continue
-            if not submission_part.startswith("submission="):
+            vendor_part = next((p for p in parts if p.startswith("vendor=")), None)
+            if not vendor_part:
                 continue
 
             vendor = vendor_part.replace("vendor=", "")
-            submission_id = submission_part.replace("submission=", "")
-            workflow = workflow_part.replace("_workflow","")
-            submission_type = submission_type_part.replace("submission_type=", "")
 
-            # Only load SCORECARD (contains all summary metrics)
-            if "vendor_scorecard" in blob.name and blob.name.endswith(".xlsx"):
-                blob_client = container.get_blob_client(blob.name)
-                raw = blob_client.download_blob().readall()
+            blob_client = container.get_blob_client(blob.name)
+            raw = blob_client.download_blob().readall()
 
-                df = pd.read_excel(BytesIO(raw))
-                df = df.where(pd.notnull(df), None)
+            df = pd.read_excel(BytesIO(raw))
+            df = df.where(pd.notnull(df), None)
 
-                # Keep latest submission per vendor
-                if vendor not in results or submission_id > results[vendor]["submission_id"]:
-                    record = df.to_dict(orient="records")[0]
-                    record["vendor"] = vendor
-                    record["submission_id"] = submission_id
-                    record["stage"] = stage
-                    record["workflow"] = workflow
-                    record["submission_type"] = submission_type
-                    results[vendor] = record
+            record = df.to_dict(orient="records")[0]
+
+            # 🔥 normalize keys for UI
+            record["vendor"] = vendor
+
+            results[vendor] = record
 
         return jsonify(list(results.values()))
 
