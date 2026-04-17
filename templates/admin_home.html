@@ -204,6 +204,8 @@
   color: #FFF;
 }
 
+.card.history { opacity: 0.85; }
+
   </style>
 </head>
 
@@ -372,6 +374,28 @@ setInterval(updateSystemTime, 1000);
 /* =========================
    HELPERS
 ========================= */
+
+function fmtDate(ts) {
+  if (!ts) return "";
+
+  // handle old timestamps without timezone
+  if (!ts.includes("Z") && !ts.includes("+")) {
+    ts = ts + "Z";
+  }
+
+  const d = new Date(ts);
+
+  return d.toLocaleString("en-US", {
+    timeZone: "America/Winnipeg",
+    year: "numeric",        
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  });
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -802,40 +826,49 @@ function renderCards() {
     )
     .forEach(sub => {
       const col = document.createElement("div");
-      col.className = "col-md-6 col-lg-4";
+            col.className = "col-md-6 col-lg-4";
 
-      col.innerHTML = `
-        <div class="card shadow-sm h-100">
-          <div class="card-body">
+            const cardClass = sub.is_history
+              ? "card shadow-sm h-100 history"
+              : "card shadow-sm h-100";
 
-            <div class="d-flex justify-content-between align-items-start mb-2">
-              <h6 class="mb-0">${escapeHtml(sub.vendor)}</h6>
-            </div>
+            col.innerHTML = `
+              <div class="${cardClass}">
+                <div class="card-body">
 
-            <!-- PRE REVIEW -->
-            <div class="mb-2">
-              ${Object.entries(sub.workflows).map(([wf, data]) => 
-                renderBadge(`${capitalize(wf)} Pre`, data.pre_review)
-              ).join(" ")}
-            </div>
+                  <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h6 class="mb-0">
+                      ${escapeHtml(sub.vendor)}
+                      ${sub.is_history ? `
+                        <small class="text-muted ms-2 fw-normal">
+                          ${escapeHtml((sub.snapshot_id || "").slice(-6))}
+                          • ${escapeHtml(fmtDate(sub.timestamp))}
+                        </small>
+                      ` : ""}
+                    </h6>
+                  </div>
 
-            <!-- REVIEW -->
-            <div class="mb-2">
-              ${Object.entries(sub.workflows).map(([wf, data]) => 
-                renderBadge(`${capitalize(wf)} Review`, data.review)
-              ).join(" ")}
-            </div>
+                  <div class="mb-2">
+                    ${Object.entries(sub.workflows).map(([wf, data]) =>
+                      renderBadge(`${capitalize(wf)} Pre`, data.pre_review)
+                    ).join(" ")}
+                  </div>
 
-            <!-- GLOBAL PIPELINE -->
-            <div class="mt-2 pt-2 border-top">
-              ${renderBadge("Merge", sub.global.merge)}
-              ${renderBadge("Integrity", sub.global.integrity)}
-              ${renderBadge("Category", sub.global.category)}
-              ${renderBadge("Gold", sub.global.gold)}
-            </div>
+                  <div class="mb-2">
+                    ${Object.entries(sub.workflows).map(([wf, data]) =>
+                      renderBadge(`${capitalize(wf)} Review`, data.review)
+                    ).join(" ")}
+                  </div>
 
-          </div>
-        </div>
+                  <div class="mt-2 pt-2 border-top">
+                    ${renderBadge("Merge", sub.global.merge)}
+                    ${renderBadge("Integrity", sub.global.integrity)}
+                    ${renderBadge("Category", sub.global.category)}
+                    ${renderBadge("Gold", sub.global.gold)}
+                  </div>
+
+                </div>
+              </div>
       `;
 
       container.appendChild(col);

@@ -2222,6 +2222,16 @@ def save_pipeline_history(
         "global": state.get("global", {})
     }
 
+    snapshot_file_path = (
+        f"approved/unified_workflow/vendor={vendor}/history/{snapshot_id}.json"
+    )
+
+    container.upload_blob(
+        snapshot_file_path,
+        json.dumps(snapshot, indent=2),
+        overwrite=True
+    )
+
     history.append(snapshot)
 
     container.upload_blob(

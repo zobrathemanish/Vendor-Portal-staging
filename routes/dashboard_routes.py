@@ -182,47 +182,6 @@ def build_pipeline_state_fast(vendor, submission_id, stage, blob_names):
 
     return pipeline
 
- # -----------------------------------------
-# FINAL STATE RESET AFTER GOLD
-# -----------------------------------------
-def save_pipeline_history(container, vendor, workflows_result,
-                        merge_status, integrity_status,
-                          category_status, gold_status, gold_time):
-
-                history_path = f"approved/unified_workflow/vendor={vendor}/_history.json"
-
-                try:
-                    history = read_json(container, history_path)
-                except:
-                    history = []
-
-                # Avoid duplicate entries
-                if history and history[-1].get("timestamp") == str(gold_time):
-                    return
-
-                snapshot = {
-                    "timestamp": str(gold_time),
-
-                    # 🔥 FULL WORKFLOW STATE (this was missing)
-                    "workflows": workflows_result,
-
-                    # 🔥 GLOBAL STATE
-                    "global": {
-                        "merge": merge_status,
-                        "integrity": integrity_status,
-                        "category": category_status,
-                        "gold": gold_status
-                    }
-                }
-
-                history.append(snapshot)
-
-                container.upload_blob(
-                    history_path,
-                    json.dumps(history, indent=2),
-                    overwrite=True
-                )
-
 # =========================================================
 # ADMIN UI PAGE
 # =========================================================
@@ -400,7 +359,8 @@ def get_admin_submissions():
                             "workflows": h.get("workflows", {}),
                             "global": h.get("global", {}),
                             "is_history": True,
-                            "timestamp": h.get("timestamp")
+                            "timestamp": h.get("timestamp"),
+                            "snapshot_id": h.get("snapshot_id"),
                         })
                 except:
                     pass
