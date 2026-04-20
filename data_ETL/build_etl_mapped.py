@@ -302,6 +302,8 @@ def normalize_df(df):
 
     return df
 
+from collections import defaultdict
+
 def compute_delta(curr, base, is_delta_review=None, is_delta=None):
 
     if is_delta is not None:
@@ -336,7 +338,7 @@ def compute_delta(curr, base, is_delta_review=None, is_delta=None):
     base = base[all_cols]
 
     # -----------------------------
-    # HASHES (for before/after)
+    # HASHES
     # -----------------------------
     hash_cols = get_hash_columns(curr)
 
@@ -344,7 +346,7 @@ def compute_delta(curr, base, is_delta_review=None, is_delta=None):
     base["_hash"] = base.apply(lambda r: hash_row(r, hash_cols), axis=1)
 
     # -----------------------------
-    # 🔥 BUSINESS KEY FUNCTION
+    # KEY FUNCTION
     # -----------------------------
     def build_key(row):
         section = row.get("__Section")
@@ -364,50 +366,78 @@ def compute_delta(curr, base, is_delta_review=None, is_delta=None):
         return tuple(str(row.get(k)).strip() for k in keys)
 
     # -----------------------------
-    # BUILD MAPS
+    # BUILD MAPS (LIST-BASED)
     # -----------------------------
-    curr_map = {build_key(r): r for _, r in curr.iterrows()}
-    base_map = {build_key(r): r for _, r in base.iterrows()}
+    curr_map = defaultdict(list)
+    for _, r in curr.iterrows():
+        curr_map[build_key(r)].append(r)
 
-    all_keys = set(curr_map) | set(base_map)
+    base_map = defaultdict(list)
+    for _, r in base.iterrows():
+        base_map[build_key(r)].append(r)
+
+    all_keys = set(curr_map.keys()) | set(base_map.keys())
 
     rows = []
 
+    # -----------------------------
+    # MAIN LOOP
+    # -----------------------------
     for k in all_keys:
-        c = curr_map.get(k)
-        b = base_map.get(k)
+        c_list = curr_map.get(k, [])
+        b_list = base_map.get(k, [])
 
         # -------------------------
-        # INSERT
+        # INSERT (new key)
         # -------------------------
-        if c is not None and b is None:
-            row = c.copy()
-            row["_delta_type"] = "insert"
-            row["_row_hash_after"] = c["_hash"]
-            row["_row_hash_before"] = None
-            rows.append(row)
-
-        # -------------------------
-        # DELETE
-        # -------------------------
-        elif b is not None and c is None:
-            row = b.copy()
-            row["_delta_type"] = "delete"
-            row["_row_hash_before"] = b["_hash"]
-            row["_row_hash_after"] = None
-            rows.append(row)
-
-        # -------------------------
-        # UPDATE
-        # -------------------------
-        elif b is not None and c is not None:
-
-            if c["_hash"] != b["_hash"]:
+        if c_list and not b_list:
+            for c in c_list:
                 row = c.copy()
-                row["_delta_type"] = "update"
-                row["_row_hash_before"] = b["_hash"]
+                row["_delta_type"] = "insert"
                 row["_row_hash_after"] = c["_hash"]
+                row["_row_hash_before"] = None
                 rows.append(row)
+
+        # -------------------------
+        # DELETE (missing key)
+        # -------------------------
+        elif b_list and not c_list:
+            for b in b_list:
+                row = b.copy()
+                row["_delta_type"] = "delete"
+                row["_row_hash_before"] = b["_hash"]
+                row["_row_hash_after"] = None
+                rows.append(row)
+
+        # -------------------------
+        # MATCHED KEY → compare rows
+        # -------------------------
+        elif b_list and c_list:
+
+            b_hashes = {b["_hash"] for b in b_list}
+            c_hashes = {c["_hash"] for c in c_list}
+
+            # ---------------------
+            # INSERTS (new rows)
+            # ---------------------
+            for c in c_list:
+                if c["_hash"] not in b_hashes:
+                    row = c.copy()
+                    row["_delta_type"] = "insert"
+                    row["_row_hash_after"] = c["_hash"]
+                    row["_row_hash_before"] = None
+                    rows.append(row)
+
+            # ---------------------
+            # DELETES (removed rows)
+            # ---------------------
+            for b in b_list:
+                if b["_hash"] not in c_hashes:
+                    row = b.copy()
+                    row["_delta_type"] = "delete"
+                    row["_row_hash_before"] = b["_hash"]
+                    row["_row_hash_after"] = None
+                    rows.append(row)
 
     if not rows:
         return pd.DataFrame()
@@ -757,6 +787,14 @@ def build_unified_category_queue(container, vendor, local):
         f"category_queue/vendor={vendor}/active/delta_mapped.parquet"
     )
 
+    approved_unified_delta_xlsx = (
+        approved_unified_delta_path.replace("unified_delta.parquet", "unified_delta.xlsx")
+    )
+
+    category_queue_xlsx = (
+        category_queue_path.replace("delta_mapped.parquet", "delta_mapped.xlsx")
+    )
+
     if local:
         os.makedirs(os.path.dirname(approved_unified_delta_path), exist_ok=True)
         os.makedirs(os.path.dirname(category_queue_path), exist_ok=True)
@@ -764,9 +802,29 @@ def build_unified_category_queue(container, vendor, local):
         unified_delta.to_parquet(approved_unified_delta_path, index=False)
         unified_delta.to_parquet(category_queue_path, index=False)
 
+        # Save Excel
+        unified_delta.to_excel(approved_unified_delta_xlsx, index=False)
+        unified_delta.to_excel(category_queue_xlsx, index=False)
+
     else:
+        # Parquet
         upload_parquet(container, approved_unified_delta_path, unified_delta)
         upload_parquet(container, category_queue_path, unified_delta)
+
+        # Excel (same pattern you use elsewhere)
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            for section, df_sec in unified_delta.groupby("__Section"):
+                if df_sec.empty:
+                    continue
+                df_sec.to_excel(writer, sheet_name=section[:31], index=False)
+
+        excel_bytes = buf.getvalue()
+
+        upload_blob(container, approved_unified_delta_xlsx, excel_bytes)
+        upload_blob(container, category_queue_xlsx, excel_bytes)
+
+
 
     print(f"[QUEUE] Category queue updated with {len(unified_delta)} rows")
 
