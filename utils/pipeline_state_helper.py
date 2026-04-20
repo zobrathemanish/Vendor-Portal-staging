@@ -202,8 +202,15 @@ def compute_vendor_pipeline_state(
     def is_fresh(file_time, ref_time):
         return file_time and ref_time and file_time >= ref_time
 
-    if not integrity_data:
+    # 🔥 FIXED LOGIC
+
+    if not merge_time or (reset_time and merge_time < reset_time):
         integrity_status = "not_started"
+
+    elif not integrity_data:
+        # 🔥 KEY FIX: merge done but no integrity file → must be in progress
+        integrity_status = "in_progress"
+
     else:
         try:
             summary_path = f"approved/unified_integrity/vendor={vendor}/integrity_summary.json"
@@ -212,12 +219,13 @@ def compute_vendor_pipeline_state(
 
             if reset_time and integrity_time < reset_time:
                 integrity_status = "not_started"
+
             elif not summary.get("can_publish", False):
                 integrity_status = "failed"
-            elif is_fresh(integrity_time, merge_time):
-                integrity_status = "success"
+
             else:
-                integrity_status = "not_started"
+                integrity_status = "success"
+
         except:
             integrity_status = "failed"
 
