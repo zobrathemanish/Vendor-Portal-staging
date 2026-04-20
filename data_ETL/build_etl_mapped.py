@@ -658,8 +658,8 @@ def build_unified_category_queue(container, vendor, local):
     # LOAD GOLD (CURRENT STATE)
     # =====================================================
     gold_path = (
-        os.path.join(PROJECT_ROOT, "silver", "selected",
-                     f"unified_workflow/vendor={vendor}/unified_etl_mapped.parquet")
+        os.path.join(PROJECT_ROOT, "gold", "selected",   # 🔥 FIX: silver → gold
+                    f"unified_workflow/vendor={vendor}/unified_etl_mapped.parquet")
         if local else
         f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
     )
@@ -668,7 +668,8 @@ def build_unified_category_queue(container, vendor, local):
         if local:
             df_gold = read_parquet_local(gold_path)
         else:
-            df_gold = df_from_bytes(download_blob(container, gold_path))
+            gold_container = get_gold_container()   # 🔥 FIX: use gold container
+            df_gold = df_from_bytes(download_blob(gold_container, gold_path))
 
         print(f"[QUEUE] Gold rows: {len(df_gold)}")
 
@@ -695,6 +696,18 @@ def build_unified_category_queue(container, vendor, local):
     # =====================================================
     # COMPUTE DELTA (APPROVED vs GOLD)
     # =====================================================
+    print("\n========== VERIFY UPDATE SKU ==========")
+
+    sku = "00211"
+
+    before = df_gold[df_gold["Part Number"].astype(str) == sku]
+    after  = df_approved[df_approved["Part Number"].astype(str) == sku]
+
+    print("\n--- GOLD ---")
+    print(before)
+
+    print("\n--- APPROVED ---")
+    print(after)
     unified_delta = compute_delta(df_approved.copy(), df_gold.copy(), is_delta=False)
 
     if unified_delta.empty:
