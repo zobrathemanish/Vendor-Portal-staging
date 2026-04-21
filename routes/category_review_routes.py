@@ -1318,8 +1318,7 @@ def api_category_review_work_queue():
                     a = "" if pd.isna(after.get(col)) else str(after.get(col)).strip()
 
                     if b != a:
-                        real_update_count += 1
-                        break
+                        real_update_count += 1   # ✅ COUNT EVERY FIELD CHANGE
 
             # ---------------------------------------------
             # CASE 2: insert-only BUT exists in baseline → UPDATE
@@ -1355,8 +1354,7 @@ def api_category_review_work_queue():
                         a = "" if pd.isna(after.get(col)) else str(after.get(col)).strip()
 
                         if b != a:
-                            real_update_count += 1
-                            break
+                            real_update_count += 1   # ✅ FIELD LEVEL
 
             # ---------------------------------------------
             # 🔥 ALWAYS COMPUTE COUNTS (CRITICAL)
