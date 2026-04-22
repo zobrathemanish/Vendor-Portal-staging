@@ -483,7 +483,7 @@ def compute_section_diff(df_before, df_after):
                     "field": col,
                     "before": b,
                     "after": a,
-                    "display": f"{build_context(section, after)} → {col}: {b} → {a}"
+                    "display": build_field_display(section, after, col, b, a)
                 })
 
             print("FINAL CHANGES:", changes)
@@ -1453,6 +1453,36 @@ def get_field_changes(before_row, after_row):
 
     return changes
 
+
+def build_field_display(section, row, col, before, after):
+
+    # --------------------------
+    # Extended Info
+    # --------------------------
+    if section == "Extended_Info" and col == "Extended Info Value":
+        code = row.get("Extended Info Code", "")
+        return f"Extended Info Value ({code}): {before} → {after}"
+
+    # --------------------------
+    # Descriptions
+    # --------------------------
+    if section == "Descriptions" and col == "Description Value":
+        code = row.get("Description Code", "")
+        return f"Description ({code}): {before} → {after}"
+
+    # # --------------------------
+    # # Pricing (optional nicer display)
+    # # --------------------------
+    # if section == "Pricing":
+    #     pricing_type = row.get("Pricing Type", "")
+    #     currency = row.get("Currency", "")
+    #     return f"{pricing_type} ({currency}) → {col}: {before} → {after}"
+
+    # --------------------------
+    # Default
+    # --------------------------
+    return f"{col}: {before} → {after}"
+
 @category_review_bp.route("/api/category-review/part-intelligence")
 @login_required
 def api_part_intelligence():
@@ -1796,8 +1826,9 @@ def api_part_intelligence():
                     "field": field,
                     "before": before_val if before_val is not None else "-",
                     "after": after_val if after_val is not None else "-",
-                    "display": f"{build_context(section, after_row)} → {field}: {before_val} → {after_val}"
+                    "display": build_field_display(section, after_row, field, before_val, after_val)
                 })
+                print (changes)
                 
         if changes:
         # ALWAYS return update mode if delta exists

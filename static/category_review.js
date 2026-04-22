@@ -358,13 +358,35 @@ if (data.mode === "update") {
           </tr>
         </thead>
         <tbody>
-          ${data.changes.map(c => `
-            <tr>
-              <td>${c.field}</td>
-              <td class="text-danger">${c.before || "-"}</td>
-              <td class="text-success">${c.after || "-"}</td>
-            </tr>
-          `).join("")}
+          ${data.changes.map(c => {
+
+            let fieldLabel = c.field;
+
+            // 🔥 Extended Info
+            if (c.section === "Extended_Info" && c.field === "Extended Info Value") {
+              const match = c.context?.match(/Code=(.*?)\]/);
+              if (match) {
+                fieldLabel = `Extended Info Value (${match[1]})`;
+              }
+            }
+
+            // 🔥 Descriptions
+            if (c.section === "Descriptions" && c.field === "Description Value") {
+              const match = c.context?.match(/Code=(.*?)\]/);
+              if (match) {
+                fieldLabel = `Description (${match[1]})`;
+              }
+            }
+
+            return `
+              <tr>
+                <td>${fieldLabel}</td>
+                <td class="text-danger">${c.before || "-"}</td>
+                <td class="text-success">${c.after || "-"}</td>
+              </tr>
+            `;
+
+          }).join("")}
         </tbody>
       </table>
     `;
