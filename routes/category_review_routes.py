@@ -1308,17 +1308,13 @@ def api_category_review_work_queue():
                 before = delete_map[key]
                 after  = insert_map[key]
 
-                all_cols = set(before.index).union(set(after.index))
+                section = before.get("__Section") or after.get("__Section")
 
-                for col in all_cols:
-                    if col.startswith("_") or col in ["__Section", "_sheet"]:
-                        continue
+                # 🔥 use SAME logic as UI
+                row_changes = compare_rows(section, before, after)
 
-                    b = "" if pd.isna(before.get(col)) else str(before.get(col)).strip()
-                    a = "" if pd.isna(after.get(col)) else str(after.get(col)).strip()
+                real_update_count += len(row_changes)
 
-                    if b != a:
-                        real_update_count += 1   # ✅ COUNT EVERY FIELD CHANGE
 
             # ---------------------------------------------
             # CASE 2: insert-only BUT exists in baseline → UPDATE
@@ -1327,11 +1323,13 @@ def api_category_review_work_queue():
 
                 for _, after in insert_map.items():
 
+                    section = after.get("__Section")
+
                     # 🔥 fallback: match ONLY by Part Number + Section
                     before_rows = [
                         r for r in baseline_map.values()
                         if str(r.get("Part Number")) == str(pn)
-                        and r.get("__Section") == after.get("__Section")
+                        and r.get("__Section") == section
                     ]
 
                     match_key = get_row_key(after)
@@ -1344,17 +1342,10 @@ def api_category_review_work_queue():
                     if before is None:
                         continue
 
-                    all_cols = set(before.index).union(set(after.index))
+                    # 🔥 use SAME diff engine as modal
+                    row_changes = compare_rows(section, before, after)
 
-                    for col in all_cols:
-                        if col.startswith("_") or col in ["__Section", "_sheet"]:
-                            continue
-
-                        b = "" if pd.isna(before.get(col)) else str(before.get(col)).strip()
-                        a = "" if pd.isna(after.get(col)) else str(after.get(col)).strip()
-
-                        if b != a:
-                            real_update_count += 1   # ✅ FIELD LEVEL
+                    real_update_count += len(row_changes)
 
             # ---------------------------------------------
             # 🔥 ALWAYS COMPUTE COUNTS (CRITICAL)
