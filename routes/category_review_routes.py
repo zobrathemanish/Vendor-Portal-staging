@@ -1470,13 +1470,18 @@ def build_field_display(section, row, col, before, after):
         code = row.get("Description Code", "")
         return f"Description ({code}): {before} → {after}"
 
-    # # --------------------------
-    # # Pricing (optional nicer display)
-    # # --------------------------
-    # if section == "Pricing":
-    #     pricing_type = row.get("Pricing Type", "")
-    #     currency = row.get("Currency", "")
-    #     return f"{pricing_type} ({currency}) → {col}: {before} → {after}"
+    # --------------------------
+    # Packages (DIMENSIONS FIX)
+    # --------------------------
+    if section == "Packages" and col in [
+        "Merch Length", "Merch Width", "Merch Height",
+        "Ship Length", "Ship Width", "Ship Height"
+    ]:
+        uom = row.get("Dimension UOM", "")
+
+        if uom:
+            return f"{col} ({uom}): {before} → {after}"
+
 
     # --------------------------
     # Default
@@ -2353,6 +2358,18 @@ def api_publish_gold():
     # -----------------------------------------------------
     # 🔥 4. SAVE PIPELINE HISTORY (TRUE PRE-PUBLISH SNAPSHOT)
     # -----------------------------------------------------
+
+    #  reflect final outcome (publish intent)
+
+    state["global"]["category"] = "success"
+    state["global"]["gold"] = "success"
+
+    # optional but VERY useful
+    state["meta"] = {
+        "trigger": "publish_to_gold",
+        "snapshot_type": "pre_publish_finalized"
+    }
+
     save_pipeline_history(
         container=container,
         vendor=vendor,

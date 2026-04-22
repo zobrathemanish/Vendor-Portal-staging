@@ -378,11 +378,21 @@ if (data.mode === "update") {
               }
             }
 
+            // 🔥 Packages (DIMENSIONS FIX - NO BACKEND CHANGE)
+            if (c.section === "Packages" &&
+                ["Merch Length","Merch Width","Merch Height","Ship Length","Ship Width","Ship Height"].includes(c.field)
+            ) {
+              const match = c.context?.match(/UOM=(.*?)\]/);
+              if (match) {
+                fieldLabel = `${c.field} (${match[1]})`;
+              }
+            }
+
             return `
               <tr>
                 <td>${fieldLabel}</td>
-                <td class="text-danger">${c.before || "-"}</td>
-                <td class="text-success">${c.after || "-"}</td>
+                <td class="text-danger">${c.before ?? "-"}</td>
+                <td class="text-success">${c.after ?? "-"}</td>
               </tr>
             `;
 
