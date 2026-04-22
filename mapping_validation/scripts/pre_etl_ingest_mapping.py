@@ -222,7 +222,7 @@ def process_vendor(vendor: str, workflow:str, submission_type:str, submission_id
         return
 
     try:
-        if file_type == "xlsx":
+        if file_type == "xlsx" and workflow == "products":
             print(" Excel input detected — using direct mapping")
 
             frames = []

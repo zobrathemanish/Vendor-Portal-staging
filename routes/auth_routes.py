@@ -13,8 +13,8 @@ def load_user(user_id):
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    if current_user.is_authenticated:
-        return _role_redirect(current_user)
+    # if current_user.is_authenticated:
+    #     return _role_redirect(current_user)
 
     if request.method == "POST":
         username = request.form.get("userid")

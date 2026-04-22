@@ -27,29 +27,13 @@ from flask import current_app
 @login_required
 def upload_page():
 
-    if "active_submission_id" not in session:
-        session["active_submission_id"] = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        session["active_submission_vendor"] = current_user.vendor
-        session.modified = True
-
-    # ✅ one-shot autostart for status polling
-    autostart = session.pop("force_autostart", "0")
-    session.modified = True
-
-    return render_template(
-            "uploads.html",
-            submission_id=session.get("last_submission_id"),   # 👈 ONLY poll this
-            submission_vendor=session.get("last_submission_vendor"),
-            active_submission_id=session.get("active_submission_id"),
-            active_submission_vendor=session.get("active_submission_vendor"),
-            autostart=autostart,
-        )
+    return redirect(url_for("auth.login"))
 
 
 @upload_bp.route('/upload/', methods=['POST'])
 @login_required
 def upload_files():
-
+    
     logger.info("Submission received")
 
     submission_type = request.form.get("submission_type")
