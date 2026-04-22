@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--submission-id", required=True)
     parser.add_argument("--submission-type", required=True)
+    parser.add_argument("--file-type", default="xml")
 
     args = parser.parse_args()
 
@@ -44,6 +45,7 @@ def main():
     workflow = args.workflow
     submission_id = args.submission_id
     submission_type = args.submission_type
+    file_type = args.file_type
 
     print("===================================")
     print("RUNNING MAPPING")
@@ -56,7 +58,7 @@ def main():
             "--vendor", vendor,
             "--workflow", workflow,
             "--submission-id", submission_id,
-            "--submission-type", submission_type
+            "--submission-type", submission_type,
         ],
         capture_output=True,
         text=True
@@ -82,7 +84,7 @@ def main():
         "--vendor", vendor,
         "--workflow", workflow,
         "--submission-id", submission_id,
-        "--submission-type", submission_type
+        "--submission-type", submission_type,
     ])
 
     if result.returncode != 0:

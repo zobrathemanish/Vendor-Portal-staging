@@ -50,15 +50,26 @@ def get_product_upload_sas():
     submission_type = data.get("submission_type")
     workflow = "products"
 
+    ALLOWED_EXTENSIONS = ("xml", "xlsx")
+
+    ext = filename.split(".")[-1].lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
+        return {"error": "Only XML and Excel files are supported"}, 400
+
     if not vendor or not filename:
         return {"error": "Missing vendor or filename"}, 400
+
+    ext = filename.split(".")[-1].lower()
+
+    folder = "original_xml" if ext == "xml" else "original_excel"
 
     blob_path = (
         f"raw/vendor={vendor}/"
         f"workflow={workflow}/"
         f"submission_type={submission_type}/"
         f"submission={submission_id}/"
-        f"original_xml/{filename}"
+        f"{folder}/{filename}"
     )
 
     sas_url = generate_upload_sas(
@@ -96,6 +107,7 @@ def start_product_etl():
     blob_path = data.get("blob_path")
     submission_type = data.get("submission_type")
     workflow = "products"
+    file_type = data.get("file_type", "xml")
 
     print(f"Starting product ingestion: {vendor} {submission_id}")
 
@@ -168,7 +180,7 @@ def start_product_etl():
         "--vendor", vendor,
         "--workflow", workflow,
         "--submission-type", submission_type,
-        "--submission-id", submission_id
+        "--submission-id", submission_id,
     ])
     return jsonify({
         "status": "started",

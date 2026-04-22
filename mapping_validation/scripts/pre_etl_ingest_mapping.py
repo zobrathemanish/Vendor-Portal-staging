@@ -101,10 +101,13 @@ def find_submission_files(
         blobs = []
 
         for blob in container.list_blobs(name_starts_with=prefix):
-            if workflow == "products" and blob.name.lower().endswith(".xml"):
+            
+            ext = blob.name.lower().split(".")[-1]
+
+            if workflow == "products" and ext in ("xml", "xlsx"):
                 blobs.append(blob.name)
 
-            elif workflow == "pricing" and blob.name.lower().endswith((".xlsx", ".xls")):
+            elif workflow == "pricing" and ext in ("xlsx", "xls"):
                 blobs.append(blob.name)
 
         if not blobs:
@@ -194,6 +197,15 @@ def process_vendor(vendor: str, workflow:str, submission_type:str, submission_id
 
     files = find_submission_files(vendor, workflow, submission_type, submission_id)
 
+    file_types = list(set([f.split(".")[-1].lower() for f in files]))
+
+    if len(file_types) > 1:
+        raise RuntimeError(f"Mixed file types not supported: {file_types}")
+
+    file_type = file_types[0]
+
+    print(f"[FILE TYPE DETECTED] {file_type}")
+
     print(f"[FILES FOUND] {len(files)}")
     for f in files:
         print(" -", f)
@@ -203,33 +215,56 @@ def process_vendor(vendor: str, workflow:str, submission_type:str, submission_id
 
     print(f"\n[CHECK] Checking vendor: {vendor}")
 
-
     # 4 — Perform mapping
     mapping = load_vendor_mapping(vendor)
     if mapping is None:
         print(f"[WARNING] Skipping vendor '{vendor}' — no YAML mapping found.")
         return
 
-    adapter = VendorAdapterFactory.create(
-        vendor,
-        mapping,
-        workflow,
-        submission_type,
-        submission_id,
-    )
     try:
-        combined = adapter.process()
-        if workflow == "products":
+        if file_type == "xlsx":
+            print(" Excel input detected — using direct mapping")
+
+            frames = []
+            for file in files:
+                raw = download_blob_bytes(file)
+                df_dict = pd.read_excel(BytesIO(raw), sheet_name=None, dtype=str)
+
+                for sheet, df in df_dict.items():
+                    df["_sheet"] = sheet
+                    df["__Section"] = sheet
+                    frames.append(df)
+
+            combined_df = pd.concat(frames, ignore_index=True)
+
+            if "__Section" not in combined_df.columns:
+                raise RuntimeError("Excel must contain '__Section' column")
+
+            combined_df = combined_df.astype(str)
+
             combined = {
-                k: v for k, v in combined.items()
-                if k != "Pricing"
+                section: combined_df[combined_df["__Section"] == section]
+                .drop(columns=["__Section", "_sheet"], errors="ignore")
+                for section in combined_df["__Section"].unique()
             }
 
+        else:
+            adapter = VendorAdapterFactory.create(
+                vendor,
+                mapping,
+                workflow,
+                submission_type,
+                submission_id,
+            )
+
+            combined = adapter.process()
+
+        # 🔥 keep your filtering logic
+        if workflow == "products":
+            combined = {k: v for k, v in combined.items() if k != "Pricing"}
+
         elif workflow == "pricing":
-            combined = {
-                k: v for k, v in combined.items()
-                if k == "Pricing"
-            }
+            combined = {k: v for k, v in combined.items() if k == "Pricing"}
 
     except Exception as e:
         write_status(
@@ -460,7 +495,7 @@ def main():
         args.vendor,
         args.workflow,
         args.submission_type,
-        args.submission_id
+        args.submission_id,
     )
 
 

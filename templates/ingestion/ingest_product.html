@@ -431,13 +431,13 @@ Fort Garry Industries
 
 <div class="mb-3">
 
-<label class="form-label fw-semibold">Product File (.xml)</label>
+<label class="form-label fw-semibold">Product File (.xml or .xlsx)</label>
 
 <input class="form-control"
        type="file"
        id="productFile"
        name="product_file"
-       accept=".xml"
+       accept=".xml,.xlsx"
        multiple
        required>
 
@@ -1027,13 +1027,17 @@ for (let i = 0; i < files.length; i++) {
 
     const blobClient = new BlockBlobClient(data.sas_url);
 
+    const isExcel = file.name.endsWith(".xlsx");
+
     await blobClient.uploadBrowserData(file, {
         overwrite: true,
-        blobHTTPHeaders: { blobContentType: "application/xml" },
+        blobHTTPHeaders: { 
+            blobContentType: isExcel 
+                ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                : "application/xml"
+        },
         onProgress: (p) => {
-
             const percent = Math.round((p.loadedBytes / file.size) * 100);
-
             progressBar.style.width = percent + "%";
             progressBar.textContent = `${file.name} ${percent}%`;
         }
@@ -1048,13 +1052,17 @@ document.getElementById("pipelineContainer").classList.remove("d-none");
 
 updateStage("Uploading", 5, "Uploading product file...");
 
+const file = productInput.files[0];
+
 const start = await fetch("/ingestion/start-product-etl",{
 method:"POST",
 headers:{ "Content-Type":"application/json"},
 body:JSON.stringify({
 vendor,
 submission_type: document.getElementById("submissionType").value,
-submission_id: submissionId
+submission_id: submissionId,
+file_type: file.name.split(".").pop().toLowerCase()
+
 })
 });
 
