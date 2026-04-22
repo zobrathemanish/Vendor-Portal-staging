@@ -360,9 +360,28 @@ if (data.mode === "update") {
         <tbody>
           ${data.changes.map(c => {
 
+            // 🔥 1. If backend display exists → use it directly
+            if (c.display) {
+              const parts = c.display.split(":");
+              const label = parts[0];
+              const values = parts[1]?.split("→") || [];
+
+              return `
+                <tr>
+                  <td>${label}</td>
+                  <td class="text-danger">${values[0]?.trim() ?? "-"}</td>
+                  <td class="text-success">${values[1]?.trim() ?? "-"}</td>
+                </tr>
+              `;
+            }
+
+            // --------------------------------------------------
+            // 🔻 FALLBACK (your existing logic - keep temporarily)
+            // --------------------------------------------------
+
             let fieldLabel = c.field;
 
-            // 🔥 Extended Info
+            // Extended Info
             if (c.section === "Extended_Info" && c.field === "Extended Info Value") {
               const match = c.context?.match(/Code=(.*?)\]/);
               if (match) {
@@ -370,7 +389,7 @@ if (data.mode === "update") {
               }
             }
 
-            // 🔥 Descriptions
+            // Descriptions
             if (c.section === "Descriptions" && c.field === "Description Value") {
               const match = c.context?.match(/Code=(.*?)\]/);
               if (match) {
@@ -378,7 +397,7 @@ if (data.mode === "update") {
               }
             }
 
-            // 🔥 Packages (DIMENSIONS FIX - NO BACKEND CHANGE)
+            // Packages (temporary fallback)
             if (c.section === "Packages" &&
                 ["Merch Length","Merch Width","Merch Height","Ship Length","Ship Width","Ship Height"].includes(c.field)
             ) {
@@ -397,7 +416,7 @@ if (data.mode === "update") {
             `;
 
           }).join("")}
-        </tbody>
+          </tbody>
       </table>
     `;
   }

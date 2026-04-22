@@ -1482,6 +1482,39 @@ def build_field_display(section, row, col, before, after):
         if uom:
             return f"{col} ({uom}): {before} → {after}"
 
+    # --------------------------
+    # Attributes (KEY FIX)
+    # --------------------------
+    if section == "Attributes" and col == "Attribute Value":
+        attr_name = row.get("Attribute Name", "")
+        return f"Attribute ({attr_name}): {before} → {after}"
+    
+    # --------------------------
+    # Pricing (FULL CONTEXT FIX)
+    # --------------------------
+    if section == "Pricing":
+
+        currency = row.get("Currency", "")
+        uom = row.get("Minimum Order Quantity UOM", "")
+        pricing_type = row.get("Pricing Type", "")
+
+        # Skip if the field itself is currency or MOQ UOM
+        if col in ["Currency", "Minimum Order Quantity UOM"]:
+            return f"{col}: {before} → {after}"
+
+        # Build context string
+        context_parts = []
+        if currency:
+            context_parts.append(currency)
+        if uom:
+            context_parts.append(uom)
+
+        context_str = " | ".join(context_parts)
+
+        if context_str:
+            return f"{col} ({context_str}): {before} → {after}"
+
+        return f"{col}: {before} → {after}"
 
     # --------------------------
     # Default
