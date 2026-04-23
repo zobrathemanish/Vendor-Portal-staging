@@ -23,26 +23,19 @@ import os
 import json
 
 
+# 🔥 force project root into path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from utils.status_helper import write_status as write_status_blob
+
 def write_status(vendor, submission_id, workflow, stage, message, progress, status=None):
-    workflow_folder = "products" if workflow == "products" else "pricing"
+    workflow_folder = workflow
 
     status_filename = (
         "product_etl_status.json"
         if workflow == "products"
         else "pricing_etl_status.json"
     )
-
-    status_path = os.path.join(
-        os.getcwd(),
-        "product-etl",
-        "logs",
-        f"vendor={vendor}",
-        workflow_folder,
-        f"submission={submission_id}",
-        status_filename
-    )
-
-    os.makedirs(os.path.dirname(status_path), exist_ok=True)
 
     data = {
         "stage": stage,
@@ -53,8 +46,14 @@ def write_status(vendor, submission_id, workflow, stage, message, progress, stat
     if status:
         data["status"] = status
 
-    with open(status_path, "w") as f:
-        json.dump(data, f)
+    # 🔥 WRITE TO BLOB INSTEAD OF LOCAL
+    write_status_blob(
+        vendor,
+        workflow_folder,
+        submission_id,
+        status_filename,
+        data
+    )
 
 # ============================================================
 # PIPELINE STEPS (ORDER MATTERS)

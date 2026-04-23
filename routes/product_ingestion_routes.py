@@ -21,6 +21,7 @@ from azure.storage.blob import BlobServiceClient
 
 from services.azure_service import create_submission_manifest
 from services.azure_service import generate_upload_sas
+from utils.status_helper import read_status
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
@@ -246,78 +247,79 @@ def get_product_status(vendor, submission_id):
 
     try:
         # ----------------------------------
-        # ETL STATUS TAKES PRIORITY
+        # ETL STATUS (BLOB)
         # ----------------------------------
-        if os.path.exists(etl_status_path):
-            with open(etl_status_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        etl_data = read_status(
+            vendor, "products", submission_id, "product_etl_status.json"
+        )
 
-            raw_stage = data.get("stage", "processing")
+        if etl_data:
+            raw_stage = etl_data.get("stage", "processing")
             stage = normalize_stage(raw_stage)
 
-            if data.get("status") == "completed":
+            if etl_data.get("status") == "completed":
                 return jsonify({
                     "stage": "ready",
                     "progress": 100,
-                    "message": data.get("message", "Processing complete"),
-                    "current_file": data.get("current_file", "")
+                    "message": etl_data.get("message", "Processing complete"),
+                    "current_file": etl_data.get("current_file", "")
                 })
 
-            if data.get("status") == "failed":
+            if etl_data.get("status") == "failed":
                 return jsonify({
                     "stage": "failed",
-                    "progress": data.get("progress", 0),
-                    "message": data.get("message", "Processing failed"),
-                    "current_file": data.get("current_file", "")
+                    "progress": etl_data.get("progress", 0),
+                    "message": etl_data.get("message", "Processing failed"),
+                    "current_file": etl_data.get("current_file", "")
                 })
 
             return jsonify({
                 "stage": stage,
-                "progress": data.get("progress", 50),
-                "message": data.get("message", "Processing"),
-                "current_file": data.get("current_file", "")
+                "progress": etl_data.get("progress", 50),
+                "message": etl_data.get("message", "Processing"),
+                "current_file": etl_data.get("current_file", "")
             })
 
-        # ----------------------------------
-        # PRECHECK STATUS
-        # ----------------------------------
-        if os.path.exists(precheck_status_path):
-            with open(precheck_status_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
 
-            if data.get("status") == "failed":
+        # ----------------------------------
+        # PRECHECK STATUS (BLOB)
+        # ----------------------------------
+        precheck_data = read_status(
+            vendor, "products", submission_id, "product_precheck_status.json"
+        )
+
+        if precheck_data:
+
+            if precheck_data.get("status") == "failed":
                 return jsonify({
                     "stage": "failed",
-                    "progress": data.get("progress", 15),
-                    "message": data.get(
-                        "message",
-                        "Basic validation failed"
-                    ),
-                    "current_file": data.get("current_file", "")
+                    "progress": precheck_data.get("progress", 15),
+                    "message": precheck_data.get("message", "Basic validation failed"),
+                    "current_file": precheck_data.get("current_file", "")
                 })
 
-            if data.get("status") == "completed":
+            if precheck_data.get("status") == "completed":
                 return jsonify({
                     "stage": "validate",
                     "progress": 25,
-                    "message": data.get(
+                    "message": precheck_data.get(
                         "message",
                         "Basic validation passed. Starting ETL..."
                     ),
-                    "current_file": data.get("current_file", "")
+                    "current_file": precheck_data.get("current_file", "")
                 })
 
-            raw_stage = data.get("stage", "upload")
+            raw_stage = precheck_data.get("stage", "upload")
             stage = normalize_stage(raw_stage)
 
             return jsonify({
                 "stage": stage,
-                "progress": data.get("progress", 10),
-                "message": data.get(
+                "progress": precheck_data.get("progress", 10),
+                "message": precheck_data.get(
                     "message",
                     "Running mapping/basic validation"
                 ),
-                "current_file": data.get("current_file", "")
+                "current_file": precheck_data.get("current_file", "")
             })
 
         # ----------------------------------

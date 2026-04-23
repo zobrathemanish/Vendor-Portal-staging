@@ -21,6 +21,7 @@ from azure.storage.blob import BlobServiceClient
 
 from services.azure_service import create_submission_manifest
 from services.azure_service import generate_upload_sas
+from utils.status_helper import read_status
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
@@ -172,50 +173,40 @@ def start_pricing_etl():
 @login_required
 def get_pricing_status(vendor, submission_id):
 
-    precheck_status_path = os.path.join(
-        current_app.root_path,
-        "product-etl",
-        "logs",
-        f"vendor={vendor}",
-        "pricing",
-        f"submission={submission_id}",
-        "pricing_precheck_status.json"
-    )
-
-    etl_status_path = os.path.join(
-        current_app.root_path,
-        "product-etl",
-        "logs",
-        f"vendor={vendor}",
-        "pricing",
-        f"submission={submission_id}",
-        "pricing_etl_status.json"
-    )
-
     try:
+        # ----------------------------------
+        # ETL STATUS (BLOB)
+        # ----------------------------------
+        etl_data = read_status(
+            vendor, "pricing", submission_id, "pricing_etl_status.json"
+        )
 
-        if os.path.exists(etl_status_path):
-            with open(etl_status_path, "r") as f:
-                data = json.load(f)
-
+        if etl_data:
             return jsonify({
-                "stage": data.get("stage", "processing"),
-                "progress": data.get("progress", 5),
-                "message": data.get("message", "Processing"),
-                "current_file": data.get("current_file", "")
+                "stage": etl_data.get("stage", "processing"),
+                "progress": etl_data.get("progress", 5),
+                "message": etl_data.get("message", "Processing"),
+                "current_file": etl_data.get("current_file", "")
             })
 
-        if os.path.exists(precheck_status_path):
-            with open(precheck_status_path, "r") as f:
-                data = json.load(f)
+        # ----------------------------------
+        # PRECHECK STATUS (BLOB)
+        # ----------------------------------
+        precheck_data = read_status(
+            vendor, "pricing", submission_id, "pricing_precheck_status.json"
+        )
 
+        if precheck_data:
             return jsonify({
-                "stage": data.get("stage", "upload"),
-                "progress": data.get("progress", 10),
-                "message": data.get("message", "Running validation"),
-                "current_file": data.get("current_file", "")
+                "stage": precheck_data.get("stage", "upload"),
+                "progress": precheck_data.get("progress", 10),
+                "message": precheck_data.get("message", "Running validation"),
+                "current_file": precheck_data.get("current_file", "")
             })
 
+        # ----------------------------------
+        # DEFAULT
+        # ----------------------------------
         return jsonify({
             "stage": "starting",
             "progress": 5,
