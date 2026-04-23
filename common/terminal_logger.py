@@ -1,39 +1,53 @@
 import sys
-import os
 from datetime import datetime
+from utils.status_helper import append_log
+
 
 class TerminalLogger:
 
     def __init__(self, base_dir, vendor, domain, submission_id):
-        self.terminal = sys.stdout
+        # store original stdout safely
+        self.terminal = sys.__stdout__
 
-        log_dir = os.path.join(
-            base_dir,
-            "logs",
-            f"vendor={vendor}",
-            domain,
-            f"submission={submission_id}"
-        )
-
-        os.makedirs(log_dir, exist_ok=True)
-
-        self.log_path = os.path.join(log_dir, "pipeline.log")
-
-        self.log = open(self.log_path, "a", encoding="utf-8")
+        self.vendor = vendor
+        self.domain = domain
+        self.submission_id = submission_id
 
     def write(self, message):
 
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        if not message:
+            return
 
-        if message.strip() != "":
-            formatted = f"[{timestamp}] {message.rstrip()}\n"
-
-            self.terminal.write(formatted)
-            self.log.write(formatted)
-        else:
+        # always print raw message to terminal first
+        try:
             self.terminal.write(message)
-            self.log.write(message)
+        except Exception:
+            pass
+
+        # skip empty / newline-only messages for blob logging
+        if message.strip() == "":
+            return
+
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        formatted = f"[{timestamp}] {message.strip()}"
+
+        # safe blob logging (never break pipeline)
+        try:
+            append_log(
+                self.vendor,
+                self.domain,
+                self.submission_id,
+                formatted
+            )
+        except Exception as e:
+            # DO NOT recurse into logger → use original stdout
+            try:
+                self.terminal.write(f"[LOGGER ERROR] {e}\n")
+            except Exception:
+                pass
 
     def flush(self):
-        self.terminal.flush()
-        self.log.flush()
+        try:
+            self.terminal.flush()
+        except Exception:
+            pass

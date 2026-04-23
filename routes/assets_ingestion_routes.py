@@ -100,39 +100,49 @@ def start_asset_etl():
 @login_required
 def get_asset_status(vendor, submission_id):
 
-    status_path = os.path.join(
-        current_app.root_path,
-        "asset-etl",
-        "logs",
-        f"vendor={vendor}",
-        "assets",
-        f"submission={submission_id}",
-        "asset_etl_status.json"
-    )
-
-    if not os.path.exists(status_path):
-
-        return jsonify({
-            "stage": "starting",
-            "progress": 5,
-            "message": "Initializing pipeline"
-        })
-
     try:
+        conn = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        blob_service = BlobServiceClient.from_connection_string(conn)
+        container = blob_service.get_container_client("silver")
 
-        with open(status_path, "r") as f:
-            data = json.load(f)
+        blob_path = (
+            f"logs/vendor={vendor}/workflow=assets/"
+            f"submission={submission_id}/asset_etl_status.json"
+        )
+
+        blob = container.get_blob_client(blob_path)
+
+        # ----------------------------------
+        # equivalent to os.path.exists()
+        # ----------------------------------
+        if not blob.exists():
+            return jsonify({
+                "stage": "starting",
+                "progress": 5,
+                "message": "Initializing pipeline"
+            })
+
+        # ----------------------------------
+        # equivalent to open() + json.load()
+        # ----------------------------------
+        data = json.loads(blob.download_blob().readall())
 
         stage = data.get("stage", "processing")
         progress = data.get("progress", 5)
         message = data.get("message", "Processing")
 
         if data.get("status") == "completed":
-
             return jsonify({
                 "stage": "complete",
                 "progress": 100,
                 "message": message or "Processing complete"
+            })
+
+        if data.get("status") == "failed":
+            return jsonify({
+                "stage": "failed",
+                "progress": progress,
+                "message": message or "Processing failed"
             })
 
         return jsonify({
@@ -142,9 +152,7 @@ def get_asset_status(vendor, submission_id):
         })
 
     except Exception as e:
-
-        print("STATUS READ ERROR:", e)
-
+        print("ASSET STATUS ERROR:", e)
         return jsonify({
             "stage": "processing",
             "progress": 5,

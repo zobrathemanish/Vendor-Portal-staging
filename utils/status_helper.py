@@ -27,3 +27,18 @@ def write_status(vendor, workflow, submission_id, filename, data):
     path = get_status_blob_path(vendor, workflow, submission_id, filename)
     blob = _container_client.get_blob_client(path)
     blob.upload_blob(json.dumps(data), overwrite=True)
+
+def append_log(vendor, workflow, submission_id, message):
+
+    path = f"logs/vendor={vendor}/workflow={workflow}/submission={submission_id}/pipeline.log"
+
+    blob = _container_client.get_blob_client(path)
+
+    try:
+        existing = blob.download_blob().readall().decode("utf-8")
+    except:
+        existing = ""
+
+    updated = existing + message + "\n"
+
+    blob.upload_blob(updated, overwrite=True)    

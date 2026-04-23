@@ -21,7 +21,7 @@ def write_status(vendor, stage, status, message="", submission_id=None, extra=No
     if submission_id:
 
         blob_path = (
-            f"logs/vendor={vendor}/assets/"
+            f"logs/vendor={vendor}/workflow=assets/"
             f"submission={submission_id}/"
             f"asset_etl_status.json"
         )

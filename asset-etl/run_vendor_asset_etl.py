@@ -22,6 +22,7 @@ import json
 from datetime import datetime
 
 from common.terminal_logger import TerminalLogger
+from utils.status_helper import read_status, write_status
 
 
 # =========================================================
@@ -42,44 +43,6 @@ STEPS = [
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-# =========================================================
-# STATUS FILE HELPERS
-# =========================================================
-
-def get_status_path(vendor, submission_id):
-
-    log_dir = os.path.join(
-        BASE_DIR,
-        "logs",
-        f"vendor={vendor}",
-        "assets",
-        f"submission={submission_id}"
-    )
-
-    os.makedirs(log_dir, exist_ok=True)
-
-    return os.path.join(log_dir, "asset_etl_status.json")
-
-
-def load_status(vendor, submission_id):
-
-    path = get_status_path(vendor, submission_id)
-
-    if not os.path.exists(path):
-        return None
-
-    with open(path, "r") as f:
-        return json.load(f)
-
-
-def save_status(vendor, status, submission_id):
-
-    path = get_status_path(vendor, submission_id)
-
-    with open(path, "w") as f:
-        json.dump(status, f, indent=2)
 
 
 # =========================================================
@@ -217,7 +180,12 @@ def main():
     # Load or create status file
     # -----------------------------------------------------
 
-    status = load_status(vendor, submission_id)
+    status = read_status(
+        vendor,
+        "assets",
+        submission_id,
+        "asset_etl_status.json"
+    )
 
     if status is None:
 
@@ -230,7 +198,13 @@ def main():
             "status": "running"
         }
 
-        save_status(vendor, status, submission_id)
+        write_status(
+            vendor,
+            "assets",
+            submission_id,
+            "asset_etl_status.json",
+            status
+        )
 
     completed = status["completed_steps"]
 
@@ -248,7 +222,13 @@ def main():
                 status["stage"] = stage_info["stage"]
                 status["progress"] = stage_info["progress"]
                 status["message"] = stage_info["message"]
-                save_status(vendor, status, submission_id)
+                write_status(
+                    vendor,
+                    "assets",
+                    submission_id,
+                    "asset_etl_status.json",
+                    status
+                )
 
             if name in completed:
                 print(f"⏭ Skipping already completed step: {name}")
@@ -278,14 +258,26 @@ def main():
                     status["message"] = "No uploaded assets matched mapped.xlsx"
                     status["finished_at"] = datetime.utcnow().isoformat()
 
-                    save_status(vendor, status, submission_id)
+                    write_status(
+                        vendor,
+                        "assets",
+                        submission_id,
+                        "asset_etl_status.json",
+                        status
+                    )
 
                     return
 
 
             completed.append(name)
             status["completed_steps"] = completed
-            save_status(vendor, status, submission_id)
+            write_status(
+                vendor,
+                "assets",
+                submission_id,
+                "asset_etl_status.json",
+                status
+            )
 
     except Exception as e:
 
@@ -306,7 +298,13 @@ def main():
         status["failed_at"] = name
         status["finished_at"] = datetime.utcnow().isoformat()
 
-        save_status(vendor, status, submission_id)
+        write_status(
+            vendor,
+            "assets",
+            submission_id,
+            "asset_etl_status.json",
+            status
+        )
         sys.exit(1)
     # -----------------------------------------------------
     # Mark completion
@@ -346,7 +344,13 @@ def main():
     except Exception as e:
         print(f"⚠️ Profiling/Scorecard failed: {e}")
 
-    save_status(vendor, status, submission_id)
+    write_status(
+        vendor,
+        "assets",
+        submission_id,
+        "asset_etl_status.json",
+        status
+    )
 
     print("\n====================================")
     print("✅ Asset ETL completed successfully")
