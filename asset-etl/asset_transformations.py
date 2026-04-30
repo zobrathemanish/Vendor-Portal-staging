@@ -540,6 +540,33 @@ def promote_assets(vendor, submission_type, submission_id):
 
     log(f"[META] assets review_submission_id saved → {submission_id}", 2)
 
+    # =========================================================
+    # 🔥 PROMOTE CANONICAL TABLE
+    # =========================================================
+    try:
+        canonical_src = (
+            f"in_review/assets_workflow/"
+            f"vendor={vendor}/submission_type={submission_type}/submission={submission_id}/"
+            f"canonical/media_canonical.parquet"
+        )
+
+        canonical_dst = (
+            f"approved/assets_workflow/vendor={vendor}/media_canonical.parquet"
+        )
+
+        data = container.get_blob_client(canonical_src).download_blob().readall()
+
+        container.upload_blob(
+            canonical_dst,
+            data,
+            overwrite=True
+        )
+
+        print("[CANONICAL] Promoted to approved")
+
+    except Exception as e:
+        print("[CANONICAL PROMOTE FAIL]", e)
+
 
 # =========================================================
 # CACHE
