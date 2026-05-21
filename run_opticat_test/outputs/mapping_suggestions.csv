@@ -1,0 +1,29 @@
+vendor_sheet,vendor_column,detected_patterns,target_section,target_field,confidence,status
+F6161A,Sequence,,Descriptions,Sequence,1.0,matched
+F6161A,Account Number,,Item_Master,Part Number,0.612,matched
+F6161A,Formatted Item,,Item_Master,Part Number,1.0,matched
+F6161A,Compressed Item,,Item_Master,Part Number,1.0,matched
+F6161A,Item Description,,Descriptions,Description Value,1.0,matched
+F6161A,Currency,currency_candidate,Pricing,Currency,1.0,matched
+F6161A,List Price,numeric_measure_or_price_candidate,Pricing,List Price,1.0,matched
+F6161A,Distributor Net,numeric_measure_or_price_candidate,Pricing,Dealer Price,1.0,matched
+F6161A,Customer Unit Price,numeric_measure_or_price_candidate,Pricing,Net Price,1.0,matched
+F6161A,Core Group,,Extended_Info,Extended Info Value,1.0,matched
+F6161A,Core Part,,Extended_Info,Extended Info Value,1.0,matched
+F6161A,Core Charge,,Extended_Info,Extended Info Value,1.0,matched
+F6161A,Track Code,,Item_Master,Barcode Number,0.567,matched
+F6161A,Track Code Description,,Descriptions,Description Code,0.667,matched
+F6161A,Qty Break 1,,Item_Master,Minimum Order Quantity,0.765,matched
+F6161A,Qty Break 1 Net Price,numeric_measure_or_price_candidate,,,,unmapped
+F6161A,Qty Break 2,,Item_Master,Minimum Order Quantity,0.765,matched
+F6161A,Qty Break 2 Net Price,numeric_measure_or_price_candidate,,,,unmapped
+F6161A,Qty Break 3,,Item_Master,Minimum Order Quantity,0.765,matched
+F6161A,Qty Break 3 Net Price,numeric_measure_or_price_candidate,,,,unmapped
+F6161A,Brand,currency_candidate,Item_Master,Brand Label,1.0,matched
+F6161A,Product Code,,Item_Master,Part Number,0.695,matched
+F6161A,Unit Pack,,Packages,Package Quantity of Eaches,1.0,matched
+F6161A,Weight,numeric_measure_or_price_candidate,Packages,Weight,1.0,matched
+F6161A,Superseding Part,,Extended_Info,Extended Info Value,1.0,matched
+F6161A,POP Code,,Pricing,POP Code,1.0,matched
+F6161A,Eligible For Return,flag_candidate,Item_Master,Product Status,1.0,matched
+F6161A,UPC Code,numeric_measure_or_price_candidate,Item_Master,Barcode Number,1.0,matched

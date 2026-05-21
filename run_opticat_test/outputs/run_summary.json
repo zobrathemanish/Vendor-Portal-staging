@@ -1,0 +1,26 @@
+{
+  "output_workbook": "outputs\\normalized_fgi_output.xlsx",
+  "rows_written_by_sheet": {
+    "Item_Master": 1000,
+    "Descriptions": 1000,
+    "Extended_Info": 0,
+    "Attributes": 0,
+    "Packages": 1000,
+    "Digital_Assets": 0,
+    "Pricing": 1000
+  },
+  "part_number_source": "Formatted Item",
+  "schema_sheets": [
+    "Item_Master",
+    "Descriptions",
+    "Extended_Info",
+    "Attributes",
+    "Packages",
+    "Digital_Assets",
+    "Pricing"
+  ],
+  "vendor_file": "F6161A_2025-JUL-01 revised.xlsx",
+  "primary_vendor_sheet_used": "F6161A",
+  "mapping_suggestions_json": "outputs\\mapping_suggestions.json",
+  "mapping_suggestions_csv": "outputs\\mapping_suggestions.csv"
+}

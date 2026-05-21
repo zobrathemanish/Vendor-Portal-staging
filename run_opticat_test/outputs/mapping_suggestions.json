@@ -1,0 +1,746 @@
+[
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Sequence",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Descriptions",
+      "field": "Sequence",
+      "key": "Descriptions.Sequence",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Descriptions",
+        "field": "Sequence",
+        "key": "Descriptions.Sequence",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Account Number",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Part Number",
+      "key": "Item_Master.Part Number",
+      "confidence": 0.612
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Part Number",
+        "key": "Item_Master.Part Number",
+        "confidence": 0.612
+      },
+      {
+        "section": "Descriptions",
+        "field": "Part Number",
+        "key": "Descriptions.Part Number",
+        "confidence": 0.612
+      },
+      {
+        "section": "Extended_Info",
+        "field": "Part Number",
+        "key": "Extended_Info.Part Number",
+        "confidence": 0.612
+      },
+      {
+        "section": "Attributes",
+        "field": "Part Number",
+        "key": "Attributes.Part Number",
+        "confidence": 0.612
+      },
+      {
+        "section": "Packages",
+        "field": "Part Number",
+        "key": "Packages.Part Number",
+        "confidence": 0.612
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Formatted Item",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Part Number",
+      "key": "Item_Master.Part Number",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Part Number",
+        "key": "Item_Master.Part Number",
+        "confidence": 1.0
+      },
+      {
+        "section": "Descriptions",
+        "field": "Part Number",
+        "key": "Descriptions.Part Number",
+        "confidence": 0.9
+      },
+      {
+        "section": "Extended_Info",
+        "field": "Part Number",
+        "key": "Extended_Info.Part Number",
+        "confidence": 0.9
+      },
+      {
+        "section": "Attributes",
+        "field": "Part Number",
+        "key": "Attributes.Part Number",
+        "confidence": 0.9
+      },
+      {
+        "section": "Packages",
+        "field": "Part Number",
+        "key": "Packages.Part Number",
+        "confidence": 0.9
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Compressed Item",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Part Number",
+      "key": "Item_Master.Part Number",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Part Number",
+        "key": "Item_Master.Part Number",
+        "confidence": 1.0
+      },
+      {
+        "section": "Descriptions",
+        "field": "Part Number",
+        "key": "Descriptions.Part Number",
+        "confidence": 0.9
+      },
+      {
+        "section": "Extended_Info",
+        "field": "Part Number",
+        "key": "Extended_Info.Part Number",
+        "confidence": 0.9
+      },
+      {
+        "section": "Attributes",
+        "field": "Part Number",
+        "key": "Attributes.Part Number",
+        "confidence": 0.9
+      },
+      {
+        "section": "Packages",
+        "field": "Part Number",
+        "key": "Packages.Part Number",
+        "confidence": 0.9
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Item Description",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Descriptions",
+      "field": "Description Value",
+      "key": "Descriptions.Description Value",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Descriptions",
+        "field": "Description Value",
+        "key": "Descriptions.Description Value",
+        "confidence": 1.0
+      },
+      {
+        "section": "Descriptions",
+        "field": "Description Code",
+        "key": "Descriptions.Description Code",
+        "confidence": 0.634
+      },
+      {
+        "section": "Descriptions",
+        "field": "Part Number",
+        "key": "Descriptions.Part Number",
+        "confidence": 0.55
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Currency",
+    "detected_patterns": [
+      "currency_candidate"
+    ],
+    "best_match": {
+      "section": "Pricing",
+      "field": "Currency",
+      "key": "Pricing.Currency",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Pricing",
+        "field": "Currency",
+        "key": "Pricing.Currency",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "List Price",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": {
+      "section": "Pricing",
+      "field": "List Price",
+      "key": "Pricing.List Price",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Pricing",
+        "field": "List Price",
+        "key": "Pricing.List Price",
+        "confidence": 1.0
+      },
+      {
+        "section": "Pricing",
+        "field": "Net Price",
+        "key": "Pricing.Net Price",
+        "confidence": 0.73
+      },
+      {
+        "section": "Pricing",
+        "field": "Dealer Price",
+        "key": "Pricing.Dealer Price",
+        "confidence": 0.617
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Distributor Net",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": {
+      "section": "Pricing",
+      "field": "Dealer Price",
+      "key": "Pricing.Dealer Price",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Pricing",
+        "field": "Dealer Price",
+        "key": "Pricing.Dealer Price",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Customer Unit Price",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": {
+      "section": "Pricing",
+      "field": "Net Price",
+      "key": "Pricing.Net Price",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Pricing",
+        "field": "Net Price",
+        "key": "Pricing.Net Price",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Core Group",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Extended_Info",
+      "field": "Extended Info Value",
+      "key": "Extended_Info.Extended Info Value",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Extended_Info",
+        "field": "Extended Info Value",
+        "key": "Extended_Info.Extended Info Value",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Core Part",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Extended_Info",
+      "field": "Extended Info Value",
+      "key": "Extended_Info.Extended Info Value",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Extended_Info",
+        "field": "Extended Info Value",
+        "key": "Extended_Info.Extended Info Value",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Core Charge",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Extended_Info",
+      "field": "Extended Info Value",
+      "key": "Extended_Info.Extended Info Value",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Extended_Info",
+        "field": "Extended Info Value",
+        "key": "Extended_Info.Extended Info Value",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Track Code",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Barcode Number",
+      "key": "Item_Master.Barcode Number",
+      "confidence": 0.567
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Barcode Number",
+        "key": "Item_Master.Barcode Number",
+        "confidence": 0.567
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Track Code Description",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Descriptions",
+      "field": "Description Code",
+      "key": "Descriptions.Description Code",
+      "confidence": 0.667
+    },
+    "candidates": [
+      {
+        "section": "Descriptions",
+        "field": "Description Code",
+        "key": "Descriptions.Description Code",
+        "confidence": 0.667
+      },
+      {
+        "section": "Descriptions",
+        "field": "Description Value",
+        "key": "Descriptions.Description Value",
+        "confidence": 0.626
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Qty Break 1",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Minimum Order Quantity",
+      "key": "Item_Master.Minimum Order Quantity",
+      "confidence": 0.765
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Minimum Order Quantity",
+        "key": "Item_Master.Minimum Order Quantity",
+        "confidence": 0.765
+      },
+      {
+        "section": "Pricing",
+        "field": "Minimum Order Quantity",
+        "key": "Pricing.Minimum Order Quantity",
+        "confidence": 0.765
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Qty Break 1 Net Price",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": null,
+    "candidates": [],
+    "status": "unmapped"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Qty Break 2",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Minimum Order Quantity",
+      "key": "Item_Master.Minimum Order Quantity",
+      "confidence": 0.765
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Minimum Order Quantity",
+        "key": "Item_Master.Minimum Order Quantity",
+        "confidence": 0.765
+      },
+      {
+        "section": "Pricing",
+        "field": "Minimum Order Quantity",
+        "key": "Pricing.Minimum Order Quantity",
+        "confidence": 0.765
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Qty Break 2 Net Price",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": null,
+    "candidates": [],
+    "status": "unmapped"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Qty Break 3",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Minimum Order Quantity",
+      "key": "Item_Master.Minimum Order Quantity",
+      "confidence": 0.765
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Minimum Order Quantity",
+        "key": "Item_Master.Minimum Order Quantity",
+        "confidence": 0.765
+      },
+      {
+        "section": "Pricing",
+        "field": "Minimum Order Quantity",
+        "key": "Pricing.Minimum Order Quantity",
+        "confidence": 0.765
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Qty Break 3 Net Price",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": null,
+    "candidates": [],
+    "status": "unmapped"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Brand",
+    "detected_patterns": [
+      "currency_candidate"
+    ],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Brand Label",
+      "key": "Item_Master.Brand Label",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Brand Label",
+        "key": "Item_Master.Brand Label",
+        "confidence": 1.0
+      },
+      {
+        "section": "Pricing",
+        "field": "Currency",
+        "key": "Pricing.Currency",
+        "confidence": 0.85
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Product Code",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Part Number",
+      "key": "Item_Master.Part Number",
+      "confidence": 0.695
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Part Number",
+        "key": "Item_Master.Part Number",
+        "confidence": 0.695
+      },
+      {
+        "section": "Descriptions",
+        "field": "Part Number",
+        "key": "Descriptions.Part Number",
+        "confidence": 0.695
+      },
+      {
+        "section": "Extended_Info",
+        "field": "Part Number",
+        "key": "Extended_Info.Part Number",
+        "confidence": 0.695
+      },
+      {
+        "section": "Attributes",
+        "field": "Part Number",
+        "key": "Attributes.Part Number",
+        "confidence": 0.695
+      },
+      {
+        "section": "Packages",
+        "field": "Part Number",
+        "key": "Packages.Part Number",
+        "confidence": 0.695
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Unit Pack",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Packages",
+      "field": "Package Quantity of Eaches",
+      "key": "Packages.Package Quantity of Eaches",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Packages",
+        "field": "Package Quantity of Eaches",
+        "key": "Packages.Package Quantity of Eaches",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Weight",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": {
+      "section": "Packages",
+      "field": "Weight",
+      "key": "Packages.Weight",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Packages",
+        "field": "Weight",
+        "key": "Packages.Weight",
+        "confidence": 1.0
+      },
+      {
+        "section": "Packages",
+        "field": "Merch Height",
+        "key": "Packages.Merch Height",
+        "confidence": 0.758
+      },
+      {
+        "section": "Packages",
+        "field": "Weight UOM",
+        "key": "Packages.Weight UOM",
+        "confidence": 0.688
+      },
+      {
+        "section": "Digital_Assets",
+        "field": "Height",
+        "key": "Digital_Assets.Height",
+        "confidence": 0.608
+      },
+      {
+        "section": "Packages",
+        "field": "Ship Height",
+        "key": "Packages.Ship Height",
+        "confidence": 0.55
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Superseding Part",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Extended_Info",
+      "field": "Extended Info Value",
+      "key": "Extended_Info.Extended Info Value",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Extended_Info",
+        "field": "Extended Info Value",
+        "key": "Extended_Info.Extended Info Value",
+        "confidence": 1.0
+      },
+      {
+        "section": "Extended_Info",
+        "field": "Part Number",
+        "key": "Extended_Info.Part Number",
+        "confidence": 0.55
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "POP Code",
+    "detected_patterns": [],
+    "best_match": {
+      "section": "Pricing",
+      "field": "POP Code",
+      "key": "Pricing.POP Code",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Pricing",
+        "field": "POP Code",
+        "key": "Pricing.POP Code",
+        "confidence": 1.0
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "Eligible For Return",
+    "detected_patterns": [
+      "flag_candidate"
+    ],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Product Status",
+      "key": "Item_Master.Product Status",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Product Status",
+        "key": "Item_Master.Product Status",
+        "confidence": 1.0
+      },
+      {
+        "section": "Item_Master",
+        "field": "HazmatFlag",
+        "key": "Item_Master.HazmatFlag",
+        "confidence": 0.65
+      }
+    ],
+    "status": "matched"
+  },
+  {
+    "vendor_sheet": "F6161A",
+    "vendor_column": "UPC Code",
+    "detected_patterns": [
+      "numeric_measure_or_price_candidate"
+    ],
+    "best_match": {
+      "section": "Item_Master",
+      "field": "Barcode Number",
+      "key": "Item_Master.Barcode Number",
+      "confidence": 1.0
+    },
+    "candidates": [
+      {
+        "section": "Item_Master",
+        "field": "Barcode Number",
+        "key": "Item_Master.Barcode Number",
+        "confidence": 1.0
+      },
+      {
+        "section": "Item_Master",
+        "field": "Barcode Type",
+        "key": "Item_Master.Barcode Type",
+        "confidence": 0.581
+      },
+      {
+        "section": "Item_Master",
+        "field": "VMRS Code",
+        "key": "Item_Master.VMRS Code",
+        "confidence": 0.55
+      }
+    ],
+    "status": "matched"
+  }
+]
