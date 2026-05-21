@@ -922,6 +922,60 @@ def build_unified_approved_state(container, vendor, local):
 
     unified = pd.concat(frames, ignore_index=True)
 
+    # =========================================================
+    # 🔥 OVERRIDE DIGITAL ASSETS USING CANONICAL
+    # =========================================================
+    try:
+        canonical_path = (
+            os.path.join(
+                PROJECT_ROOT,
+                "silver",
+                "approved",
+                "assets_workflow",
+                f"vendor={vendor}",
+                "media_canonical.parquet"
+            )
+            if local else
+            f"approved/assets_workflow/vendor={vendor}/media_canonical.parquet"
+        )
+
+        if local:
+            canonical_df = read_parquet_local(canonical_path)
+        else:
+            canonical_df = df_from_bytes(download_blob(container, canonical_path))
+
+        if canonical_df is not None and not canonical_df.empty:
+
+            # Ensure section column
+            if "__Section" not in unified.columns and "_sheet" in unified.columns:
+                unified["__Section"] = unified["_sheet"]
+
+            # ❌ REMOVE existing Digital_Assets (from product ETL)
+            unified = unified[unified["__Section"] != "Digital_Assets"]
+
+            # ✅ BUILD Digital_Assets from canonical
+            da = pd.DataFrame()
+
+            da["Part Number"] = canonical_df["part_number"].astype("string").str.strip()
+            da["FileName"] = canonical_df["canonical_filename"]
+            da["FilePath"] = canonical_df["canonical_filename"]
+            da["MediaType"] = canonical_df["media_category"]
+            da["FileType"] = da["FileName"].str.split(".").str[-1].str.upper()
+
+            da["Representation"] = None
+            da["Orientation"] = None
+            da["Height"] = None
+            da["Width"] = None
+
+            da["__Section"] = "Digital_Assets"
+
+            unified = pd.concat([unified, da], ignore_index=True)
+
+            print("[UNIFIED] Digital_Assets replaced with canonical")
+
+    except Exception as e:
+        print("[UNIFIED ASSET OVERRIDE FAIL]", e)
+
     # REQUIRED
     unified = enrich_with_product_context(
         container,

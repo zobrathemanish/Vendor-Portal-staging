@@ -418,7 +418,35 @@ def promote_assets(vendor, submission_type, submission_id):
     )
 
     approved_base = f"approved/assets_workflow/vendor={vendor}/"
-    # gold_base = f"selected/asset_workflow/vendor={vendor}/"
+    gold_base = f"selected/asset_workflow/vendor={vendor}/"
+
+    
+
+    # =========================================================
+    # GOLD LAYER LOGIC
+    # =========================================================
+
+    if submission_type == "asset_review":
+
+        log("GOLD → Full replace", 2)
+
+        existing = list(gold_container.list_blobs(name_starts_with=gold_base))
+
+        for blob in existing:
+            gold_container.delete_blob(blob.name)
+
+    elif submission_type == "delta_asset_review":
+
+        log("GOLD → Delta replace", 2)
+
+        for part in parts_in_submission:
+
+            prefix = f"{gold_base}part_number={part}/"
+
+            existing = list(gold_container.list_blobs(name_starts_with=prefix))
+
+            for blob in existing:
+                gold_container.delete_blob(blob.name)
 
     blobs = list(container.list_blobs(name_starts_with=ready_prefix))
 
@@ -498,12 +526,13 @@ def promote_assets(vendor, submission_type, submission_id):
             overwrite=True
         )
 
-        # # GOLD
-        # gold_container.upload_blob(
-        #     gold_path,
-        #     data,
-        #     overwrite=True
-        # )
+        gold_path = f"{gold_base}{relative}"
+
+        gold_container.upload_blob(
+            gold_path,
+            data,
+            overwrite=True
+        )
 
         promoted += 1
 
@@ -567,7 +596,93 @@ def promote_assets(vendor, submission_type, submission_id):
     except Exception as e:
         print("[CANONICAL PROMOTE FAIL]", e)
 
+def update_unified_with_canonical(vendor):
 
+    log("[STEP] Updating unified_etl_mapped with canonical filenames", 2)
+
+    unified_path_excel = f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.xlsx"
+    unified_path_parquet = f"selected/unified_workflow/vendor={vendor}/unified_etl_mapped.parquet"
+
+    try:
+        # Load unified
+        raw = gold_container.get_blob_client(unified_path_parquet).download_blob().readall()
+        table = pq.read_table(BytesIO(raw))
+        df_dict = table.to_pandas()
+
+        # If stored as flat table with sheet indicator
+        if "__sheet" in df_dict.columns:
+            digital_assets = df_dict[df_dict["__sheet"] == "Digital_Assets"].copy()
+        else:
+            log("Unified format unexpected", 4)
+            return
+
+    except Exception as e:
+        log(f"Failed to load unified: {e}", 4)
+        return
+
+    # Load canonical
+    try:
+        canonical_path = f"approved/assets_workflow/vendor={vendor}/media_canonical.parquet"
+        raw = container.get_blob_client(canonical_path).download_blob().readall()
+        canonical_df = pq.read_table(BytesIO(raw)).to_pandas()
+    except Exception as e:
+        log(f"Failed to load canonical: {e}", 4)
+        return
+
+    if digital_assets.empty or canonical_df.empty:
+        log("Nothing to update", 4)
+        return
+
+    # Normalize keys
+    digital_assets["Part Number"] = digital_assets["Part Number"].astype(str).str.strip()
+    digital_assets["FileName"] = digital_assets["FileName"].astype(str).str.strip()
+
+    canonical_df["part_number"] = canonical_df["part_number"].astype(str).str.strip()
+    canonical_df["original_filename"] = canonical_df["original_filename"].astype(str).str.strip()
+
+    # Build mapping
+    mapping = canonical_df.set_index(
+        ["part_number", "original_filename"]
+    )["canonical_filename"]
+
+    # Apply mapping
+    digital_assets["FileName"] = digital_assets.set_index(
+        ["Part Number", "FileName"]
+    ).index.map(mapping).fillna(digital_assets["FileName"])
+
+    # Replace back into full dataset
+    df_dict.loc[df_dict["__sheet"] == "Digital_Assets", "FileName"] = digital_assets["FileName"].values
+
+    # Save back parquet
+    table = pa.Table.from_pandas(df_dict)
+    buf = BytesIO()
+    pq.write_table(table, buf)
+
+    gold_container.upload_blob(
+        unified_path_parquet,
+        buf.getvalue(),
+        overwrite=True
+    )
+
+    log("Unified parquet updated", 2)
+
+    # OPTIONAL: update Excel too
+    try:
+        excel_buf = BytesIO()
+        with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
+            for sheet in df_dict["__sheet"].unique():
+                df_dict[df_dict["__sheet"] == sheet].drop(columns="__sheet").to_excel(writer, sheet_name=sheet, index=False)
+
+        gold_container.upload_blob(
+            unified_path_excel,
+            excel_buf.getvalue(),
+            overwrite=True
+        )
+
+        log("Unified Excel updated", 2)
+
+    except Exception as e:
+        log(f"Excel update failed: {e}", 4)
 # =========================================================
 # CACHE
 # =========================================================
@@ -902,6 +1017,7 @@ def apply_asset_transformations(vendor: str, submission_type: str, submission_id
         create_vendor_action_report(vendor,submission_type, submission_id)
 
         promote_assets(vendor, submission_type, submission_id)
+        update_unified_with_canonical(vendor)
 
 
         if log_data["errors"]:
